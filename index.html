@@ -1241,23 +1241,54 @@
             redirectUri: window.location.href.split('#')[0].split('?')[0],
             token: null,
 
-            login: () => {
+            login: async () => {
                 if(!spotifyManager.clientId) {
                     alert("Developer setup required: Please open the HTML file and add your Spotify Client ID to the 'spotifyManager.clientId' variable.");
                     return;
                 }
+                // Generate PKCE code_verifier and code_challenge (required by Spotify since implicit flow is deprecated)
+                const array = new Uint8Array(32);
+                crypto.getRandomValues(array);
+                const code_verifier = btoa(Array.from(array, b => String.fromCharCode(b)).join('')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+                sessionStorage.setItem('spotify_code_verifier', code_verifier);
+                const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code_verifier));
+                const code_challenge = btoa(Array.from(new Uint8Array(digest), b => String.fromCharCode(b)).join('')).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
                 const scopes = 'playlist-read-private playlist-read-collaborative';
-                const authUrl = `https://accounts.spotify.com/authorize?client_id=${spotifyManager.clientId}&response_type=token&redirect_uri=${encodeURIComponent(spotifyManager.redirectUri)}&scope=${encodeURIComponent(scopes)}`;
+                const authUrl = `https://accounts.spotify.com/authorize?client_id=${spotifyManager.clientId}&response_type=code&redirect_uri=${encodeURIComponent(spotifyManager.redirectUri)}&scope=${encodeURIComponent(scopes)}&code_challenge_method=S256&code_challenge=${code_challenge}`;
                 window.location.href = authUrl;
             },
             
-            checkToken: () => {
-                const hash = window.location.hash;
-                if (hash && hash.includes('access_token=')) {
-                    const params = new URLSearchParams(hash.substring(1));
-                    spotifyManager.token = params.get('access_token');
-                    window.location.hash = ''; 
-                    setTimeout(() => ui.toggleSpotifyModal(true), 500); 
+            checkToken: async () => {
+                const params = new URLSearchParams(window.location.search);
+                const code = params.get('code');
+                if (code) {
+                    const code_verifier = sessionStorage.getItem('spotify_code_verifier');
+                    if (!code_verifier) return;
+                    // Remove the code from the URL bar
+                    const cleanUrl = new URL(window.location.href);
+                    cleanUrl.searchParams.delete('code');
+                    cleanUrl.searchParams.delete('state');
+                    window.history.replaceState({}, '', cleanUrl.toString());
+                    // Exchange authorization code for access token (PKCE — no client secret needed)
+                    try {
+                        const res = await fetch('https://accounts.spotify.com/api/token', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                            body: new URLSearchParams({
+                                client_id: spotifyManager.clientId,
+                                grant_type: 'authorization_code',
+                                code,
+                                redirect_uri: spotifyManager.redirectUri,
+                                code_verifier
+                            })
+                        });
+                        const data = await res.json();
+                        if (data.access_token) {
+                            spotifyManager.token = data.access_token;
+                            sessionStorage.removeItem('spotify_code_verifier');
+                            setTimeout(() => ui.toggleSpotifyModal(true), 500);
+                        }
+                    } catch(e) { console.error('Spotify token exchange failed:', e); alert('Spotify login failed. Please try connecting again.'); }
                 }
             },
 
@@ -1468,6 +1499,22 @@
             get: (id) => songStore.songs.get(id)
         };
 
+        // Make the player footer visible and briefly block pointer-events on interactive
+        // children so the slide-in animation does not intercept taps on the mobile nav bar.
+        function showPlayerFooter() {
+            const footer = document.getElementById('player-footer');
+            const activeArea = document.getElementById('player-active-area');
+            const queueAnchor = document.getElementById('queue-anchor');
+            if (activeArea) activeArea.style.pointerEvents = 'none';
+            if (queueAnchor) queueAnchor.style.pointerEvents = 'none';
+            footer.classList.remove('translate-y-[150%]', 'opacity-0');
+            // Re-enable pointer-events after the 240ms transition has completed.
+            setTimeout(() => {
+                if (activeArea) activeArea.style.pointerEvents = '';
+                if (queueAnchor) queueAnchor.style.pointerEvents = '';
+            }, 350);
+        }
+
         const persist = {
             save: () => {
                 if(!state.currentTrack) return;
@@ -1481,7 +1528,7 @@
                         state.currentTrack = data.track; state.queue = data.q || []; state.userQueue = data.uq || []; state.idx = data.idx || 0;
                         state.loaded = true;
                         
-                        document.getElementById('player-footer').classList.remove('translate-y-[150%]', 'opacity-0');
+                        showPlayerFooter();
                         ui.enableControls(); ui.updateMetadata(state.currentTrack); ui.renderQueue(); ui.renderHistory();
                         
                         audio.src = state.currentTrack.url;
@@ -1613,7 +1660,7 @@
                     track.url = playUrl; 
                     audio.src = playUrl; state.currentTrack = track; state.loaded = true; 
                     
-                    document.getElementById('player-footer').classList.remove('translate-y-[150%]', 'opacity-0');
+                    showPlayerFooter();
                     ui.enableControls(); await audio.play(); 
                     
                     if (audioContext && audioContext.state === 'suspended') audioContext.resume();
@@ -1743,7 +1790,15 @@
                 } else {
                     // Decay to silence when paused — skip expensive wave drawing if already flat.
                     smoothedLow += (0 - smoothedLow) * 0.1; smoothedMid += (0 - smoothedMid) * 0.1;
-                    if (smoothedLow < VIZ_SILENCE_THRESHOLD && smoothedMid < VIZ_SILENCE_THRESHOLD) return;
+                    if (smoothedLow < VIZ_SILENCE_THRESHOLD && smoothedMid < VIZ_SILENCE_THRESHOLD) {
+                        // Draw a static flat line so the played-progress position stays visible while paused.
+                        if (currentProgress > 0) {
+                            const pw = width * currentProgress;
+                            visualizerCtx.beginPath(); visualizerCtx.moveTo(0, centerY); visualizerCtx.lineTo(pw, centerY);
+                            visualizerCtx.lineWidth = 2; visualizerCtx.strokeStyle = '#fff'; visualizerCtx.shadowBlur = 0; visualizerCtx.stroke();
+                        }
+                        return;
+                    }
                 }
                 smoothedLow += (targetLow - smoothedLow) * 0.1; smoothedMid += (targetMid - smoothedMid) * 0.1;
                 let verticalScale = audio.duration > 0 ? (0.3 + 0.7 * Math.min(1, currentProgress / 0.4)) * 0.8 : 1.0;
