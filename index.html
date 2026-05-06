@@ -1720,6 +1720,9 @@
                 isAudioContextInitialized = true;
             } catch(e) {}
         }
+        // Visualizer frequency bin ranges: bins 0-4 = bass/low, bins 10-39 = mid frequencies.
+        const VIZ_LOW_BINS_END = 5, VIZ_MID_BINS_START = 10, VIZ_MID_BINS_END = 40;
+        const VIZ_SILENCE_THRESHOLD = 0.001;
         const viz = {
             render: () => {
                 requestAnimationFrame(viz.render);
@@ -1730,9 +1733,9 @@
                 time += 0.05; let targetLow = 0, targetMid = 0;
                 if (state.playing && isAudioContextInitialized && analyserData) {
                     analyser.getByteFrequencyData(analyserData);
-                    let sumLow = 0; for (let i = 0; i < 5; i++) sumLow += analyserData[i];
-                    let sumMid = 0; for (let i = 10; i < 40; i++) sumMid += analyserData[i];
-                    targetLow = sumLow / 5 / 255; targetMid = sumMid / 30 / 255;
+                    let sumLow = 0; for (let i = 0; i < VIZ_LOW_BINS_END; i++) sumLow += analyserData[i];
+                    let sumMid = 0; for (let i = VIZ_MID_BINS_START; i < VIZ_MID_BINS_END; i++) sumMid += analyserData[i];
+                    targetLow = sumLow / VIZ_LOW_BINS_END / 255; targetMid = sumMid / (VIZ_MID_BINS_END - VIZ_MID_BINS_START) / 255;
                 } else if (state.playing) {
                     // Fallback motion when frequency data is unavailable (e.g., iOS restrictions).
                     targetLow = 0.2 + (0.16 * (0.5 + 0.5 * Math.sin(time * 2.8)));
@@ -1740,7 +1743,7 @@
                 } else {
                     // Decay to silence when paused — skip expensive wave drawing if already flat.
                     smoothedLow += (0 - smoothedLow) * 0.1; smoothedMid += (0 - smoothedMid) * 0.1;
-                    if (smoothedLow < 0.001 && smoothedMid < 0.001) return;
+                    if (smoothedLow < VIZ_SILENCE_THRESHOLD && smoothedMid < VIZ_SILENCE_THRESHOLD) return;
                 }
                 smoothedLow += (targetLow - smoothedLow) * 0.1; smoothedMid += (targetMid - smoothedMid) * 0.1;
                 let verticalScale = audio.duration > 0 ? (0.3 + 0.7 * Math.min(1, currentProgress / 0.4)) * 0.8 : 1.0;
