@@ -1230,7 +1230,7 @@
                     source: 'jiosaavn'
                 };
             },
-            isStreamingUrl: (url) => url && (url.includes('.mp3') || url.includes('.m4a') || url.includes('.aac'))
+            isStreamingUrl: (url) => !!(url && (url.startsWith('http://') || url.startsWith('https://')))
         };
 
         // ============================================
@@ -1708,29 +1708,39 @@
         // VISUALIZER
         // ============================================
         let audioContext, analyser, source, isAudioContextInitialized = false;
+        let analyserData = null;
         let smoothedLow = 0, smoothedMid = 0, currentProgress = 0, time = 0, hoverIntensity = 0; let visualizerCtx;
+        let vizCanvas = null, vizSeekTrack = null;
         let resizeCanvas = () => {};
         function setupAudioContext() {
             if (isIOSDevice) return;
             try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); analyser = audioContext.createAnalyser(); source = audioContext.createMediaElementSource(audio);
-                source.connect(analyser); analyser.connect(audioContext.destination); analyser.fftSize = 256; isAudioContextInitialized = true;
+                source.connect(analyser); analyser.connect(audioContext.destination); analyser.fftSize = 256;
+                analyserData = new Uint8Array(analyser.frequencyBinCount);
+                isAudioContextInitialized = true;
             } catch(e) {}
         }
         const viz = {
             render: () => {
-                requestAnimationFrame(viz.render); if (!state.loaded) return; 
-                const canvas = document.getElementById('visualizer-canvas'); const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                requestAnimationFrame(viz.render);
+                if (!state.loaded) return;
+                const canvas = vizCanvas; const dpr = Math.min(window.devicePixelRatio || 1, 2);
                 const width = canvas.width / dpr; const height = canvas.height / dpr; const centerY = height / 2; visualizerCtx.clearRect(0, 0, width, height);
-                const seekTrack = document.getElementById('seek-bar-track');
-                if(seekTrack) { const progressWidth = width * currentProgress; canvas.style.clipPath = `inset(0 ${width - progressWidth}px 0 0)`; seekTrack.style.clipPath = `inset(0 0 0 ${currentProgress * 100}%)`; }
+                if(vizSeekTrack) { const progressWidth = width * currentProgress; canvas.style.clipPath = `inset(0 ${width - progressWidth}px 0 0)`; vizSeekTrack.style.clipPath = `inset(0 0 0 ${currentProgress * 100}%)`; }
                 time += 0.05; let targetLow = 0, targetMid = 0;
-                if (state.playing && isAudioContextInitialized) {
-                    const dataArray = new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(dataArray);
-                    targetLow = dataArray.slice(0, 5).reduce((a, b) => a + b, 0) / 5 / 255; targetMid = dataArray.slice(10, 40).reduce((a, b) => a + b, 0) / 30 / 255;
+                if (state.playing && isAudioContextInitialized && analyserData) {
+                    analyser.getByteFrequencyData(analyserData);
+                    let sumLow = 0; for (let i = 0; i < 5; i++) sumLow += analyserData[i];
+                    let sumMid = 0; for (let i = 10; i < 40; i++) sumMid += analyserData[i];
+                    targetLow = sumLow / 5 / 255; targetMid = sumMid / 30 / 255;
                 } else if (state.playing) {
                     // Fallback motion when frequency data is unavailable (e.g., iOS restrictions).
                     targetLow = 0.2 + (0.16 * (0.5 + 0.5 * Math.sin(time * 2.8)));
                     targetMid = 0.12 + (0.09 * (0.5 + 0.5 * Math.cos(time * 3.4)));
+                } else {
+                    // Decay to silence when paused — skip expensive wave drawing if already flat.
+                    smoothedLow += (0 - smoothedLow) * 0.1; smoothedMid += (0 - smoothedMid) * 0.1;
+                    if (smoothedLow < 0.001 && smoothedMid < 0.001) return;
                 }
                 smoothedLow += (targetLow - smoothedLow) * 0.1; smoothedMid += (targetMid - smoothedMid) * 0.1;
                 let verticalScale = audio.duration > 0 ? (0.3 + 0.7 * Math.min(1, currentProgress / 0.4)) * 0.8 : 1.0;
@@ -2477,6 +2487,8 @@
             installGlobalImageFallback();
 
             const vCanvas = document.getElementById('visualizer-canvas'); visualizerCtx = vCanvas.getContext('2d');
+            vizCanvas = vCanvas;
+            vizSeekTrack = document.getElementById('seek-bar-track');
             resizeCanvas = () => {
                 const container = document.getElementById('seek-bar-container'); const dpr = Math.min(window.devicePixelRatio || 1, 2);
                 vCanvas.width = container.offsetWidth * dpr; vCanvas.height = container.offsetHeight * dpr;
@@ -2614,12 +2626,17 @@
                 }
             }, {passive: true});
 
+            let lastPersistSecond = -1;
             audio.addEventListener('timeupdate', () => {
                 if (Number.isFinite(audio.duration) && audio.duration > 0 && !state.isDragging) {
                     seekBar.max = audio.duration; seekBar.value = audio.currentTime;
                     currentProgress = audio.currentTime / audio.duration;
 
-                    if (Math.floor(audio.currentTime) % 5 === 0) persist.save();
+                    const currentSecond = Math.floor(audio.currentTime);
+                    if (currentSecond % 5 === 0 && currentSecond !== lastPersistSecond) {
+                        lastPersistSecond = currentSecond;
+                        persist.save();
+                    }
 
                     // Morphing 10s Preview Logic 
                     const timeRemaining = audio.duration - audio.currentTime;
