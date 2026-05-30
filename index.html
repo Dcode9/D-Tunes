@@ -1059,6 +1059,38 @@
             escapeJs: (text) => text ? text.toString().replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "\\n").replace(/\r/g, "\\r") : ''
         };
 
+        // --- TESTING UTILS ---
+        const testDecodeHtml = () => {
+            // 1. Happy path: Basic HTML entities
+            console.assert(utils.decodeHtml('&amp;') === '&', 'decodeHtml failed on &amp;');
+            console.assert(utils.decodeHtml('&lt;div&gt;') === '<div>', 'decodeHtml failed on &lt;div&gt;');
+            console.assert(utils.decodeHtml('&quot;test&quot;') === '"test"', 'decodeHtml failed on &quot;');
+            console.assert(utils.decodeHtml('&#39;test&#39;') === "'test'", 'decodeHtml failed on &#39;');
+
+            // 2. Happy path: Complex strings with multiple entities
+            console.assert(utils.decodeHtml('Hello &amp; Welcome &lt;b&gt;Here&lt;/b&gt;') === 'Hello & Welcome <b>Here</b>', 'decodeHtml failed on complex string');
+
+            // 3. Edge cases: Plain text without entities
+            console.assert(utils.decodeHtml('plain text') === 'plain text', 'decodeHtml failed on plain text');
+
+            // 4. Edge cases: Empty strings
+            console.assert(utils.decodeHtml('') === '', 'decodeHtml failed on empty string');
+
+            // 5. Error conditions: Falsy values
+            console.assert(utils.decodeHtml(null) === '', 'decodeHtml failed on null');
+            console.assert(utils.decodeHtml(undefined) === '', 'decodeHtml failed on undefined');
+            console.assert(utils.decodeHtml(false) === '', 'decodeHtml failed on false');
+
+            // 6. Error conditions: Not a string (will be stringified or return empty depending on how innerHTML handles it)
+            // innerHTML of a number e.g. 123 becomes "123"
+            console.assert(utils.decodeHtml(123) === '123', 'decodeHtml failed on number');
+
+            console.log('utils.decodeHtml tests passed');
+        };
+        // Run tests on initialization
+        testDecodeHtml();
+        // ---------------------
+
         const FALLBACK_ART_CANDIDATES = [
             'DTunes.svg',
             './DTunes.svg',
