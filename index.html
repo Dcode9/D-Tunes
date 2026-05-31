@@ -1237,15 +1237,11 @@
         // SPOTIFY API INTEGRATION
         // ============================================
         const spotifyManager = {
-            clientId: '8fba37005d964e2599ce567c69ee7f1d', // 🔴 ADD YOUR SPOTIFY CLIENT ID HERE
+            clientId: '8fba37005d964e2599ce567c69ee7f1d',
             redirectUri: window.location.href.split('#')[0].split('?')[0],
             token: null,
 
             login: () => {
-                if(!spotifyManager.clientId) {
-                    alert("Developer setup required: Please open the HTML file and add your Spotify Client ID to the 'spotifyManager.clientId' variable.");
-                    return;
-                }
                 const scopes = 'playlist-read-private playlist-read-collaborative';
                 const authUrl = `https://accounts.spotify.com/authorize?client_id=${spotifyManager.clientId}&response_type=token&redirect_uri=${encodeURIComponent(spotifyManager.redirectUri)}&scope=${encodeURIComponent(scopes)}`;
                 window.location.href = authUrl;
