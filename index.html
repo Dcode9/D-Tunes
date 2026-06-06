@@ -188,6 +188,11 @@
                     <button onclick="homeView.loadGeneratedPlaylist('for-you')" class="text-xs font-bold px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 transition">Refresh</button>
                 </div>
                 <div class="row-blur-left"></div><div id="for-you-grid" class="horizontal-scroll"></div><div class="row-blur-right"></div>
+                <div id="for-you-actions" class="hidden px-4 md:px-8 mt-5 flex flex-wrap items-center gap-3 relative z-20">
+                    <button onclick="homeView.playForYou()" class="px-5 py-2.5 rounded-full bg-green-500 text-black font-bold hover:scale-105 transition shadow-lg shadow-green-500/20">Autoplay For You</button>
+                    <button onclick="homeView.queueForYou()" class="px-5 py-2.5 rounded-full bg-white/10 text-white font-bold hover:bg-white/20 transition">Add to Queue</button>
+                    <span id="for-you-count" class="text-xs text-gray-400"></span>
+                </div>
             </section>
 
             <section id="section-generated-playlists" class="mb-12 relative">
@@ -233,9 +238,36 @@
                 <div class="row-blur-left"></div><div id="recent-grid" class="horizontal-scroll"></div><div class="row-blur-right"></div>
             </section>
 
-            <section id="section-playlists" class="mb-12 relative">
-                <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8 relative z-20">Your Library</h2>
-                <div class="row-blur-left"></div><div id="playlists-grid" class="horizontal-scroll items-stretch"></div><div class="row-blur-right"></div>
+        </div>
+
+        <!-- ================= LIBRARY VIEW ================= -->
+        <div id="view-library" class="hidden pb-12 px-4 md:px-8">
+            <div class="flex items-end justify-between gap-4 mb-8 relative z-20">
+                <div>
+                    <h2 class="text-2xl md:text-3xl font-bold text-white">Your Library</h2>
+                    <p class="text-sm text-gray-400 mt-1">Playlists, liked songs, liked artists, and listening history.</p>
+                </div>
+                <button onclick="ui.toggleModal(true)" class="px-4 py-2 rounded-full bg-green-500 text-black text-sm font-bold hover:scale-105 transition">Create Playlist</button>
+            </div>
+
+            <section class="mb-12 relative">
+                <h3 class="text-xl md:text-2xl font-bold text-white mb-6 relative z-20">Playlists</h3>
+                <div id="playlists-grid" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-4 items-stretch"></div>
+            </section>
+
+            <section class="mb-12 relative">
+                <h3 class="text-xl md:text-2xl font-bold text-white mb-6 relative z-20">Liked Songs</h3>
+                <div id="library-liked-songs" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2"></div>
+            </section>
+
+            <section class="mb-12 relative">
+                <h3 class="text-xl md:text-2xl font-bold text-white mb-6 relative z-20">Liked Artists</h3>
+                <div id="library-liked-artists" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6 gap-4"></div>
+            </section>
+
+            <section class="mb-12 relative">
+                <h3 class="text-xl md:text-2xl font-bold text-white mb-6 relative z-20">History</h3>
+                <div id="library-history" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2"></div>
             </section>
         </div>
 
@@ -305,6 +337,30 @@
                             <option value="medium" class="bg-gray-900">Medium (Standard)</option>
                             <option value="high" class="bg-gray-900">High (Best Quality)</option>
                         </select>
+                    </div>
+
+                    <div class="border-t border-white/10 pt-6">
+                        <div class="flex items-center justify-between gap-3 mb-4">
+                            <div>
+                                <h3 class="text-lg font-bold text-white mb-1">Equalizer</h3>
+                                <p class="text-sm text-gray-400">Tune bass, mids, and treble for the current device.</p>
+                            </div>
+                            <button onclick="ui.resetEqualizer()" class="text-xs font-bold px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 transition">Reset</button>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <label class="glass-panel rounded-xl p-4 block">
+                                <span class="text-sm font-bold text-white flex justify-between">Bass <span id="eq-bass-value" class="text-green-400">0 dB</span></span>
+                                <input id="eq-bass" type="range" min="-12" max="12" step="1" class="w-full mt-4" oninput="ui.updateEqualizer('bass', this.value)">
+                            </label>
+                            <label class="glass-panel rounded-xl p-4 block">
+                                <span class="text-sm font-bold text-white flex justify-between">Mids <span id="eq-mid-value" class="text-green-400">0 dB</span></span>
+                                <input id="eq-mid" type="range" min="-12" max="12" step="1" class="w-full mt-4" oninput="ui.updateEqualizer('mid', this.value)">
+                            </label>
+                            <label class="glass-panel rounded-xl p-4 block">
+                                <span class="text-sm font-bold text-white flex justify-between">Treble <span id="eq-treble-value" class="text-green-400">0 dB</span></span>
+                                <input id="eq-treble" type="range" min="-12" max="12" step="1" class="w-full mt-4" oninput="ui.updateEqualizer('treble', this.value)">
+                            </label>
+                        </div>
                     </div>
 
                 </div>
@@ -417,8 +473,9 @@
         </div>
 
         <!-- Mobile Queue Button inside Expanded View -->
-        <button class="mobile-queue-btn hidden" onclick="ui.toggleMobilePlayer(false); setTimeout(() => ui.toggleQueue(), 300)">
-            Up Next & Queue
+        <button class="mobile-queue-btn hidden" onclick="ui.toggleQueue()">
+            <span>Up Next & Queue</span>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
         </button>
     </div>
 

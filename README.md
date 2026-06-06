@@ -133,8 +133,9 @@ The engine strongly penalizes repeatedly skipped songs and limits artist repetit
 
 The home page includes:
 
-- `For You` recommendation section
+- a polished `For You` recommendation shelf that stays hidden until personalized songs are available
 - generated playlist buttons for For You, Late Night, Discovery, Language Mix, and Recently Obsessed
+- `Autoplay For You` and `Add to Queue` actions so generated songs are visible in the queue before/while playing
 - player buttons for Similar Songs and Artist/Song Radio
 
-Cold-start users can choose a preferred language and still see JioSaavn trending songs; after the first few plays, behavior events begin personalizing the generated playlists.
+The Library view is kept focused on playlists, liked songs, liked artists, and listening history. Search artist cards can be liked and later reopened from Library. Settings now include bass/mid/treble equalizer controls stored locally. Cold-start users can choose a preferred language and still see JioSaavn trending songs; after the first few plays, behavior events begin personalizing the generated playlists.

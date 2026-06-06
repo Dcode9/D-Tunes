@@ -284,11 +284,14 @@
         const state = { 
             queue: [], userQueue: [], idx: -1, playing: false, loaded: false, shuffle: false, repeat: 0, currentTrack: null,
             likedIds: JSON.parse(localStorage.getItem('likedIds') || '[]'),
+            likedArtists: JSON.parse(localStorage.getItem('likedArtists') || '[]'),
             playHistory: JSON.parse(localStorage.getItem('playHistory') || '[]'),
             artistPlayCounts: JSON.parse(localStorage.getItem('artistPlayCounts') || '{}'),
             playlists: JSON.parse(localStorage.getItem('playlists') || '{}'),
             username: localStorage.getItem('username') || 'Guest User',
             quality: localStorage.getItem('audioQuality') || 'high',
+            equalizer: JSON.parse(localStorage.getItem('equalizerSettings') || '{"bass":0,"mid":0,"treble":0}'),
+            forYouSongs: [],
             searchDebounce: null, hoverProgress: -1, lastHoverProgress: 0.5, isDragging: false, 
             upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null
         };
@@ -713,15 +716,31 @@
         // ============================================
         // VISUALIZER
         // ============================================
-        let audioContext, analyser, source, isAudioContextInitialized = false;
+        let audioContext, analyser, source, eqFilters = {}, isAudioContextInitialized = false;
         let analyserData = null;
         let smoothedLow = 0, smoothedMid = 0, currentProgress = 0, time = 0, hoverIntensity = 0; let visualizerCtx;
         let vizCanvas = null, vizSeekTrack = null, lastClipProgress = -1;
         let resizeCanvas = () => {};
+        const applyEqualizer = () => {
+            if (!eqFilters.bass) return;
+            eqFilters.bass.gain.value = Number(state.equalizer.bass || 0);
+            eqFilters.mid.gain.value = Number(state.equalizer.mid || 0);
+            eqFilters.treble.gain.value = Number(state.equalizer.treble || 0);
+        };
         function setupAudioContext() {
             if (isIOSDevice) return;
-            try { audioContext = new (window.AudioContext || window.webkitAudioContext)(); analyser = audioContext.createAnalyser(); source = audioContext.createMediaElementSource(audio);
-                source.connect(analyser); analyser.connect(audioContext.destination); analyser.fftSize = 256;
+            try {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)(); analyser = audioContext.createAnalyser(); source = audioContext.createMediaElementSource(audio);
+                eqFilters = {
+                    bass: audioContext.createBiquadFilter(),
+                    mid: audioContext.createBiquadFilter(),
+                    treble: audioContext.createBiquadFilter()
+                };
+                eqFilters.bass.type = 'lowshelf'; eqFilters.bass.frequency.value = 180;
+                eqFilters.mid.type = 'peaking'; eqFilters.mid.frequency.value = 1100; eqFilters.mid.Q.value = 0.8;
+                eqFilters.treble.type = 'highshelf'; eqFilters.treble.frequency.value = 4200;
+                source.connect(eqFilters.bass); eqFilters.bass.connect(eqFilters.mid); eqFilters.mid.connect(eqFilters.treble); eqFilters.treble.connect(analyser); analyser.connect(audioContext.destination); analyser.fftSize = 256;
+                applyEqualizer();
                 analyserData = new Uint8Array(analyser.frequencyBinCount);
                 isAudioContextInitialized = true;
             } catch(e) {}
@@ -783,6 +802,7 @@
                 if (!document.getElementById('view-home').classList.contains('hidden')) return 'home';
                 if (!document.getElementById('view-search').classList.contains('hidden')) return 'search';
                 if (!document.getElementById('view-playlist').classList.contains('hidden')) return 'playlist';
+                if (!document.getElementById('view-library').classList.contains('hidden')) return 'library';
                 if (!document.getElementById('view-settings').classList.contains('hidden')) return 'settings';
                 return 'home';
             },
@@ -830,7 +850,7 @@
             },
 
             switchView: (view) => {
-                document.getElementById('view-home').classList.add('hidden'); document.getElementById('view-search').classList.add('hidden'); document.getElementById('view-playlist').classList.add('hidden'); document.getElementById('view-settings').classList.add('hidden');
+                document.getElementById('view-home').classList.add('hidden'); document.getElementById('view-search').classList.add('hidden'); document.getElementById('view-playlist').classList.add('hidden'); document.getElementById('view-library').classList.add('hidden'); document.getElementById('view-settings').classList.add('hidden');
                 document.getElementById(`view-${view}`).classList.remove('hidden'); document.getElementById('main-container').scrollTo({ top: 0, behavior: 'smooth' });
 
                 if (view !== 'search') {
@@ -850,12 +870,9 @@
             },
 
             scrollToLibrary: () => {
-                ui.switchView('home');
                 ui.closeMobileSearch();
-                const section = document.getElementById('section-playlists');
-                if (section) {
-                    setTimeout(() => section.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
-                }
+                ui.renderLibrary();
+                ui.switchView('library');
                 ui.setMobileNavActive('library');
             },
 
@@ -1024,6 +1041,27 @@
                     localStorage.setItem('audioQuality', val);
                 }
             },
+            renderEqualizerSettings: () => {
+                ['bass', 'mid', 'treble'].forEach((band) => {
+                    const value = Number(state.equalizer[band] || 0);
+                    const input = document.getElementById(`eq-${band}`);
+                    const label = document.getElementById(`eq-${band}-value`);
+                    if (input) input.value = value;
+                    if (label) label.textContent = `${value > 0 ? '+' : ''}${value} dB`;
+                });
+            },
+            updateEqualizer: (band, value) => {
+                state.equalizer[band] = Number(value);
+                localStorage.setItem('equalizerSettings', JSON.stringify(state.equalizer));
+                ui.renderEqualizerSettings();
+                applyEqualizer();
+            },
+            resetEqualizer: () => {
+                state.equalizer = { bass: 0, mid: 0, treble: 0 };
+                localStorage.setItem('equalizerSettings', JSON.stringify(state.equalizer));
+                ui.renderEqualizerSettings();
+                applyEqualizer();
+            },
             createPlaylist: () => {
                 const name = document.getElementById('new-playlist-name').value.trim();
                 if(name && !state.playlists[name]) { 
@@ -1132,6 +1170,7 @@
             },
             renderPlaylists: () => {
                 const grid = document.getElementById('playlists-grid');
+                if (!grid) return;
                 const likedStyle = ui.getPlaylistStyle('Liked Songs');
                 let html = `
                 <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer" onclick="ui.openPlaylist('Liked Songs')">
@@ -1182,17 +1221,63 @@
                     </div>`;
                 });
                 grid.innerHTML = html;
+                ui.renderLibraryLists();
                 updateMarquees();
+            },
+            renderLibraryLists: () => {
+                const likedSongs = document.getElementById('library-liked-songs');
+                const likedArtists = document.getElementById('library-liked-artists');
+                const history = document.getElementById('library-history');
+                if (likedSongs) {
+                    const songs = state.likedIds.map(item => typeof item === 'object' ? item : state.playHistory.find(song => song.id === item)).filter(Boolean);
+                    likedSongs.innerHTML = songs.length ? songs.map(song => ui.createListRow(song)).join('') : '<p class="text-sm text-gray-500">Like songs to collect them here.</p>';
+                }
+                if (likedArtists) {
+                    likedArtists.innerHTML = state.likedArtists.length ? state.likedArtists.map(artist => ui.createArtistCard(artist)).join('') : '<p class="text-sm text-gray-500 col-span-full">Like artists from search results to collect them here.</p>';
+                }
+                if (history) {
+                    history.innerHTML = state.playHistory.length ? state.playHistory.map(song => ui.createListRow(song)).join('') : '<p class="text-sm text-gray-500">Played songs will appear here.</p>';
+                }
+                updateMarquees();
+            },
+            renderLibrary: () => {
+                ui.renderPlaylists();
+                ui.renderLibraryLists();
+            },
+            createArtistCard: (artist) => {
+                const id = utils.escapeJs(artist.id || artist.name);
+                return `
+                <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-full cursor-pointer" onclick="playContext('artist', '${id}')">
+                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 bg-gray-800 shadow-md">
+                        <img src="${artist.img || FALLBACK_ART}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" loading="lazy">
+                        <button class="absolute top-2 right-2 p-2 rounded-full bg-red-500 text-white shadow-lg" onclick="event.stopPropagation(); ui.toggleArtistLike({ id: '${id}', name: '${utils.escapeJs(artist.name)}', artist: '${utils.escapeJs(artist.artist || 'Artist')}', img: '${utils.escapeJs(artist.img || FALLBACK_ART)}', type: 'artist' })" title="Unlike artist">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                        </button>
+                    </div>
+                    <div class="min-w-0"><div class="marquee-container"><h4 class="text-sm font-bold text-white marquee-text">${utils.escapeHtml(artist.name)}</h4></div><p class="text-xs text-gray-400">Artist</p></div>
+                </div>`;
+            },
+            toggleArtistLike: (artist) => {
+                const id = artist.id || artist.name;
+                const idx = state.likedArtists.findIndex(item => (item.id || item.name) === id);
+                if (idx === -1) state.likedArtists.push(artist);
+                else state.likedArtists.splice(idx, 1);
+                localStorage.setItem('likedArtists', JSON.stringify(state.likedArtists));
+                ui.renderLibraryLists();
             },
             createCard: (item) => {
                 const storeId = songStore.add(item);
                 const isContext = item.type === 'album' || item.type === 'artist';
                 const clickHandler = item.type === 'album' ? `ui.openAlbum('${utils.escapeJs(item.id)}')` : (isContext ? `playContext('${item.type}', '${utils.escapeJs(item.id)}')` : `playSongById('${storeId}')`);
                 const dblClickHandler = isContext ? "" : `ondblclick="player.likeSong('${utils.escapeJs(item.id)}')"`;
-                const menuBtn = isContext ? "" : `
+                const artistLiked = item.type === 'artist' && state.likedArtists.some(artist => (artist.id || artist.name) === item.id);
+                const menuBtn = item.type === 'artist' ? `
+                    <button class="absolute top-4 right-4 p-1.5 ${artistLiked ? 'bg-red-500 text-white' : 'bg-black/60 text-white'} backdrop-blur-md rounded-full opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shadow-lg hover:bg-red-500 z-10" onclick="event.stopPropagation(); ui.toggleArtistLike({ id: '${utils.escapeJs(item.id)}', name: '${utils.escapeJs(item.name)}', artist: '${utils.escapeJs(item.artist || 'Artist')}', img: '${utils.escapeJs(item.img || FALLBACK_ART)}', type: 'artist' })" title="${artistLiked ? 'Unlike artist' : 'Like artist'}">
+                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                    </button>` : (isContext ? "" : `
                     <button class="absolute top-4 right-4 p-1.5 bg-black/60 backdrop-blur-md rounded-full text-white opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shadow-lg hover:bg-white/20 z-10" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${storeId}')">
                         <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>
-                    </button>`;
+                    </button>`);
 
                 return `
                 <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40" ${dblClickHandler}>
@@ -1253,6 +1338,22 @@
                         <button class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 hidden md:block" title="Add to Queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${storeId}'))"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg></button>
                         <button class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 block md:hidden" title="Options" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${storeId}')"><svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg></button>
                         ${removeBtnHtml}
+                    </div>
+                </div>`;
+            },
+            createForYouCard: (song) => {
+                const storeId = songStore.add(song);
+                return `
+                <div class="for-you-card glass-panel rounded-3xl overflow-hidden relative flex-shrink-0 w-64 h-80 group cursor-pointer hover-pause" onclick="playSongById('${storeId}')">
+                    <img src="${song.img}" class="absolute inset-0 w-full h-full object-cover transition duration-700 group-hover:scale-110" loading="lazy">
+                    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent"></div>
+                    <button class="absolute top-4 right-4 w-10 h-10 rounded-full bg-green-500 text-black flex items-center justify-center shadow-xl opacity-95 group-hover:scale-110 transition" onclick="event.stopPropagation(); playSongById('${storeId}')">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                    </button>
+                    <div class="absolute bottom-0 left-0 right-0 p-5">
+                        <div class="inline-flex px-2 py-1 rounded-full bg-white/10 text-[10px] uppercase tracking-wider text-green-300 mb-3">For You</div>
+                        <div class="marquee-container"><h3 class="text-xl font-black text-white marquee-text">${utils.escapeHtml(song.name)}</h3></div>
+                        <div class="marquee-container mt-1"><p class="text-sm text-gray-300 marquee-text">${utils.escapeHtml(song.artist)}</p></div>
                     </div>
                 </div>`;
             },
@@ -1328,6 +1429,7 @@
                 } else {
                     wrap.classList.remove('queue-expanded');
                 }
+                document.querySelector('.mobile-queue-btn')?.classList.toggle('queue-open', state.queueExpanded);
             },
             switchQueueTab: (tab) => {
                 state.activeQueueTab = tab;
@@ -1467,33 +1569,61 @@
         };
 
         const homeView = {
-            loadGeneratedPlaylist: async (type = 'for-you') => {
+            loadGeneratedPlaylist: async (type = 'for-you', options = {}) => {
                 const status = document.getElementById('generated-playlist-status');
                 const forYouSection = document.getElementById('section-for-you');
                 const forYouGrid = document.getElementById('for-you-grid');
-                if(status) status.textContent = `Generating ${type.replace(/-/g, ' ')}...`;
+                const forYouActions = document.getElementById('for-you-actions');
+                const forYouCount = document.getElementById('for-you-count');
+                if(status) status.textContent = `Finding ${type.replace(/-/g, ' ')} picks...`;
                 const preferredLanguage = document.getElementById('preferred-language-select')?.value || localStorage.getItem('preferredLanguage') || '';
                 const songs = window.recommendationClient ? await window.recommendationClient.fetchPlaylist(type, { limit: 25, language: preferredLanguage }) : [];
                 if (songs.length === 0) {
-                    if(status) status.textContent = 'Recommendation API unavailable; showing Quick Picks fallback.';
-                    return homeView.generateQuickPicks();
+                    if(status) status.textContent = 'Personalized picks are not ready yet. Keep listening or try again later.';
+                    if (type === 'for-you') {
+                        state.forYouSongs = [];
+                        forYouSection?.classList.add('hidden');
+                        forYouActions?.classList.add('hidden');
+                    }
+                    return [];
                 }
                 const tagged = songs.map(song => ({ ...song, source: 'recommendation', playlistType: type }));
-                state.queue = tagged; state.userQueue = []; state.idx = 0;
-                if (type === 'for-you' && forYouGrid) {
-                    forYouSection.classList.remove('hidden');
-                    forYouGrid.innerHTML = tagged.map(song => ui.createCard(song)).join('');
+                if (type === 'for-you') {
+                    state.forYouSongs = tagged;
+                    forYouSection?.classList.remove('hidden');
+                    if (forYouGrid) forYouGrid.innerHTML = tagged.slice(0, 18).map(song => ui.createForYouCard(song)).join('');
+                    forYouActions?.classList.remove('hidden');
+                    if (forYouCount) forYouCount.textContent = `${tagged.length} songs ready for autoplay`;
+                    if(status) status.textContent = 'For You is ready.';
+                    if (!options.open) return tagged;
                 }
+                state.queue = tagged; state.userQueue = []; state.idx = 0; ui.renderQueue();
                 ui.openGeneratedPlaylist(type.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), tagged);
                 if(status) status.textContent = `Generated ${tagged.length} rule-based tracks.`;
+                return tagged;
+            },
+            playForYou: async () => {
+                const songs = state.forYouSongs.length ? state.forYouSongs : await homeView.loadGeneratedPlaylist('for-you');
+                if (!songs || songs.length === 0) return;
+                state.queue = [...songs]; state.userQueue = []; state.idx = 0; ui.renderQueue();
+                player.playDirect(songs[0]);
+                if (deviceMode.isMobileUI()) ui.toggleMobilePlayer(true);
+                else if (!state.queueExpanded) ui.toggleQueue();
+            },
+            queueForYou: async () => {
+                const songs = state.forYouSongs.length ? state.forYouSongs : await homeView.loadGeneratedPlaylist('for-you');
+                if (!songs || songs.length === 0) return;
+                state.queue = [...songs]; state.userQueue = []; state.idx = state.currentTrack ? -1 : 0; ui.renderQueue(); persist.save();
+                if (!state.queueExpanded) ui.toggleQueue();
             },
             init: async () => {
                 ui.updateProfileUI();
                 const preferredLanguageSelect = document.getElementById('preferred-language-select');
                 if (preferredLanguageSelect) preferredLanguageSelect.value = localStorage.getItem('preferredLanguage') || '';
                 document.getElementById('setting-audio-quality').value = state.quality;
+                ui.renderEqualizerSettings();
                 
-                ui.renderPlaylists(); 
+                ui.renderPlaylists(); ui.renderLibraryLists(); 
                 const isNewUser = state.playHistory.length === 0;
                 if (isNewUser) {
                     document.getElementById('section-trending').classList.remove('hidden');
