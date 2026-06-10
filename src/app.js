@@ -282,7 +282,7 @@
         // STATE & PERSISTENCE
         // ============================================
         const state = { 
-            queue: [], userQueue: [], idx: -1, playing: false, loaded: false, shuffle: false, repeat: 0, currentTrack: null,
+            queue: [], userQueue: [], idx: -1, playing: false, loading: false, loaded: false, shuffle: false, repeat: 0, currentTrack: null,
             likedIds: JSON.parse(localStorage.getItem('likedIds') || '[]'),
             likedArtists: JSON.parse(localStorage.getItem('likedArtists') || '[]'),
             playHistory: JSON.parse(localStorage.getItem('playHistory') || '[]'),
@@ -585,8 +585,16 @@
                 recommendationEvents.maybeRecordSkip();
                 isPlaybackPending = true;
                 
-                state.upNextTriggered = false; 
+                state.upNextTriggered = false;
+                state.loading = true;
+                state.loaded = false;
+                state.currentTrack = { ...track };
                 document.getElementById('queue-wrapper').classList.remove('preview-expanded', 'track-swap-out');
+                document.getElementById('player-footer').classList.remove('translate-y-[150%]', 'opacity-0');
+                ui.updateMetadata(state.currentTrack, { loading: true });
+                ui.updatePlayBtn();
+                ui.renderQueue();
+                persist.save();
                 
                 try {
                     const freshDetails = await jiosaavnAPI.getSong(track.id);
@@ -594,11 +602,16 @@
                     
                     if (!playUrl) throw new Error('No URL');
                     
-                    track.url = playUrl; 
-                    audio.src = playUrl; state.currentTrack = track; state.loaded = true; 
+                    track = { ...track, ...freshDetails, url: playUrl };
+                    audio.preload = 'auto';
+                    audio.src = playUrl;
+                    audio.load();
+                    state.currentTrack = track;
+                    state.loaded = true;
+                    state.loading = true;
+                    ui.updateMetadata(track, { loading: true });
                     
-                    document.getElementById('player-footer').classList.remove('translate-y-[150%]', 'opacity-0');
-                    ui.enableControls(); await audio.play(); 
+                    ui.enableControls(); await audio.play();
                     const isRepeatStart = recommendationEvents.lastStartedSongId === track.id && Date.now() - recommendationEvents.currentPlayStartAt < 15 * 60 * 1000;
                     recommendationEvents.currentPlayStartAt = Date.now();
                     recommendationEvents.lastStartedSongId = track.id;
@@ -622,7 +635,12 @@
                     if(!document.getElementById('view-home').classList.contains('hidden')) homeView.renderRecentlyPlayed();
                     
                     persist.save();
-                } catch (error) { state.playing = false; ui.updatePlayBtn(); } 
+                } catch (error) {
+                    state.playing = false;
+                    state.loading = false;
+                    document.getElementById('info-island')?.classList.remove('is-loading');
+                    ui.updatePlayBtn();
+                } 
                 finally { isPlaybackPending = false; }
             },
             togglePlay: () => {
@@ -679,6 +697,15 @@
             toggleLike: () => { player.likeSong(); },
             addNext: (song) => { state.userQueue.unshift(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); persist.save(); },
             addToQueue: (song) => { state.userQueue.push(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); persist.save(); },
+            clearQueue: () => {
+                state.userQueue = [];
+                state.queue = state.currentTrack ? [state.currentTrack] : [];
+                state.idx = state.currentTrack ? 0 : -1;
+                state.upNextTriggered = false;
+                document.getElementById('queue-wrapper').classList.remove('preview-expanded', 'track-swap-out');
+                ui.renderQueue();
+                persist.save();
+            },
             showSimilarSongs: async () => {
                 if (!state.currentTrack || !window.recommendationClient) return;
                 const songs = await window.recommendationClient.fetchPlaylist('similar', { songId: state.currentTrack.id, limit: 25 });
@@ -703,6 +730,20 @@
         audio.addEventListener('pause', () => { 
             state.playing = false; ui.updatePlayBtn(); persist.save();
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+        });
+
+        ['loadstart', 'waiting', 'stalled'].forEach((eventName) => {
+            audio.addEventListener(eventName, () => {
+                if (!state.currentTrack) return;
+                state.loading = true;
+                ui.setPlayerLoading(true);
+            });
+        });
+        ['canplay', 'playing', 'loadeddata'].forEach((eventName) => {
+            audio.addEventListener(eventName, () => {
+                state.loading = false;
+                ui.setPlayerLoading(false);
+            });
         });
 
         audio.addEventListener('error', recoverFromAudioError);
@@ -881,6 +922,9 @@
                 if(expand) {
                     ui.closeMobileSearch();
                     document.body.classList.add('mobile-player-open');
+                    state.queueExpanded = true;
+                    document.getElementById('queue-wrapper').classList.add('queue-expanded');
+                    ui.switchQueueTab('upnext');
                     requestAnimationFrame(resizeCanvas);
                     setTimeout(resizeCanvas, 120);
                     setTimeout(resizeCanvas, 320);
@@ -1062,6 +1106,54 @@
                 ui.renderEqualizerSettings();
                 applyEqualizer();
             },
+            clearAllData: () => {
+                const confirmed = window.confirm("Clear all D'Tunes data saved in this browser? This cannot be undone.");
+                if (!confirmed) return;
+                audio.pause();
+                audio.removeAttribute('src');
+                audio.load();
+                Object.keys(localStorage).forEach((key) => {
+                    if ([
+                        'likedIds', 'likedArtists', 'playHistory', 'artistPlayCounts', 'playlists', 'username',
+                        'audioQuality', 'equalizerSettings', 'playbackState', 'preferredLanguage'
+                    ].includes(key) || key.startsWith('recommendation')) {
+                        localStorage.removeItem(key);
+                    }
+                });
+                state.queue = [];
+                state.userQueue = [];
+                state.idx = -1;
+                state.playing = false;
+                state.loading = false;
+                state.loaded = false;
+                state.currentTrack = null;
+                state.likedIds = [];
+                state.likedArtists = [];
+                state.playHistory = [];
+                state.artistPlayCounts = {};
+                state.playlists = {};
+                state.username = 'Guest User';
+                state.quality = 'high';
+                state.equalizer = { bass: 0, mid: 0, treble: 0 };
+                state.forYouSongs = [];
+                state.queueExpanded = false;
+                document.getElementById('queue-wrapper').classList.remove('queue-expanded', 'preview-expanded', 'track-swap-out');
+                document.getElementById('player-footer').classList.add('translate-y-[150%]', 'opacity-0');
+                document.body.classList.remove('mobile-player-open');
+                document.getElementById('p-title').textContent = 'Not Playing';
+                document.getElementById('p-artist').textContent = 'Select song';
+                document.getElementById('curr-art-img').src = FALLBACK_ART;
+                ui.setPlayerLoading(false);
+                ui.updateProfileUI();
+                ui.renderEqualizerSettings();
+                applyEqualizer();
+                ui.renderPlaylists();
+                ui.renderLibraryLists();
+                ui.renderQueue();
+                ui.renderHistory();
+                ui.updatePlayBtn();
+                alert("D'Tunes data has been cleared.");
+            },
             createPlaylist: () => {
                 const name = document.getElementById('new-playlist-name').value.trim();
                 if(name && !state.playlists[name]) { 
@@ -1186,6 +1278,20 @@
                     <div class="w-full min-w-0 flex-1">
                         <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">Liked Songs</h3></div>
                         <p class="text-xs text-gray-400 mt-1">${state.likedIds.length} tracks</p>
+                    </div>
+                </div>`;
+
+                html += `
+                <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer create-playlist-card" onclick="ui.toggleModal(true)">
+                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center bg-gradient-to-br from-green-500/35 via-emerald-900/45 to-zinc-950 border border-green-300/20 group-hover:border-green-300/60 transition">
+                        <div class="absolute inset-0" style="background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.28), transparent 34%);"></div>
+                        <span class="relative w-14 h-14 rounded-full bg-green-500 text-black flex items-center justify-center shadow-xl shadow-green-500/25 group-hover:scale-110 transition">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+                        </span>
+                    </div>
+                    <div class="w-full min-w-0 flex-1">
+                        <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">Create Playlist</h3></div>
+                        <p class="text-xs text-gray-400 mt-1">New mix</p>
                     </div>
                 </div>`;
                 
@@ -1369,22 +1475,68 @@
                 updateMarquees();
             },
             enableControls: () => {
-                ['seek-bar-container', 'seek-bar', 'btn-play', 'btn-prev', 'btn-next', 'p-like-btn', 'p-radio-btn', 'p-similar-btn', 'btn-shuffle', 'btn-repeat'].forEach(id => {
+                ['seek-bar-container', 'seek-bar', 'btn-play', 'btn-prev', 'btn-next', 'p-like-btn', 'btn-shuffle', 'btn-repeat'].forEach(id => {
                     const el = document.getElementById(id); if(el) { el.classList.remove('disabled'); el.disabled = false; }
                 });
             },
-            updateMetadata: (track) => {
+            getAdjacentTrack: (direction) => {
+                if (direction === 'next') {
+                    if (state.userQueue.length > 0) return state.userQueue[0];
+                    if (state.queue.length <= 1) return null;
+                    const nextIdx = state.shuffle
+                        ? state.queue.findIndex((_, i) => i !== state.idx)
+                        : (state.idx + 1) % state.queue.length;
+                    return nextIdx >= 0 ? state.queue[nextIdx] : null;
+                }
+                if (state.queue.length > 1) {
+                    const prevIdx = state.idx <= 0 ? state.queue.length - 1 : state.idx - 1;
+                    return state.queue[prevIdx] || null;
+                }
+                return state.playHistory[1] || null;
+            },
+            renderCompactSwipePreview: () => {
+                const render = (song, label) => song ? `
+                    <div class="mobile-swipe-label">${label}</div>
+                    <div class="mobile-swipe-card">
+                        <img src="${utils.escapeHtml(sanitizeImageUrl(song.img))}" onerror="this.src='${FALLBACK_ART}'" alt="">
+                        <div class="min-w-0">
+                            <p>${utils.escapeHtml(song.name)}</p>
+                            <span>${utils.escapeHtml(song.artist || 'Unknown Artist')}</span>
+                        </div>
+                    </div>` : '';
+                const prevEl = document.getElementById('compact-swipe-prev');
+                const nextEl = document.getElementById('compact-swipe-next');
+                if (prevEl) prevEl.innerHTML = render(ui.getAdjacentTrack('prev'), 'Previous');
+                if (nextEl) nextEl.innerHTML = render(ui.getAdjacentTrack('next'), 'Next');
+            },
+            setPlayerLoading: (loading) => {
+                const island = document.getElementById('info-island');
+                const title = document.getElementById('p-title');
+                const artist = document.getElementById('p-artist');
+                island?.classList.toggle('is-loading', !!loading);
+                document.getElementById('album-art-wrapper')?.classList.toggle('is-loading', !!loading);
+                if (state.currentTrack) {
+                    title.textContent = state.currentTrack.name || 'Loading track';
+                    artist.textContent = loading ? `Loading • ${state.currentTrack.artist || 'Preparing audio'}` : (state.currentTrack.artist || 'Unknown Artist');
+                }
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.playbackState = loading ? 'none' : (state.playing ? 'playing' : 'paused');
+                }
+                updateMarquees();
+            },
+            updateMetadata: (track, options = {}) => {
                 document.getElementById('p-title').textContent = track.name; 
-                document.getElementById('p-artist').textContent = track.artist;
+                document.getElementById('p-artist').textContent = options.loading ? `Loading • ${track.artist || 'Preparing audio'}` : track.artist;
                 const safeArt = sanitizeImageUrl(track.img);
                 document.getElementById('curr-art-img').src = safeArt;
+                ui.setPlayerLoading(!!options.loading);
                 const likeBtn = document.getElementById('p-like-btn');
                 const isLiked = state.likedIds.some(item => (typeof item === 'string' ? item === track.id : item.id === track.id));
                 likeBtn.className = isLiked ? 'text-red-500 transition flex-shrink-0 ml-2' : 'text-gray-400 hover:text-red-500 transition flex-shrink-0 ml-2';
 
                 if ('mediaSession' in navigator) {
                     navigator.mediaSession.metadata = new MediaMetadata({
-                        title: track.name, artist: track.artist,
+                        title: track.name, artist: options.loading ? `Loading • ${track.artist || ''}` : track.artist,
                         artwork: [{ src: safeArt, sizes: '500x500', type: 'image/jpeg' }]
                     });
                     const safeSetHandler = (action, handler) => {
@@ -1448,6 +1600,13 @@
             },
             renderQueue: () => {
                 const listEl = document.getElementById('queue-list');
+                const clearBtn = document.getElementById('btn-clear-queue');
+                const manualCount = state.userQueue.length;
+                const autoCount = state.shuffle ? state.queue.filter((_, i) => i !== state.idx).length : Math.max(0, state.queue.length - state.idx - 1);
+                if (clearBtn) {
+                    clearBtn.disabled = manualCount + autoCount === 0;
+                    clearBtn.textContent = manualCount > 0 ? `Clear Queue (${manualCount})` : 'Clear Queue';
+                }
                 let html = '';
                 if (state.userQueue.length > 0) {
                     html += `<div class="text-[10px] text-white font-bold uppercase tracking-wider mb-1 pl-2 mt-1 drop-shadow-md">Queue</div>`;
@@ -1458,7 +1617,7 @@
                     html += `<div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1 pl-2 mt-3 drop-shadow-md">Autoplay</div>`;
                     html += upcoming.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`)).join('');
                 }
-                listEl.innerHTML = html === '' ? '<div class="text-xs text-gray-500 p-2">Queue is empty</div>' : html;
+                listEl.innerHTML = html === '' ? '<div class="text-xs text-gray-500 p-3 rounded-xl border border-white/5 bg-white/5">Queue is empty. Add songs and they will appear here instantly.</div>' : html;
                 updateMarquees();
             },
             renderHistory: () => {
@@ -1778,37 +1937,81 @@
             });
             container.addEventListener('mouseleave', () => { state.hoverProgress = -1; tooltip.classList.remove('visible'); });
 
-            // Mobile specific touch listeners for collapsed pill
-            let touchStartX = 0; let touchStartY = 0;
+            // Mobile compact player: drag horizontally to preview and slide into previous/next track.
+            let touchStartX = 0; let touchStartY = 0; let touchDeltaX = 0; let touchDeltaY = 0; let compactSwipeActive = false;
             const island = document.getElementById('info-island');
-            island.addEventListener('touchstart', e => { touchStartX = e.changedTouches[0].screenX; touchStartY = e.changedTouches[0].screenY; }, {passive: true});
-            island.addEventListener('touchend', e => {
-                const touchEndX = e.changedTouches[0].screenX; const touchEndY = e.changedTouches[0].screenY;
-                const deltaX = touchEndX - touchStartX; const deltaY = touchEndY - touchStartY;
-                if (deviceMode.isMobileUI() && !document.body.classList.contains('mobile-player-open')) {
-                    if (e.target.closest('button')) return;
-
-                    if (Math.abs(deltaX) < 12 && Math.abs(deltaY) < 12) {
-                        haptics.pulse('medium');
-                        ui.toggleMobilePlayer(true);
-                        return;
-                    }
-
-                    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 40) {
-                        haptics.pulse('soft');
-                        if (deltaX < 0) player.next(); else player.prev();
-                    } else if (deltaY < -40) {
-                        haptics.pulse('medium');
-                        ui.toggleMobilePlayer(true);
-                    }
+            const activeArea = document.getElementById('player-active-area');
+            const resetCompactSwipe = () => {
+                compactSwipeActive = false;
+                touchDeltaX = 0;
+                touchDeltaY = 0;
+                activeArea?.style.setProperty('--swipe-x', '0px');
+                activeArea?.classList.remove('swiping', 'swipe-left', 'swipe-right', 'commit-next', 'commit-prev');
+            };
+            island.addEventListener('touchstart', e => {
+                if (!deviceMode.isMobileUI() || document.body.classList.contains('mobile-player-open') || e.target.closest('button')) return;
+                touchStartX = e.changedTouches[0].screenX;
+                touchStartY = e.changedTouches[0].screenY;
+                touchDeltaX = 0;
+                touchDeltaY = 0;
+                compactSwipeActive = true;
+                ui.renderCompactSwipePreview();
+                activeArea?.classList.add('swiping');
+            }, {passive: true});
+            island.addEventListener('touchmove', e => {
+                if (!compactSwipeActive || !deviceMode.isMobileUI() || document.body.classList.contains('mobile-player-open')) return;
+                touchDeltaX = e.changedTouches[0].screenX - touchStartX;
+                touchDeltaY = e.changedTouches[0].screenY - touchStartY;
+                if (Math.abs(touchDeltaX) < 8 && Math.abs(touchDeltaY) < 8) return;
+                if (Math.abs(touchDeltaX) > Math.abs(touchDeltaY)) {
+                    const clamped = Math.max(-112, Math.min(112, touchDeltaX));
+                    activeArea?.style.setProperty('--swipe-x', `${clamped}px`);
+                    activeArea?.classList.toggle('swipe-left', clamped < -12);
+                    activeArea?.classList.toggle('swipe-right', clamped > 12);
                 }
             }, {passive: true});
+            island.addEventListener('touchend', e => {
+                if (!deviceMode.isMobileUI() || document.body.classList.contains('mobile-player-open')) return;
+                if (e.target.closest('button')) { resetCompactSwipe(); return; }
+                const touchEndX = e.changedTouches[0].screenX; const touchEndY = e.changedTouches[0].screenY;
+                const deltaX = touchEndX - touchStartX; const deltaY = touchEndY - touchStartY;
+
+                if (Math.abs(deltaX) < 12 && Math.abs(deltaY) < 12) {
+                    resetCompactSwipe();
+                    haptics.pulse('medium');
+                    ui.toggleMobilePlayer(true);
+                    return;
+                }
+
+                if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 56) {
+                    haptics.pulse('soft');
+                    const goNext = deltaX < 0;
+                    activeArea?.classList.add(goNext ? 'commit-next' : 'commit-prev');
+                    activeArea?.style.setProperty('--swipe-x', goNext ? '-130%' : '130%');
+                    setTimeout(() => {
+                        if (goNext) player.next(); else player.prev();
+                        resetCompactSwipe();
+                    }, 170);
+                } else if (deltaY < -40) {
+                    resetCompactSwipe();
+                    haptics.pulse('medium');
+                    ui.toggleMobilePlayer(true);
+                } else {
+                    resetCompactSwipe();
+                }
+            }, {passive: true});
+            island.addEventListener('touchcancel', resetCompactSwipe, {passive: true});
 
             let lastPersistSecond = -1;
             audio.addEventListener('timeupdate', () => {
                 if (Number.isFinite(audio.duration) && audio.duration > 0 && !state.isDragging) {
                     seekBar.max = audio.duration; seekBar.value = audio.currentTime;
                     currentProgress = audio.currentTime / audio.duration;
+                    if ('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function' && state.currentTrack) {
+                        try {
+                            navigator.mediaSession.setPositionState({ duration: audio.duration, playbackRate: audio.playbackRate || 1, position: audio.currentTime });
+                        } catch (e) {}
+                    }
                     if (currentProgress >= 0.9 && state.currentTrack && recommendationEvents.completedSongId !== state.currentTrack.id) {
                         recommendationEvents.completedSongId = state.currentTrack.id;
                         recommendationEvents.record('play_complete', state.currentTrack, {
