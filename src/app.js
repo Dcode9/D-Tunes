@@ -282,7 +282,7 @@
         // STATE & PERSISTENCE
         // ============================================
         const state = { 
-            queue: [], userQueue: [], idx: -1, playing: false, loaded: false, shuffle: false, repeat: 0, currentTrack: null,
+            queue: [], userQueue: [], idx: -1, playing: false, loading: false, loaded: false, shuffle: false, repeat: 0, currentTrack: null,
             likedIds: JSON.parse(localStorage.getItem('likedIds') || '[]'),
             likedArtists: JSON.parse(localStorage.getItem('likedArtists') || '[]'),
             playHistory: JSON.parse(localStorage.getItem('playHistory') || '[]'),
@@ -293,7 +293,7 @@
             equalizer: JSON.parse(localStorage.getItem('equalizerSettings') || '{"bass":0,"mid":0,"treble":0}'),
             forYouSongs: [],
             searchDebounce: null, hoverProgress: -1, lastHoverProgress: 0.5, isDragging: false, 
-            upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null
+            upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false
         };
 
         const deviceMode = {
@@ -585,8 +585,16 @@
                 recommendationEvents.maybeRecordSkip();
                 isPlaybackPending = true;
                 
-                state.upNextTriggered = false; 
+                state.upNextTriggered = false;
+                state.loading = true;
+                state.loaded = false;
+                state.currentTrack = { ...track };
                 document.getElementById('queue-wrapper').classList.remove('preview-expanded', 'track-swap-out');
+                document.getElementById('player-footer').classList.remove('translate-y-[150%]', 'opacity-0');
+                ui.updateMetadata(state.currentTrack, { loading: true });
+                ui.updatePlayBtn();
+                ui.renderQueue();
+                persist.save();
                 
                 try {
                     const freshDetails = await jiosaavnAPI.getSong(track.id);
@@ -594,11 +602,16 @@
                     
                     if (!playUrl) throw new Error('No URL');
                     
-                    track.url = playUrl; 
-                    audio.src = playUrl; state.currentTrack = track; state.loaded = true; 
+                    track = { ...track, ...freshDetails, url: playUrl };
+                    audio.preload = 'auto';
+                    audio.src = playUrl;
+                    audio.load();
+                    state.currentTrack = track;
+                    state.loaded = true;
+                    state.loading = true;
+                    ui.updateMetadata(track, { loading: true });
                     
-                    document.getElementById('player-footer').classList.remove('translate-y-[150%]', 'opacity-0');
-                    ui.enableControls(); await audio.play(); 
+                    ui.enableControls(); await audio.play();
                     const isRepeatStart = recommendationEvents.lastStartedSongId === track.id && Date.now() - recommendationEvents.currentPlayStartAt < 15 * 60 * 1000;
                     recommendationEvents.currentPlayStartAt = Date.now();
                     recommendationEvents.lastStartedSongId = track.id;
@@ -622,7 +635,12 @@
                     if(!document.getElementById('view-home').classList.contains('hidden')) homeView.renderRecentlyPlayed();
                     
                     persist.save();
-                } catch (error) { state.playing = false; ui.updatePlayBtn(); } 
+                } catch (error) {
+                    state.playing = false;
+                    state.loading = false;
+                    document.getElementById('info-island')?.classList.remove('is-loading');
+                    ui.updatePlayBtn();
+                } 
                 finally { isPlaybackPending = false; }
             },
             togglePlay: () => {
@@ -679,6 +697,15 @@
             toggleLike: () => { player.likeSong(); },
             addNext: (song) => { state.userQueue.unshift(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); persist.save(); },
             addToQueue: (song) => { state.userQueue.push(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); persist.save(); },
+            clearQueue: () => {
+                state.userQueue = [];
+                state.queue = state.currentTrack ? [state.currentTrack] : [];
+                state.idx = state.currentTrack ? 0 : -1;
+                state.upNextTriggered = false;
+                document.getElementById('queue-wrapper').classList.remove('preview-expanded', 'track-swap-out');
+                ui.renderQueue();
+                persist.save();
+            },
             showSimilarSongs: async () => {
                 if (!state.currentTrack || !window.recommendationClient) return;
                 const songs = await window.recommendationClient.fetchPlaylist('similar', { songId: state.currentTrack.id, limit: 25 });
@@ -703,6 +730,20 @@
         audio.addEventListener('pause', () => { 
             state.playing = false; ui.updatePlayBtn(); persist.save();
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+        });
+
+        ['loadstart', 'waiting', 'stalled'].forEach((eventName) => {
+            audio.addEventListener(eventName, () => {
+                if (!state.currentTrack) return;
+                state.loading = true;
+                ui.setPlayerLoading(true);
+            });
+        });
+        ['canplay', 'playing', 'loadeddata'].forEach((eventName) => {
+            audio.addEventListener(eventName, () => {
+                state.loading = false;
+                ui.setPlayerLoading(false);
+            });
         });
 
         audio.addEventListener('error', recoverFromAudioError);
@@ -881,6 +922,12 @@
                 if(expand) {
                     ui.closeMobileSearch();
                     document.body.classList.add('mobile-player-open');
+                    if (!state.mobileQueueAutoOpened) {
+                        state.mobileQueueAutoOpened = true;
+                        state.queueExpanded = true;
+                        document.getElementById('queue-wrapper').classList.add('queue-expanded');
+                        ui.switchQueueTab('upnext');
+                    }
                     requestAnimationFrame(resizeCanvas);
                     setTimeout(resizeCanvas, 120);
                     setTimeout(resizeCanvas, 320);
@@ -1062,6 +1109,54 @@
                 ui.renderEqualizerSettings();
                 applyEqualizer();
             },
+            clearAllData: () => {
+                const confirmed = window.confirm("Clear all D'Tunes data saved in this browser? This cannot be undone.");
+                if (!confirmed) return;
+                audio.pause();
+                audio.removeAttribute('src');
+                audio.load();
+                Object.keys(localStorage).forEach((key) => {
+                    if ([
+                        'likedIds', 'likedArtists', 'playHistory', 'artistPlayCounts', 'playlists', 'username',
+                        'audioQuality', 'equalizerSettings', 'playbackState', 'preferredLanguage'
+                    ].includes(key) || key.startsWith('recommendation')) {
+                        localStorage.removeItem(key);
+                    }
+                });
+                state.queue = [];
+                state.userQueue = [];
+                state.idx = -1;
+                state.playing = false;
+                state.loading = false;
+                state.loaded = false;
+                state.currentTrack = null;
+                state.likedIds = [];
+                state.likedArtists = [];
+                state.playHistory = [];
+                state.artistPlayCounts = {};
+                state.playlists = {};
+                state.username = 'Guest User';
+                state.quality = 'high';
+                state.equalizer = { bass: 0, mid: 0, treble: 0 };
+                state.forYouSongs = [];
+                state.queueExpanded = false;
+                document.getElementById('queue-wrapper').classList.remove('queue-expanded', 'preview-expanded', 'track-swap-out');
+                document.getElementById('player-footer').classList.add('translate-y-[150%]', 'opacity-0');
+                document.body.classList.remove('mobile-player-open');
+                document.getElementById('p-title').textContent = 'Not Playing';
+                document.getElementById('p-artist').textContent = 'Select song';
+                document.getElementById('curr-art-img').src = FALLBACK_ART;
+                ui.setPlayerLoading(false);
+                ui.updateProfileUI();
+                ui.renderEqualizerSettings();
+                applyEqualizer();
+                ui.renderPlaylists();
+                ui.renderLibraryLists();
+                ui.renderQueue();
+                ui.renderHistory();
+                ui.updatePlayBtn();
+                alert("D'Tunes data has been cleared.");
+            },
             createPlaylist: () => {
                 const name = document.getElementById('new-playlist-name').value.trim();
                 if(name && !state.playlists[name]) { 
@@ -1186,6 +1281,20 @@
                     <div class="w-full min-w-0 flex-1">
                         <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">Liked Songs</h3></div>
                         <p class="text-xs text-gray-400 mt-1">${state.likedIds.length} tracks</p>
+                    </div>
+                </div>`;
+
+                html += `
+                <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer create-playlist-card" onclick="ui.toggleModal(true)">
+                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center bg-gradient-to-br from-green-500/35 via-emerald-900/45 to-zinc-950 border border-green-300/20 group-hover:border-green-300/60 transition">
+                        <div class="absolute inset-0" style="background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.28), transparent 34%);"></div>
+                        <span class="relative w-14 h-14 rounded-full bg-green-500 text-black flex items-center justify-center shadow-xl shadow-green-500/25 group-hover:scale-110 transition">
+                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+                        </span>
+                    </div>
+                    <div class="w-full min-w-0 flex-1">
+                        <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">Create Playlist</h3></div>
+                        <p class="text-xs text-gray-400 mt-1">New mix</p>
                     </div>
                 </div>`;
                 
@@ -1373,18 +1482,34 @@
                     const el = document.getElementById(id); if(el) { el.classList.remove('disabled'); el.disabled = false; }
                 });
             },
-            updateMetadata: (track) => {
+            setPlayerLoading: (loading) => {
+                const island = document.getElementById('info-island');
+                const title = document.getElementById('p-title');
+                const artist = document.getElementById('p-artist');
+                island?.classList.toggle('is-loading', !!loading);
+                document.getElementById('album-art-wrapper')?.classList.toggle('is-loading', !!loading);
+                if (state.currentTrack) {
+                    title.textContent = state.currentTrack.name || 'Loading track';
+                    artist.textContent = loading ? `Loading • ${state.currentTrack.artist || 'Preparing audio'}` : (state.currentTrack.artist || 'Unknown Artist');
+                }
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.playbackState = loading ? 'none' : (state.playing ? 'playing' : 'paused');
+                }
+                updateMarquees();
+            },
+            updateMetadata: (track, options = {}) => {
                 document.getElementById('p-title').textContent = track.name; 
-                document.getElementById('p-artist').textContent = track.artist;
+                document.getElementById('p-artist').textContent = options.loading ? `Loading • ${track.artist || 'Preparing audio'}` : track.artist;
                 const safeArt = sanitizeImageUrl(track.img);
                 document.getElementById('curr-art-img').src = safeArt;
+                ui.setPlayerLoading(!!options.loading);
                 const likeBtn = document.getElementById('p-like-btn');
                 const isLiked = state.likedIds.some(item => (typeof item === 'string' ? item === track.id : item.id === track.id));
                 likeBtn.className = isLiked ? 'text-red-500 transition flex-shrink-0 ml-2' : 'text-gray-400 hover:text-red-500 transition flex-shrink-0 ml-2';
 
                 if ('mediaSession' in navigator) {
                     navigator.mediaSession.metadata = new MediaMetadata({
-                        title: track.name, artist: track.artist,
+                        title: track.name, artist: options.loading ? `Loading • ${track.artist || ''}` : track.artist,
                         artwork: [{ src: safeArt, sizes: '500x500', type: 'image/jpeg' }]
                     });
                     const safeSetHandler = (action, handler) => {
@@ -1448,6 +1573,13 @@
             },
             renderQueue: () => {
                 const listEl = document.getElementById('queue-list');
+                const clearBtn = document.getElementById('btn-clear-queue');
+                const manualCount = state.userQueue.length;
+                const autoCount = state.shuffle ? state.queue.filter((_, i) => i !== state.idx).length : Math.max(0, state.queue.length - state.idx - 1);
+                if (clearBtn) {
+                    clearBtn.disabled = manualCount + autoCount === 0;
+                    clearBtn.textContent = manualCount > 0 ? `Clear Queue (${manualCount})` : 'Clear Queue';
+                }
                 let html = '';
                 if (state.userQueue.length > 0) {
                     html += `<div class="text-[10px] text-white font-bold uppercase tracking-wider mb-1 pl-2 mt-1 drop-shadow-md">Queue</div>`;
@@ -1458,7 +1590,7 @@
                     html += `<div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1 pl-2 mt-3 drop-shadow-md">Autoplay</div>`;
                     html += upcoming.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`)).join('');
                 }
-                listEl.innerHTML = html === '' ? '<div class="text-xs text-gray-500 p-2">Queue is empty</div>' : html;
+                listEl.innerHTML = html === '' ? '<div class="text-xs text-gray-500 p-3 rounded-xl border border-white/5 bg-white/5">Queue is empty. Add songs and they will appear here instantly.</div>' : html;
                 updateMarquees();
             },
             renderHistory: () => {
@@ -1809,6 +1941,11 @@
                 if (Number.isFinite(audio.duration) && audio.duration > 0 && !state.isDragging) {
                     seekBar.max = audio.duration; seekBar.value = audio.currentTime;
                     currentProgress = audio.currentTime / audio.duration;
+                    if ('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function' && state.currentTrack) {
+                        try {
+                            navigator.mediaSession.setPositionState({ duration: audio.duration, playbackRate: audio.playbackRate || 1, position: audio.currentTime });
+                        } catch (e) {}
+                    }
                     if (currentProgress >= 0.9 && state.currentTrack && recommendationEvents.completedSongId !== state.currentTrack.id) {
                         recommendationEvents.completedSongId = state.currentTrack.id;
                         recommendationEvents.record('play_complete', state.currentTrack, {

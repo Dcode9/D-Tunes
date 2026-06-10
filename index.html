@@ -340,6 +340,13 @@
                     </div>
 
                     <div class="border-t border-white/10 pt-6">
+                        <div class="flex items-center justify-between gap-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 mb-6">
+                            <div>
+                                <h3 class="text-lg font-bold text-white mb-1">Reset D'Tunes</h3>
+                                <p class="text-sm text-gray-300">Clear playlists, likes, history, queue, settings, and saved playback from this browser.</p>
+                            </div>
+                            <button onclick="ui.clearAllData()" class="flex-shrink-0 rounded-full bg-red-500 px-4 py-2 text-sm font-black text-white shadow-lg shadow-red-500/20 hover:scale-105 transition">Clear All Data</button>
+                        </div>
                         <div class="flex items-center justify-between gap-3 mb-4">
                             <div>
                                 <h3 class="text-lg font-bold text-white mb-1">Equalizer</h3>
@@ -428,9 +435,12 @@
                 <!-- 2. BOTTOM ITEM: Expanding Lists Container -->
                 <div id="queue-expandable-area" class="order-2 hidden md:flex">
                     <div id="queue-full-content">
-                        <div id="queue-tabs" class="flex items-center gap-4 px-4 pt-4 pb-2 border-b border-white/5 flex-shrink-0 relative z-20">
-                            <button class="text-xs font-bold uppercase tracking-wider text-white" id="tab-upnext" onclick="ui.switchQueueTab('upnext')">Up Next</button>
-                            <button class="text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-300" id="tab-history" onclick="ui.switchQueueTab('history')">History</button>
+                        <div id="queue-tabs" class="flex items-center justify-between gap-3 px-4 pt-4 pb-2 border-b border-white/5 flex-shrink-0 relative z-20">
+                            <div class="flex items-center gap-4 min-w-0">
+                                <button class="text-xs font-bold uppercase tracking-wider text-white" id="tab-upnext" onclick="ui.switchQueueTab('upnext')">Up Next</button>
+                                <button class="text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-300" id="tab-history" onclick="ui.switchQueueTab('history')">History</button>
+                            </div>
+                            <button id="btn-clear-queue" onclick="player.clearQueue(); event.stopPropagation();" class="text-[10px] font-black uppercase tracking-wider text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-full px-3 py-1.5 transition disabled:opacity-40 disabled:pointer-events-none" disabled>Clear Queue</button>
                         </div>
                         <div class="pt-2 pb-1 overflow-y-auto custom-scrollbar flex flex-col gap-1 flex-1 px-2" id="queue-list"></div>
                         <div class="pt-2 pb-1 overflow-y-auto custom-scrollbar flex flex-col gap-1 flex-1 px-2 hidden" id="history-list"></div>
@@ -501,7 +511,7 @@
         </button>
     </nav>
 
-    <audio id="audio-el" crossorigin="anonymous" class="hidden"></audio>
+    <audio id="audio-el" crossorigin="anonymous" preload="auto" playsinline class="hidden"></audio>
 
     <script src="src/recommendationClient.js"></script>
     <script src="src/app.js"></script>
