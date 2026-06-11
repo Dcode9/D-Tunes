@@ -925,6 +925,7 @@
                     state.queueExpanded = true;
                     document.getElementById('queue-wrapper').classList.add('queue-expanded');
                     ui.switchQueueTab('upnext');
+                    document.dispatchEvent(new CustomEvent('mobile-player-opened'));
                     requestAnimationFrame(resizeCanvas);
                     setTimeout(resizeCanvas, 120);
                     setTimeout(resizeCanvas, 320);
@@ -2001,6 +2002,46 @@
                 }
             }, {passive: true});
             island.addEventListener('touchcancel', resetCompactSwipe, {passive: true});
+
+            // Expanded mobile player: let the sheet scroll to the queue, but collapse
+            // when the user returns to the top or pulls down from the top.
+            const playerFooter = document.getElementById('player-footer');
+            let expandedPlayerLastScrollTop = 0;
+            let expandedPlayerTouchStartY = 0;
+            let expandedPlayerStartedAtTop = false;
+
+            const resetExpandedPlayerScroll = () => {
+                expandedPlayerLastScrollTop = 0;
+                if (playerFooter) playerFooter.scrollTop = 0;
+            };
+
+            playerFooter?.addEventListener('scroll', () => {
+                if (!deviceMode.isMobileUI() || !document.body.classList.contains('mobile-player-open')) return;
+                const currentTop = playerFooter.scrollTop;
+                if (expandedPlayerLastScrollTop > 72 && currentTop <= 2) {
+                    ui.toggleMobilePlayer(false);
+                    return;
+                }
+                expandedPlayerLastScrollTop = currentTop;
+            }, {passive: true});
+
+            playerFooter?.addEventListener('touchstart', e => {
+                if (!deviceMode.isMobileUI() || !document.body.classList.contains('mobile-player-open')) return;
+                expandedPlayerTouchStartY = e.changedTouches[0].clientY;
+                expandedPlayerStartedAtTop = playerFooter.scrollTop <= 2;
+            }, {passive: true});
+
+            playerFooter?.addEventListener('touchmove', e => {
+                if (!deviceMode.isMobileUI() || !document.body.classList.contains('mobile-player-open') || !expandedPlayerStartedAtTop) return;
+                const pullDistance = e.changedTouches[0].clientY - expandedPlayerTouchStartY;
+                if (pullDistance > 58) {
+                    expandedPlayerStartedAtTop = false;
+                    haptics.pulse('soft');
+                    ui.toggleMobilePlayer(false);
+                }
+            }, {passive: true});
+
+            document.addEventListener('mobile-player-opened', resetExpandedPlayerScroll);
 
             let lastPersistSecond = -1;
             audio.addEventListener('timeupdate', () => {
