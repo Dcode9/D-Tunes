@@ -1242,3 +1242,40 @@ html[data-ui-mode="mobile"] body.mobile-player-open .mobile-queue-btn {
         gap: 8px;
     }
 }
+
+/* Mobile expanded player final layout fixes: art, controls, then queue/history. */
+html[data-ui-mode="mobile"] #player-footer.opacity-0,
+html[data-ui-mode="mobile"] #player-footer.opacity-0 #queue-anchor,
+html[data-ui-mode="mobile"] #player-footer.opacity-0 #player-active-area,
+html[data-ui-mode="mobile"] #player-footer.opacity-0 #info-island {
+    pointer-events: none !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-search-open #player-footer.opacity-0 {
+    opacity: 0 !important;
+    transform: translateY(150%) !important;
+    pointer-events: none !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #queue-anchor,
+html[data-ui-mode="mobile"] body.mobile-player-open #queue-wrapper {
+    display: contents;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #queue-blur-bg {
+    display: none;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-active-area {
+    order: 1;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-card {
+    order: 2;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #queue-expandable-area {
+    order: 3;
+    width: 100%;
+    min-width: 0;
+}

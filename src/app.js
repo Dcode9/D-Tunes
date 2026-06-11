@@ -920,6 +920,7 @@
             toggleMobilePlayer: (expand) => {
                 if (!deviceMode.isMobileUI()) return;
                 if(expand) {
+                    if (!state.currentTrack) return;
                     ui.closeMobileSearch();
                     document.body.classList.add('mobile-player-open');
                     state.queueExpanded = true;
@@ -1950,7 +1951,7 @@
                 activeArea?.classList.remove('swiping', 'swipe-left', 'swipe-right', 'commit-next', 'commit-prev');
             };
             island.addEventListener('touchstart', e => {
-                if (!deviceMode.isMobileUI() || document.body.classList.contains('mobile-player-open') || e.target.closest('button')) return;
+                if (!deviceMode.isMobileUI() || !state.currentTrack || document.body.classList.contains('mobile-player-open') || e.target.closest('button')) return;
                 touchStartX = e.changedTouches[0].screenX;
                 touchStartY = e.changedTouches[0].screenY;
                 touchDeltaX = 0;
@@ -1972,7 +1973,7 @@
                 }
             }, {passive: true});
             island.addEventListener('touchend', e => {
-                if (!deviceMode.isMobileUI() || document.body.classList.contains('mobile-player-open')) return;
+                if (!deviceMode.isMobileUI() || !state.currentTrack || document.body.classList.contains('mobile-player-open')) return;
                 if (e.target.closest('button')) { resetCompactSwipe(); return; }
                 const touchEndX = e.changedTouches[0].screenX; const touchEndY = e.changedTouches[0].screenY;
                 const deltaX = touchEndX - touchStartX; const deltaY = touchEndY - touchStartY;
