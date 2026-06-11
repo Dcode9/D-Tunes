@@ -1,6 +1,6 @@
 (function () {
   const SUPABASE_URL = window.DVERSE_SUPABASE_URL || 'https://gmwieijbrrztukqpfwkg.supabase.co';
-  const SUPABASE_ANON_KEY = window.DVERSE_SUPABASE_ANON_KEY || '';
+  const SUPABASE_ANON_KEY = window.DVERSE_SUPABASE_ANON_KEY || 'sb_publishable_KX3MYtV84QJJdy9bPDuMEA_V99sLKSE';
 
   const ready = Boolean(window.supabase && SUPABASE_ANON_KEY);
   const client = ready ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
