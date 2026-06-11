@@ -293,7 +293,7 @@
             equalizer: JSON.parse(localStorage.getItem('equalizerSettings') || '{"bass":0,"mid":0,"treble":0}'),
             forYouSongs: [],
             searchDebounce: null, hoverProgress: -1, lastHoverProgress: 0.5, isDragging: false, 
-            upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null
+            upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false
         };
 
         const deviceMode = {
@@ -923,10 +923,12 @@
                     if (!state.currentTrack) return;
                     ui.closeMobileSearch();
                     document.body.classList.add('mobile-player-open');
-                    state.queueExpanded = true;
-                    document.getElementById('queue-wrapper').classList.add('queue-expanded');
-                    ui.switchQueueTab('upnext');
-                    document.dispatchEvent(new CustomEvent('mobile-player-opened'));
+                    if (!state.mobileQueueAutoOpened) {
+                        state.mobileQueueAutoOpened = true;
+                        state.queueExpanded = true;
+                        document.getElementById('queue-wrapper').classList.add('queue-expanded');
+                        ui.switchQueueTab('upnext');
+                    }
                     requestAnimationFrame(resizeCanvas);
                     setTimeout(resizeCanvas, 120);
                     setTimeout(resizeCanvas, 320);
@@ -1480,36 +1482,6 @@
                 ['seek-bar-container', 'seek-bar', 'btn-play', 'btn-prev', 'btn-next', 'p-like-btn', 'btn-shuffle', 'btn-repeat'].forEach(id => {
                     const el = document.getElementById(id); if(el) { el.classList.remove('disabled'); el.disabled = false; }
                 });
-            },
-            getAdjacentTrack: (direction) => {
-                if (direction === 'next') {
-                    if (state.userQueue.length > 0) return state.userQueue[0];
-                    if (state.queue.length <= 1) return null;
-                    const nextIdx = state.shuffle
-                        ? state.queue.findIndex((_, i) => i !== state.idx)
-                        : (state.idx + 1) % state.queue.length;
-                    return nextIdx >= 0 ? state.queue[nextIdx] : null;
-                }
-                if (state.queue.length > 1) {
-                    const prevIdx = state.idx <= 0 ? state.queue.length - 1 : state.idx - 1;
-                    return state.queue[prevIdx] || null;
-                }
-                return state.playHistory[1] || null;
-            },
-            renderCompactSwipePreview: () => {
-                const render = (song, label) => song ? `
-                    <div class="mobile-swipe-label">${label}</div>
-                    <div class="mobile-swipe-card">
-                        <img src="${utils.escapeHtml(sanitizeImageUrl(song.img))}" onerror="this.src='${FALLBACK_ART}'" alt="">
-                        <div class="min-w-0">
-                            <p>${utils.escapeHtml(song.name)}</p>
-                            <span>${utils.escapeHtml(song.artist || 'Unknown Artist')}</span>
-                        </div>
-                    </div>` : '';
-                const prevEl = document.getElementById('compact-swipe-prev');
-                const nextEl = document.getElementById('compact-swipe-next');
-                if (prevEl) prevEl.innerHTML = render(ui.getAdjacentTrack('prev'), 'Previous');
-                if (nextEl) nextEl.innerHTML = render(ui.getAdjacentTrack('next'), 'Next');
             },
             setPlayerLoading: (loading) => {
                 const island = document.getElementById('info-island');
