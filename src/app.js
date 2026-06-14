@@ -294,7 +294,7 @@
             equalizer: JSON.parse(localStorage.getItem('equalizerSettings') || '{"bass":0,"mid":0,"treble":0}'),
             forYouSongs: [],
             searchDebounce: null, hoverProgress: -1, lastHoverProgress: 0.5, isDragging: false, 
-            upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false
+            upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false, nextTrackPreloadId: null
         };
 
         const deviceMode = {
@@ -779,9 +779,57 @@
         const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         audio.setAttribute('playsinline', '');
         audio.setAttribute('webkit-playsinline', '');
-        audio.preload = 'metadata';
+        audio.preload = 'auto';
+        const preloadAudio = new Audio();
+        preloadAudio.preload = 'auto';
+        preloadAudio.crossOrigin = 'anonymous';
         let isPlaybackPending = false;
         let isAudioRecoveryPending = false;
+
+
+        const getUpcomingTrack = () => {
+            if (state.userQueue.length > 0) return state.userQueue[0];
+            if (state.queue.length === 0) return null;
+            if (state.shuffle) return state.queue.find((_, i) => i !== state.idx) || null;
+            return state.idx >= 0 && state.idx < state.queue.length - 1 ? state.queue[state.idx + 1] : null;
+        };
+
+        const primeNextTrack = async () => {
+            const nextTrack = getUpcomingTrack();
+            if (!nextTrack?.id || state.nextTrackPreloadId === nextTrack.id) return;
+            state.nextTrackPreloadId = nextTrack.id;
+            try {
+                const freshDetails = nextTrack.url ? null : await jiosaavnAPI.getSong(nextTrack.id);
+                const playUrl = freshDetails?.url || nextTrack.url;
+                if (!playUrl || state.nextTrackPreloadId !== nextTrack.id) return;
+                Object.assign(nextTrack, freshDetails || {}, { url: playUrl });
+                preloadAudio.src = playUrl;
+                preloadAudio.load();
+            } catch (e) {}
+        };
+
+        const updateMediaPosition = () => {
+            if (!('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function' || !state.currentTrack) return;
+            const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : Number(state.currentTrack.duration) || 0;
+            const position = Number.isFinite(audio.currentTime) ? Math.max(0, Math.min(audio.currentTime, duration || audio.currentTime)) : 0;
+            if (duration > 0) {
+                try { navigator.mediaSession.setPositionState({ duration, playbackRate: audio.playbackRate || 1, position }); } catch (e) {}
+            }
+        };
+
+        const requestPlay = async () => {
+            if (!state.loaded) return;
+            try {
+                if (audioContext && audioContext.state === 'suspended') await audioContext.resume();
+                if (!isAudioContextInitialized) setupAudioContext();
+                await audio.play();
+            } catch (e) { state.playing = false; ui.updatePlayBtn(); }
+        };
+
+        const requestPause = () => {
+            if (!state.loaded) return;
+            audio.pause();
+        };
 
         const recoverFromAudioError = async () => {
             if (!state.currentTrack || isAudioRecoveryPending) return;
@@ -905,7 +953,7 @@
                     if (audioContext && audioContext.state === 'suspended') audioContext.resume();
                     if (!isAudioContextInitialized) setupAudioContext();
                     
-                    ui.updateMetadata(track); ui.renderQueue(); 
+                    ui.updateMetadata(track); ui.renderQueue(); primeNextTrack(); 
                     
                     state.playHistory = state.playHistory.filter(t => t.id !== track.id);
                     state.playHistory.unshift(track);
@@ -927,7 +975,7 @@
             },
             togglePlay: () => {
                 if(!state.loaded) return;
-                if(state.playing) { audio.pause(); } else { audio.play(); if (!isAudioContextInitialized) setupAudioContext(); }
+                if(state.playing || !audio.paused) { requestPause(); } else { requestPlay(); }
             },
             next: () => { 
                 if (state.userQueue.length > 0) { const nextSong = state.userQueue.shift(); player.playDirect(nextSong); } 
@@ -979,8 +1027,8 @@
                 if (!document.getElementById('view-playlist').classList.contains('hidden') && document.getElementById('playlist-view-title').textContent === 'Liked Songs') { ui.openPlaylist('Liked Songs'); }
             },
             toggleLike: () => { player.likeSong(); },
-            addNext: (song) => { state.userQueue.unshift(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); persist.save(); },
-            addToQueue: (song) => { state.userQueue.push(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); persist.save(); },
+            addNext: (song) => { state.userQueue.unshift(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); primeNextTrack(); persist.save(); },
+            addToQueue: (song) => { state.userQueue.push(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); primeNextTrack(); persist.save(); },
             clearQueue: () => {
                 state.userQueue = [];
                 state.queue = state.currentTrack ? [state.currentTrack] : [];
@@ -988,6 +1036,7 @@
                 state.upNextTriggered = false;
                 document.getElementById('queue-wrapper').classList.remove('preview-expanded', 'track-swap-out');
                 ui.renderQueue();
+                primeNextTrack();
                 persist.save();
             },
             showSimilarSongs: async () => {
@@ -1031,6 +1080,13 @@
         });
 
         audio.addEventListener('error', recoverFromAudioError);
+
+        setInterval(() => {
+            if (!state.playing || state.repeat === 2 || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+            if (audio.ended || audio.duration - audio.currentTime <= 0.35) {
+                player.next();
+            }
+        }, 1000);
 
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
@@ -1795,7 +1851,7 @@
                     artist.textContent = loading ? `Loading • ${state.currentTrack.artist || 'Preparing audio'}` : (state.currentTrack.artist || 'Unknown Artist');
                 }
                 if ('mediaSession' in navigator) {
-                    navigator.mediaSession.playbackState = loading ? 'none' : (state.playing ? 'playing' : 'paused');
+                    navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused';
                 }
                 updateMarquees();
             },
@@ -1817,15 +1873,15 @@
                     const safeSetHandler = (action, handler) => {
                         try { navigator.mediaSession.setActionHandler(action, handler); } catch (e) {}
                     };
-                    safeSetHandler('play', player.togglePlay);
-                    safeSetHandler('pause', player.togglePlay);
+                    safeSetHandler('play', requestPlay);
+                    safeSetHandler('pause', requestPause);
                     safeSetHandler('previoustrack', player.prev);
                     safeSetHandler('nexttrack', player.next);
-                    safeSetHandler('seekbackward', (details) => { audio.currentTime = Math.max(audio.currentTime - (details.seekOffset || 10), 0); });
-                    safeSetHandler('seekforward', (details) => { audio.currentTime = Math.min(audio.currentTime + (details.seekOffset || 10), audio.duration || 0); });
+                    safeSetHandler('seekbackward', (details) => { audio.currentTime = Math.max(audio.currentTime - (details.seekOffset || 10), 0); updateMediaPosition(); });
+                    safeSetHandler('seekforward', (details) => { audio.currentTime = Math.min(audio.currentTime + (details.seekOffset || 10), audio.duration || 0); updateMediaPosition(); });
                     safeSetHandler('seekto', (details) => {
                         if (!details || !Number.isFinite(details.seekTime)) return;
-                        audio.currentTime = Math.max(0, Math.min(details.seekTime, audio.duration || details.seekTime));
+                        audio.currentTime = Math.max(0, Math.min(details.seekTime, audio.duration || details.seekTime)); updateMediaPosition();
                     });
                 }
                 
@@ -2185,6 +2241,7 @@
                 currentProgress = Math.max(0, Math.min(1, nextTime / audio.duration));
                 if (Math.abs(audio.currentTime - nextTime) > 0.08) {
                     audio.currentTime = nextTime;
+                    updateMediaPosition();
                 }
             });
 
@@ -2193,6 +2250,7 @@
                 const nextTime = parseFloat(seekBar.value);
                 if (!Number.isFinite(nextTime)) return;
                 audio.currentTime = nextTime;
+                updateMediaPosition();
                 currentProgress = Math.max(0, Math.min(1, nextTime / audio.duration));
                 setDragging(false);
             });
@@ -2200,6 +2258,8 @@
             audio.addEventListener('loadedmetadata', () => {
                 if (Number.isFinite(audio.duration) && audio.duration > 0) {
                     seekBar.max = audio.duration;
+                    updateMediaPosition();
+                    primeNextTrack();
                 }
             });
 
@@ -2323,9 +2383,7 @@
                     seekBar.max = audio.duration; seekBar.value = audio.currentTime;
                     currentProgress = audio.currentTime / audio.duration;
                     if ('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function' && state.currentTrack) {
-                        try {
-                            navigator.mediaSession.setPositionState({ duration: audio.duration, playbackRate: audio.playbackRate || 1, position: audio.currentTime });
-                        } catch (e) {}
+                        updateMediaPosition();
                     }
                     if (currentProgress >= 0.9 && state.currentTrack && recommendationEvents.completedSongId !== state.currentTrack.id) {
                         recommendationEvents.completedSongId = state.currentTrack.id;
@@ -2343,13 +2401,14 @@
 
                     // Morphing 10s Preview Logic 
                     const timeRemaining = audio.duration - audio.currentTime;
-                    const hasNext = state.userQueue.length > 0 || (state.queue.length > 0 && state.idx < state.queue.length - 1);
+                    const hasNext = Boolean(getUpcomingTrack());
                     const wrap = document.getElementById('queue-wrapper');
                     
                     if (timeRemaining <= 10 && timeRemaining > 0 && hasNext) {
                         if (!state.upNextTriggered && !state.queueExpanded) {
                             state.upNextTriggered = true;
-                            let nextTrack = state.userQueue.length > 0 ? state.userQueue[0] : (state.shuffle ? state.queue.filter((_, i) => i !== state.idx)[0] : state.queue[state.idx + 1]);
+                            let nextTrack = getUpcomingTrack();
+                            primeNextTrack();
                             if (nextTrack) {
                                 document.getElementById('queue-preview-pill').innerHTML = ui.createSongPillInner(nextTrack);
                                 document.getElementById('queue-preview-pill').className = "glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/90 transition-all duration-400";
@@ -2378,11 +2437,11 @@
                     wrap.classList.add('track-swap-out');
                     setTimeout(() => {
                         wrap.classList.remove('preview-expanded', 'track-swap-out');
-                        if(state.repeat === 2) { audio.currentTime = 0; audio.play(); state.upNextTriggered = false; } else player.next();
-                    }, 400); // Wait for CSS swap out morph
+                        if(state.repeat === 2) { audio.currentTime = 0; requestPlay(); state.upNextTriggered = false; } else player.next();
+                    }, document.visibilityState === 'hidden' ? 0 : 400); // Wait for CSS swap out morph only when visible
                 } else {
                     wrap.classList.remove('preview-expanded', 'track-swap-out');
-                    if(state.repeat === 2) { audio.currentTime = 0; audio.play(); state.upNextTriggered = false; } else player.next();
+                    if(state.repeat === 2) { audio.currentTime = 0; requestPlay(); state.upNextTriggered = false; } else player.next();
                 }
             });
 

@@ -20,6 +20,8 @@
         ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
 
+        .beta-label { display: inline-flex; align-items: center; height: 1.25rem; padding: 0 0.45rem; border-radius: 9999px; border: 1px solid rgba(62,207,142,0.45); background: rgba(62,207,142,0.12); color: #86efac; font-size: 0.62rem; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1; }
+
         /* --- Universal Glass --- */
         .glass-panel {
             background: rgba(255, 255, 255, 0.04);
@@ -703,21 +705,29 @@ html[data-ui-mode="mobile"] body.mobile-player-open .mobile-queue-btn.queue-open
 }
 
 #album-art-wrapper.is-loading::before {
-    content: '';
+    content: 'Loading';
     position: absolute;
-    right: 8px;
-    bottom: 8px;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
     z-index: 4;
-    width: 18px;
-    height: 18px;
+    height: 4px;
     border-radius: 9999px;
-    border: 2px solid rgba(255,255,255,0.25);
-    border-top-color: #3ecf8e;
-    animation: spin 0.8s linear infinite;
+    overflow: hidden;
+    color: transparent;
+    background: linear-gradient(90deg, rgba(62,207,142,0.25), rgba(62,207,142,0.95), rgba(62,207,142,0.25));
+    background-size: 220% 100%;
+    animation: album-loading-bar 1.05s ease-in-out infinite;
 }
 
 @keyframes album-loading-sheen {
     to { transform: translateX(100%); }
+}
+
+@keyframes album-loading-bar {
+    0% { background-position: 100% 0; opacity: 0.55; }
+    50% { opacity: 1; }
+    100% { background-position: -100% 0; opacity: 0.55; }
 }
 
 html[data-ui-mode="mobile"] body.mobile-player-open {
