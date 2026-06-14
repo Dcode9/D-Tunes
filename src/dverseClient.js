@@ -9,6 +9,54 @@
   const authRedirectUrl = () => `${window.location.origin}/`;
   let portalSessionPromise = null;
   let currentSession = null;
+  let checkedUrlHandoff = false;
+
+  function base64UrlDecode(value) {
+    const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=');
+    const binary = atob(padded);
+    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+
+  function takeSessionHandoffFromUrl() {
+    if (checkedUrlHandoff || typeof window === 'undefined') return null;
+    checkedUrlHandoff = true;
+
+    const hashText = window.location.hash ? window.location.hash.slice(1) : '';
+    if (!hashText || !hashText.includes('dverse_session=')) return null;
+
+    const params = new URLSearchParams(hashText.startsWith('?') ? hashText.slice(1) : hashText);
+    const encodedSession = params.get('dverse_session');
+    params.delete('dverse_session');
+
+    const cleanHash = params.toString();
+    const cleanUrl = `${window.location.pathname}${window.location.search}${cleanHash ? `#${cleanHash}` : ''}`;
+    window.history.replaceState({}, document.title, cleanUrl);
+
+    if (!encodedSession) return null;
+    try {
+      return base64UrlDecode(encodedSession);
+    } catch (error) {
+      console.warn('[DVerse] Ignored invalid session handoff:', error);
+      return null;
+    }
+  }
+
+  async function restoreSessionFromHandoff() {
+    if (!client) return null;
+    const session = takeSessionHandoffFromUrl();
+    if (!session?.access_token || !session?.refresh_token) return null;
+
+    const { data, error } = await client.auth.setSession({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token
+    });
+    if (error) throw error;
+    currentSession = data.session || null;
+    if (currentSession) syncSessionToPortal(currentSession);
+    return currentSession;
+  }
 
   function bridgeRequest(message, timeoutMs = 2500) {
     if (!PORTAL_ORIGIN || window.location.origin === PORTAL_ORIGIN || typeof document === 'undefined') {
@@ -53,6 +101,9 @@
 
   async function bootstrapFromPortal() {
     if (!client) return null;
+    const handedOffSession = await restoreSessionFromHandoff();
+    if (handedOffSession) return handedOffSession;
+
     const { data, error } = await client.auth.getSession();
     if (error) throw error;
     if (data.session) {

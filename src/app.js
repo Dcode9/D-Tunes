@@ -560,13 +560,27 @@
             updateUI: () => {
                 const signedIn = Boolean(cloudLibrary.session);
                 const email = cloudLibrary.session?.user?.email || '';
+                const meta = cloudLibrary.session?.user?.user_metadata || {};
+                const displayName = meta.full_name || meta.name || email || state.username || "D'Verse User";
+                const avatarUrl = meta.avatar_url || meta.picture || `https://placehold.co/100x100/111/fff?text=${encodeURIComponent(displayName.charAt(0).toUpperCase())}`;
                 const label = document.getElementById('dverse-account-label');
                 const authButton = document.getElementById('dverse-auth-button');
                 const settingsButton = document.getElementById('dverse-settings-auth-button');
                 if (label) label.textContent = signedIn ? email : "D'Verse Cloud";
                 if (authButton) authButton.textContent = signedIn ? 'Sign out' : 'Sign in';
                 if (settingsButton) settingsButton.textContent = signedIn ? 'Sign out' : 'Sign in';
-                if (!signedIn) cloudLibrary.setStatus('Sign in to sync history, likes, and playlists.');
+                if (signedIn) {
+                    const username = document.getElementById('dd-username');
+                    const headerAvatar = document.getElementById('header-avatar');
+                    const mobileAvatar = document.getElementById('mobile-nav-avatar');
+                    if (username) username.textContent = displayName;
+                    if (headerAvatar) headerAvatar.src = avatarUrl;
+                    if (mobileAvatar) mobileAvatar.src = avatarUrl;
+                    cloudLibrary.setStatus(`Signed in as ${email || displayName}. Syncing library...`);
+                } else {
+                    ui.updateProfileUI();
+                    cloudLibrary.setStatus('Sign in to sync history, likes, and playlists.');
+                }
             },
             toggleAuth: async () => {
                 try {
