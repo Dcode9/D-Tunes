@@ -266,6 +266,7 @@
                     
                     state.playlists[baseName] = jioSongs;
                     localStorage.setItem('playlists', JSON.stringify(state.playlists));
+                    cloudLibrary.savePlaylist(baseName);
                     
                     ui.toggleSpotifyModal(false);
                     ui.renderPlaylists();
@@ -447,6 +448,156 @@
                 } catch(e) {}
             }
         };
+
+        const cloudLibrary = {
+            session: null,
+            syncing: false,
+            ready: () => Boolean(window.dverse?.isConfigured && window.dverse?.dtunes),
+            songId: (song) => String(typeof song === 'object' ? song?.id : song || ''),
+            compactSongs: (songs) => {
+                const seen = new Set();
+                return (songs || []).filter((song) => {
+                    const id = cloudLibrary.songId(song);
+                    if (!id || seen.has(id)) return false;
+                    seen.add(id);
+                    return true;
+                });
+            },
+            resolveSong: (item) => {
+                if (!item) return null;
+                if (typeof item === 'object') return item;
+                const id = String(item);
+                return state.currentTrack?.id === id ? state.currentTrack
+                    : state.playHistory.find(song => song.id === id)
+                    || state.queue.find(song => song.id === id)
+                    || state.userQueue.find(song => song.id === id)
+                    || null;
+            },
+            setStatus: (message) => {
+                const profile = document.getElementById('dverse-account-status');
+                const settings = document.getElementById('dverse-settings-status');
+                if (profile) profile.textContent = message;
+                if (settings) settings.textContent = message;
+            },
+            updateUI: () => {
+                const signedIn = Boolean(cloudLibrary.session);
+                const email = cloudLibrary.session?.user?.email || '';
+                const label = document.getElementById('dverse-account-label');
+                const authButton = document.getElementById('dverse-auth-button');
+                const settingsButton = document.getElementById('dverse-settings-auth-button');
+                if (label) label.textContent = signedIn ? email : "D'Verse Cloud";
+                if (authButton) authButton.textContent = signedIn ? 'Sign out' : 'Sign in';
+                if (settingsButton) settingsButton.textContent = signedIn ? 'Sign out' : 'Sign in';
+                if (!signedIn) cloudLibrary.setStatus('Sign in to sync history, likes, and playlists.');
+            },
+            toggleAuth: async () => {
+                try {
+                    if (!cloudLibrary.ready()) throw new Error('D\'Verse Supabase client is not available.');
+                    if (cloudLibrary.session) await window.dverse.signOut();
+                    else await window.dverse.signInWithGoogle();
+                } catch (error) {
+                    cloudLibrary.setStatus(error?.message || 'D\'Verse sign-in failed.');
+                }
+            },
+            init: async () => {
+                if (!cloudLibrary.ready()) {
+                    cloudLibrary.updateUI();
+                    cloudLibrary.setStatus('D\'Verse sync is not configured.');
+                    return;
+                }
+                window.dverse.onAuthStateChange((_event, session) => {
+                    cloudLibrary.session = session;
+                    cloudLibrary.updateUI();
+                    if (session) cloudLibrary.load();
+                });
+                try {
+                    cloudLibrary.session = await window.dverse.getSession();
+                    cloudLibrary.updateUI();
+                    if (cloudLibrary.session) await cloudLibrary.load();
+                } catch (error) {
+                    cloudLibrary.setStatus(error?.message || 'Could not check D\'Verse session.');
+                }
+            },
+            load: async () => {
+                if (!cloudLibrary.session || cloudLibrary.syncing) return;
+                cloudLibrary.syncing = true;
+                cloudLibrary.setStatus('Syncing your D\'Tunes library...');
+                try {
+                    const [history, likes, playlists] = await Promise.all([
+                        window.dverse.dtunes.listHistory(),
+                        window.dverse.dtunes.listLikes(),
+                        window.dverse.dtunes.listPlaylists()
+                    ]);
+
+                    state.playHistory = cloudLibrary.compactSongs([...(history || []), ...state.playHistory]).slice(0, 100);
+                    state.likedIds = cloudLibrary.compactSongs([...(likes || []), ...state.likedIds]);
+                    const mergedPlaylists = { ...state.playlists };
+                    (playlists || []).forEach((playlist) => {
+                        const localSongs = mergedPlaylists[playlist.name] || [];
+                        mergedPlaylists[playlist.name] = cloudLibrary.compactSongs([...(playlist.songs || []), ...localSongs]);
+                    });
+                    state.playlists = mergedPlaylists;
+
+                    localStorage.setItem('playHistory', JSON.stringify(state.playHistory));
+                    localStorage.setItem('likedIds', JSON.stringify(state.likedIds));
+                    localStorage.setItem('playlists', JSON.stringify(state.playlists));
+
+                    ui.renderPlaylists();
+                    ui.renderLibraryLists();
+                    ui.renderHistory();
+                    homeView.renderRecentlyPlayed();
+                    await cloudLibrary.pushLocalSnapshot();
+                    cloudLibrary.setStatus('Synced with D\'Verse Cloud.');
+                } catch (error) {
+                    console.error('[DVerse] DTunes sync failed:', error);
+                    cloudLibrary.setStatus(error?.message || 'Could not sync D\'Tunes library.');
+                } finally {
+                    cloudLibrary.syncing = false;
+                }
+            },
+            pushLocalSnapshot: async () => {
+                if (!cloudLibrary.session) return;
+                const likedSongs = state.likedIds.map(cloudLibrary.resolveSong).filter(Boolean);
+                for (const song of likedSongs) {
+                    await window.dverse.dtunes.setLiked(song, true);
+                }
+                for (const song of state.playHistory.slice().reverse().slice(-50)) {
+                    await window.dverse.dtunes.recordPlay(song, { source: 'local-import' });
+                }
+                for (const [name, songs] of Object.entries(state.playlists)) {
+                    await window.dverse.dtunes.savePlaylist(name, songs);
+                }
+            },
+            recordPlay: (song) => {
+                if (!cloudLibrary.session || !song?.id) return;
+                window.dverse.dtunes.recordPlay(song, { source: 'dtunes-web' }).catch((error) => {
+                    console.error('[DVerse] Failed to record play:', error);
+                    cloudLibrary.setStatus('Could not save latest play.');
+                });
+            },
+            setLiked: (song, liked) => {
+                if (!cloudLibrary.session || !song?.id) return;
+                window.dverse.dtunes.setLiked(song, liked).catch((error) => {
+                    console.error('[DVerse] Failed to sync like:', error);
+                    cloudLibrary.setStatus('Could not sync liked songs.');
+                });
+            },
+            savePlaylist: (name) => {
+                if (!cloudLibrary.session || !name || !state.playlists[name]) return;
+                window.dverse.dtunes.savePlaylist(name, state.playlists[name]).catch((error) => {
+                    console.error('[DVerse] Failed to sync playlist:', error);
+                    cloudLibrary.setStatus('Could not sync playlist changes.');
+                });
+            },
+            deletePlaylist: (name) => {
+                if (!cloudLibrary.session || !name) return;
+                window.dverse.dtunes.deletePlaylist(name).catch((error) => {
+                    console.error('[DVerse] Failed to delete cloud playlist:', error);
+                    cloudLibrary.setStatus('Could not delete cloud playlist.');
+                });
+            }
+        };
+        window.cloudLibrary = cloudLibrary;
 
         // ============================================
         // CONTEXT MENU LOGIC
@@ -630,6 +781,7 @@
                     state.playHistory.unshift(track);
                     if(state.playHistory.length > 100) state.playHistory.pop();
                     localStorage.setItem('playHistory', JSON.stringify(state.playHistory));
+                    cloudLibrary.recordPlay(track);
                     
                     ui.renderHistory();
                     if(!document.getElementById('view-home').classList.contains('hidden')) homeView.renderRecentlyPlayed();
@@ -681,6 +833,7 @@
                 }
 
                 const idx = state.likedIds.findIndex(item => (typeof item === 'string' ? item === songId : item.id === songId));
+                const nextLiked = idx === -1;
                 if(idx === -1) { 
                     state.likedIds.push(songToLike || songId); 
                     recommendationEvents.record('like', songToLike || { id: songId }, { context: { source: 'manual' } });
@@ -690,6 +843,7 @@
                 }
                 
                 localStorage.setItem('likedIds', JSON.stringify(state.likedIds));
+                cloudLibrary.setLiked(songToLike || { id: songId }, nextLiked);
                 if(state.currentTrack && state.currentTrack.id === songId) ui.updateMetadata(state.currentTrack); 
                 ui.renderPlaylists(); 
                 if (!document.getElementById('view-playlist').classList.contains('hidden') && document.getElementById('playlist-view-title').textContent === 'Liked Songs') { ui.openPlaylist('Liked Songs'); }
@@ -1163,6 +1317,7 @@
                 if(name && !state.playlists[name]) { 
                     state.playlists[name] = [...stagedPlaylistSongs]; 
                     localStorage.setItem('playlists', JSON.stringify(state.playlists)); 
+                    cloudLibrary.savePlaylist(name);
                     ui.renderPlaylists(); 
                     ui.toggleModal(false); 
                 }
@@ -1183,18 +1338,21 @@
             addSongToPlaylist: (playlistName) => {
                 const song = songStore.get(ctxMenu.activeStoreId);
                 if (song && state.playlists[playlistName]) {
-                    if (!state.playlists[playlistName].some(s => s.id === song.id)) { state.playlists[playlistName].push(song); recommendationEvents.record('playlist_add', song, { context: { source: 'playlist' } }); localStorage.setItem('playlists', JSON.stringify(state.playlists)); ui.renderPlaylists(); }
+                    if (!state.playlists[playlistName].some(s => s.id === song.id)) { state.playlists[playlistName].push(song); recommendationEvents.record('playlist_add', song, { context: { source: 'playlist' } }); localStorage.setItem('playlists', JSON.stringify(state.playlists)); cloudLibrary.savePlaylist(playlistName); ui.renderPlaylists(); }
                 }
                 document.getElementById('playlist-selector-modal').classList.add('hidden');
             },
             removeSongFromPlaylist: (playlistName, songId) => {
                 if(playlistName === 'Liked Songs') { 
+                    const song = state.likedIds.find(item => (typeof item === 'string' ? item : item.id) === songId) || state.playHistory.find(item => item.id === songId);
                     state.likedIds = state.likedIds.filter(item => (typeof item === 'string' ? item : item.id) !== songId); 
                     localStorage.setItem('likedIds', JSON.stringify(state.likedIds)); 
+                    cloudLibrary.setLiked(typeof song === 'object' ? song : { id: songId }, false);
                 } 
                 else if (state.playlists[playlistName]) { 
                     state.playlists[playlistName] = state.playlists[playlistName].filter(s => s.id !== songId); 
                     localStorage.setItem('playlists', JSON.stringify(state.playlists)); 
+                    cloudLibrary.savePlaylist(playlistName);
                 }
                 ui.renderPlaylists(); ui.openPlaylist(playlistName);
                 if(state.currentTrack && state.currentTrack.id === songId) ui.updateMetadata(state.currentTrack);
@@ -1202,6 +1360,7 @@
             deletePlaylist: (name) => {
                 if(name === 'Liked Songs') return;
                 delete state.playlists[name]; localStorage.setItem('playlists', JSON.stringify(state.playlists));
+                cloudLibrary.deletePlaylist(name);
                 ui.renderPlaylists(); ui.switchView('home');
             },
             playPlaylist: async (name) => {
@@ -2135,7 +2294,7 @@
 
             spotifyManager.checkToken();
 
-            ctxMenu.init(); searchManager.init(); persist.load(); homeView.init(); requestAnimationFrame(viz.render);
+            ctxMenu.init(); searchManager.init(); persist.load(); homeView.init(); cloudLibrary.init(); requestAnimationFrame(viz.render);
             deviceMode.apply();
             
             window.addEventListener('resize', () => { deviceMode.apply(); ui.updateMobileSearchPosition(); updateMarquees(); });
