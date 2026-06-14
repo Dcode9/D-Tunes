@@ -8,6 +8,7 @@
   const AUTH_BRIDGE_URL = `${PORTAL_ORIGIN}/auth-bridge.html`;
   const authRedirectUrl = () => `${window.location.origin}/`;
   let portalSessionPromise = null;
+  let currentSession = null;
 
   function bridgeRequest(message, timeoutMs = 2500) {
     if (!PORTAL_ORIGIN || window.location.origin === PORTAL_ORIGIN || typeof document === 'undefined') {
@@ -54,7 +55,10 @@
     if (!client) return null;
     const { data, error } = await client.auth.getSession();
     if (error) throw error;
-    if (data.session) return data.session;
+    if (data.session) {
+      currentSession = data.session;
+      return data.session;
+    }
 
     if (!portalSessionPromise) {
       portalSessionPromise = (async () => {
@@ -66,6 +70,7 @@
           refresh_token: session.refresh_token
         });
         if (restoreError) throw restoreError;
+        currentSession = restored.session || null;
         return restored.session || null;
       })().finally(() => {
         portalSessionPromise = null;
@@ -93,6 +98,7 @@
   function onAuthStateChange(callback) {
     if (!client || typeof callback !== 'function') return { unsubscribe() {} };
     const { data } = client.auth.onAuthStateChange((event, session) => {
+      currentSession = session || null;
       if (session && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
         syncSessionToPortal(session);
       }
@@ -281,6 +287,70 @@
     if (error) throw error;
   }
 
+  async function getPlaybackState() {
+    const session = await getSession();
+    if (!client || !session) return null;
+    const { data, error } = await client
+      .from('dtunes_playback_state')
+      .select('track_id, playback_state, updated_at')
+      .eq('user_id', session.user.id)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data?.playback_state) return null;
+    return {
+      ...data.playback_state,
+      track_id: data.track_id,
+      updated_at: data.updated_at || data.playback_state.updated_at
+    };
+  }
+
+  async function savePlaybackState(playbackState = {}) {
+    const session = await getSession();
+    if (!client || !session || !playbackState?.track?.id) return null;
+    const track = await upsertTrack(playbackState.track);
+    const payload = {
+      ...playbackState,
+      updated_at: playbackState.updated_at || new Date().toISOString()
+    };
+    const { data, error } = await client
+      .from('dtunes_playback_state')
+      .upsert({
+        user_id: session.user.id,
+        track_id: track?.id || null,
+        playback_state: payload,
+        updated_at: payload.updated_at
+      }, { onConflict: 'user_id' })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
+  function savePlaybackStateFast(playbackState = {}) {
+    if (!client || !currentSession?.access_token || !playbackState?.track?.id) return false;
+    const payload = {
+      ...playbackState,
+      updated_at: playbackState.updated_at || new Date().toISOString()
+    };
+    fetch(`${SUPABASE_URL}/rest/v1/dtunes_playback_state?on_conflict=user_id`, {
+      method: 'POST',
+      keepalive: true,
+      headers: {
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${currentSession.access_token}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates'
+      },
+      body: JSON.stringify([{
+        user_id: currentSession.user.id,
+        track_id: null,
+        playback_state: payload,
+        updated_at: payload.updated_at
+      }])
+    }).catch((error) => console.warn('[DVerse] Fast playback save failed:', error));
+    return true;
+  }
+
   window.dverse = {
     supabase: client,
     isConfigured: ready,
@@ -297,7 +367,10 @@
       listPlaylists,
       savePlaylist,
       deletePlaylist,
-      upsertTrack
+      upsertTrack,
+      getPlaybackState,
+      savePlaybackState,
+      savePlaybackStateFast
     }
   };
   window.dispatchEvent(new CustomEvent('dverse:ready', { detail: { configured: ready } }));
