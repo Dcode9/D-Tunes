@@ -424,27 +424,45 @@
         };
 
         const persist = {
+            snapshot: () => {
+                if(!state.currentTrack) return null;
+                return {
+                    track: state.currentTrack,
+                    q: state.queue,
+                    uq: state.userQueue,
+                    idx: state.idx,
+                    time: Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
+                    duration: Number.isFinite(audio.duration) ? audio.duration : null,
+                    playing: Boolean(state.playing),
+                    updated_at: new Date().toISOString()
+                };
+            },
+            apply: (data) => {
+                if(!data || !data.track) return false;
+                state.currentTrack = data.track; state.queue = data.q || []; state.userQueue = data.uq || []; state.idx = data.idx || 0;
+                state.loaded = true;
+
+                document.getElementById('player-footer').classList.remove('translate-y-[150%]', 'opacity-0');
+                ui.enableControls(); ui.updateMetadata(state.currentTrack); ui.renderQueue(); ui.renderHistory();
+
+                audio.src = state.currentTrack.url;
+                audio.addEventListener('loadedmetadata', function onMetaLoad() {
+                    audio.currentTime = data.time || 0; currentProgress = audio.duration ? audio.currentTime / audio.duration : 0;
+                    document.getElementById('seek-bar').value = data.time || 0; audio.removeEventListener('loadedmetadata', onMetaLoad);
+                });
+                return true;
+            },
             save: () => {
-                if(!state.currentTrack) return;
-                const data = { track: state.currentTrack, q: state.queue, uq: state.userQueue, idx: state.idx, time: audio.currentTime };
+                const data = persist.snapshot();
+                if(!data) return;
                 localStorage.setItem('playbackState', JSON.stringify(data));
+                window.cloudLibrary?.schedulePlaybackSave?.();
+                return data;
             },
             load: () => {
                 try {
                     const data = JSON.parse(localStorage.getItem('playbackState'));
-                    if(data && data.track) {
-                        state.currentTrack = data.track; state.queue = data.q || []; state.userQueue = data.uq || []; state.idx = data.idx || 0;
-                        state.loaded = true;
-                        
-                        document.getElementById('player-footer').classList.remove('translate-y-[150%]', 'opacity-0');
-                        ui.enableControls(); ui.updateMetadata(state.currentTrack); ui.renderQueue(); ui.renderHistory();
-                        
-                        audio.src = state.currentTrack.url;
-                        audio.addEventListener('loadedmetadata', function onMetaLoad() {
-                            audio.currentTime = data.time || 0; currentProgress = audio.duration ? audio.currentTime / audio.duration : 0;
-                            document.getElementById('seek-bar').value = data.time || 0; audio.removeEventListener('loadedmetadata', onMetaLoad);
-                        });
-                    }
+                    persist.apply(data);
                 } catch(e) {}
             }
         };
@@ -452,6 +470,7 @@
         const cloudLibrary = {
             session: null,
             syncing: false,
+            playbackSaveTimer: null,
             ready: () => Boolean(window.dverse?.isConfigured && window.dverse?.dtunes),
             songId: (song) => String(typeof song === 'object' ? song?.id : song || ''),
             compactSongs: (songs) => {
@@ -472,6 +491,65 @@
                     || state.queue.find(song => song.id === id)
                     || state.userQueue.find(song => song.id === id)
                     || null;
+            },
+            importKey: () => cloudLibrary.session?.user?.id ? `dtunesCloudImport:${cloudLibrary.session.user.id}` : null,
+            captureLocalSnapshot: () => ({
+                playHistory: [...(state.playHistory || [])],
+                likedIds: [...(state.likedIds || [])],
+                playlists: Object.fromEntries(Object.entries(state.playlists || {}).map(([name, songs]) => [name, [...(songs || [])]])),
+                playbackState: (() => {
+                    try { return JSON.parse(localStorage.getItem('playbackState') || 'null'); } catch (e) { return null; }
+                })()
+            }),
+            snapshotHasContent: (snapshot) => Boolean(
+                snapshot?.playHistory?.length ||
+                snapshot?.likedIds?.length ||
+                Object.keys(snapshot?.playlists || {}).length ||
+                snapshot?.playbackState?.track?.id
+            ),
+            snapshotFingerprint: (snapshot) => {
+                if (!snapshot) return '';
+                const songId = (song) => cloudLibrary.songId(song);
+                const playlists = Object.fromEntries(Object.entries(snapshot.playlists || {}).map(([name, songs]) => [
+                    name,
+                    (songs || []).map(songId).filter(Boolean)
+                ]));
+                return JSON.stringify({
+                    history: (snapshot.playHistory || []).map(songId).filter(Boolean),
+                    likes: (snapshot.likedIds || []).map(songId).filter(Boolean),
+                    playlists,
+                    playback: snapshot.playbackState?.track?.id
+                        ? {
+                            id: snapshot.playbackState.track.id,
+                            time: Math.floor(Number(snapshot.playbackState.time || 0))
+                        }
+                        : null
+                });
+            },
+            shouldPushLocalSnapshot: (snapshot) => {
+                const key = cloudLibrary.importKey();
+                if (!key || !cloudLibrary.snapshotHasContent(snapshot)) return false;
+                return localStorage.getItem(key) !== cloudLibrary.snapshotFingerprint(snapshot);
+            },
+            markLocalSnapshotSynced: (snapshot) => {
+                const key = cloudLibrary.importKey();
+                if (!key) return;
+                localStorage.setItem(key, cloudLibrary.snapshotFingerprint(snapshot));
+            },
+            resolveSnapshotSong: (item, snapshot) => {
+                if (!item) return null;
+                if (typeof item === 'object') return item;
+                const id = String(item);
+                return (snapshot.playHistory || []).find(song => song?.id === id)
+                    || Object.values(snapshot.playlists || {}).flat().find(song => song?.id === id)
+                    || (snapshot.playbackState?.track?.id === id ? snapshot.playbackState.track : null);
+            },
+            choosePlaybackState: (localPlayback, cloudPlayback) => {
+                if (!localPlayback?.track?.id) return cloudPlayback?.track?.id ? cloudPlayback : null;
+                if (!cloudPlayback?.track?.id) return localPlayback;
+                const localTime = new Date(localPlayback.updated_at || 0).getTime();
+                const cloudTime = new Date(cloudPlayback.updated_at || 0).getTime();
+                return cloudTime > localTime ? cloudPlayback : localPlayback;
             },
             setStatus: (message) => {
                 const profile = document.getElementById('dverse-account-status');
@@ -523,10 +601,13 @@
                 cloudLibrary.syncing = true;
                 cloudLibrary.setStatus('Syncing your D\'Tunes library...');
                 try {
-                    const [history, likes, playlists] = await Promise.all([
+                    const localSnapshot = cloudLibrary.captureLocalSnapshot();
+                    const shouldImportLocal = cloudLibrary.shouldPushLocalSnapshot(localSnapshot);
+                    const [history, likes, playlists, playbackState] = await Promise.all([
                         window.dverse.dtunes.listHistory(),
                         window.dverse.dtunes.listLikes(),
-                        window.dverse.dtunes.listPlaylists()
+                        window.dverse.dtunes.listPlaylists(),
+                        window.dverse.dtunes.getPlaybackState()
                     ]);
 
                     state.playHistory = cloudLibrary.compactSongs([...(history || []), ...state.playHistory]).slice(0, 100);
@@ -542,12 +623,24 @@
                     localStorage.setItem('likedIds', JSON.stringify(state.likedIds));
                     localStorage.setItem('playlists', JSON.stringify(state.playlists));
 
+                    const preferredPlayback = cloudLibrary.choosePlaybackState(localSnapshot.playbackState, playbackState);
+                    if (preferredPlayback?.track?.id) {
+                        persist.apply(preferredPlayback);
+                        localStorage.setItem('playbackState', JSON.stringify(preferredPlayback));
+                    }
+
                     ui.renderPlaylists();
                     ui.renderLibraryLists();
                     ui.renderHistory();
                     homeView.renderRecentlyPlayed();
-                    await cloudLibrary.pushLocalSnapshot();
-                    cloudLibrary.setStatus('Synced with D\'Verse Cloud.');
+                    if (shouldImportLocal) {
+                        await cloudLibrary.pushLocalSnapshot(localSnapshot, { history, likes, playlists });
+                        cloudLibrary.markLocalSnapshotSynced(cloudLibrary.captureLocalSnapshot());
+                        cloudLibrary.setStatus('Local library imported to D\'Verse Cloud.');
+                    } else {
+                        cloudLibrary.markLocalSnapshotSynced(cloudLibrary.captureLocalSnapshot());
+                        cloudLibrary.setStatus('Synced with D\'Verse Cloud.');
+                    }
                 } catch (error) {
                     console.error('[DVerse] DTunes sync failed:', error);
                     cloudLibrary.setStatus(error?.message || 'Could not sync D\'Tunes library.');
@@ -555,18 +648,41 @@
                     cloudLibrary.syncing = false;
                 }
             },
-            pushLocalSnapshot: async () => {
+            pushLocalSnapshot: async (snapshot = cloudLibrary.captureLocalSnapshot(), remote = {}) => {
                 if (!cloudLibrary.session) return;
-                const likedSongs = state.likedIds.map(cloudLibrary.resolveSong).filter(Boolean);
+                const remoteHistoryIds = new Set((remote.history || []).map(song => song?.id).filter(Boolean));
+                const likedSongs = (snapshot.likedIds || [])
+                    .map((item) => cloudLibrary.resolveSnapshotSong(item, snapshot))
+                    .filter(Boolean);
                 for (const song of likedSongs) {
                     await window.dverse.dtunes.setLiked(song, true);
                 }
-                for (const song of state.playHistory.slice().reverse().slice(-50)) {
+                for (const song of (snapshot.playHistory || []).slice().reverse().slice(-50)) {
+                    if (remoteHistoryIds.has(song?.id)) continue;
                     await window.dverse.dtunes.recordPlay(song, { source: 'local-import' });
                 }
-                for (const [name, songs] of Object.entries(state.playlists)) {
+                for (const [name, songs] of Object.entries(snapshot.playlists || {})) {
                     await window.dverse.dtunes.savePlaylist(name, songs);
                 }
+                if (snapshot.playbackState?.track?.id) {
+                    await window.dverse.dtunes.savePlaybackState(snapshot.playbackState);
+                }
+            },
+            schedulePlaybackSave: () => {
+                if (!cloudLibrary.session || !state.currentTrack) return;
+                clearTimeout(cloudLibrary.playbackSaveTimer);
+                cloudLibrary.playbackSaveTimer = setTimeout(() => {
+                    cloudLibrary.flushPlaybackState(false);
+                }, 4500);
+            },
+            flushPlaybackState: (fast = false) => {
+                if (!cloudLibrary.session || !state.currentTrack) return;
+                const playbackState = persist.snapshot();
+                if (!playbackState) return;
+                if (fast && window.dverse.dtunes.savePlaybackStateFast?.(playbackState)) return;
+                window.dverse.dtunes.savePlaybackState(playbackState).catch((error) => {
+                    console.error('[DVerse] Failed to sync playback state:', error);
+                });
             },
             recordPlay: (song) => {
                 if (!cloudLibrary.session || !song?.id) return;
@@ -903,9 +1019,21 @@
         audio.addEventListener('error', recoverFromAudioError);
 
         document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') {
+                persist.save();
+                cloudLibrary.flushPlaybackState(true);
+            }
             if ('mediaSession' in navigator && document.visibilityState === 'hidden' && state.playing) {
                 navigator.mediaSession.playbackState = 'playing';
             }
+        });
+        window.addEventListener('pagehide', () => {
+            persist.save();
+            cloudLibrary.flushPlaybackState(true);
+        });
+        window.addEventListener('beforeunload', () => {
+            persist.save();
+            cloudLibrary.flushPlaybackState(true);
         });
 
         // ============================================
