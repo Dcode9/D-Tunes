@@ -4,34 +4,113 @@
 
   const ready = Boolean(window.supabase && SUPABASE_ANON_KEY);
   const client = ready ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+  const PORTAL_ORIGIN = (window.DVERSE_PORTAL_ORIGIN || 'https://dverse.fun').replace(/\/$/, '');
+  const AUTH_BRIDGE_URL = `${PORTAL_ORIGIN}/auth-bridge.html`;
   const authRedirectUrl = () => `${window.location.origin}/`;
+  let portalSessionPromise = null;
 
-  async function getSession() {
+  function bridgeRequest(message, timeoutMs = 2500) {
+    if (!PORTAL_ORIGIN || window.location.origin === PORTAL_ORIGIN || typeof document === 'undefined') {
+      return Promise.resolve(null);
+    }
+    return new Promise((resolve) => {
+      const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const frame = document.createElement('iframe');
+      let finished = false;
+
+      function cleanup(value) {
+        if (finished) return;
+        finished = true;
+        window.removeEventListener('message', onMessage);
+        clearTimeout(timer);
+        frame.remove();
+        resolve(value);
+      }
+
+      function onMessage(event) {
+        if (event.origin !== PORTAL_ORIGIN) return;
+        const data = event.data || {};
+        if (data.source !== 'dverse-auth-bridge' || data.requestId !== requestId) return;
+        cleanup(data);
+      }
+
+      const timer = setTimeout(() => cleanup(null), timeoutMs);
+      frame.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;border:0;';
+      frame.setAttribute('aria-hidden', 'true');
+      frame.addEventListener('load', () => {
+        frame.contentWindow?.postMessage({
+          source: 'dverse-app',
+          requestId,
+          ...message
+        }, PORTAL_ORIGIN);
+      });
+      window.addEventListener('message', onMessage);
+      frame.src = AUTH_BRIDGE_URL;
+      (document.body || document.documentElement).appendChild(frame);
+    });
+  }
+
+  async function bootstrapFromPortal() {
     if (!client) return null;
     const { data, error } = await client.auth.getSession();
     if (error) throw error;
-    return data.session;
+    if (data.session) return data.session;
+
+    if (!portalSessionPromise) {
+      portalSessionPromise = (async () => {
+        const response = await bridgeRequest({ type: 'dverse-auth:get-session' });
+        const session = response?.session;
+        if (!session?.access_token || !session?.refresh_token) return null;
+        const { data: restored, error: restoreError } = await client.auth.setSession({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token
+        });
+        if (restoreError) throw restoreError;
+        return restored.session || null;
+      })().finally(() => {
+        portalSessionPromise = null;
+      });
+    }
+    return portalSessionPromise;
+  }
+
+  function syncSessionToPortal(session) {
+    if (!session?.access_token || !session?.refresh_token) return;
+    bridgeRequest({
+      type: 'dverse-auth:set-session',
+      session: {
+        access_token: session.access_token,
+        refresh_token: session.refresh_token
+      }
+    }, 1500).catch((error) => console.warn('[DVerse] Portal session sync failed:', error));
+  }
+
+  async function getSession() {
+    if (!client) return null;
+    return bootstrapFromPortal();
   }
 
   function onAuthStateChange(callback) {
     if (!client || typeof callback !== 'function') return { unsubscribe() {} };
-    const { data } = client.auth.onAuthStateChange((event, session) => callback(event, session));
+    const { data } = client.auth.onAuthStateChange((event, session) => {
+      if (session && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+        syncSessionToPortal(session);
+      }
+      callback(event, session);
+    });
     return data.subscription;
   }
 
   async function signInWithGoogle() {
     if (!client) throw new Error('D\'Verse Supabase client is not configured.');
-    const { error } = await client.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: authRedirectUrl() }
-    });
-    if (error) throw error;
+    window.location.href = `${PORTAL_ORIGIN}/?dverse_return_to=${encodeURIComponent(authRedirectUrl())}`;
   }
 
   async function signOut() {
     if (!client) return;
     const { error } = await client.auth.signOut();
     if (error) throw error;
+    await bridgeRequest({ type: 'dverse-auth:sign-out' }, 1500);
   }
 
   function normalizeTrack(song) {
@@ -206,6 +285,7 @@
     supabase: client,
     isConfigured: ready,
     getSession,
+    bootstrapFromPortal,
     onAuthStateChange,
     signInWithGoogle,
     signOut,
