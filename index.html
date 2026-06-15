@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
     <title>D'Tunes</title>
-    <link rel="icon" href="data:,">
+    <link rel="icon" href="assets/DTunes2.svg">
     
     <!-- Libraries -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -116,7 +116,7 @@
     <!-- TOP HEADER -->
     <header class="fixed top-0 left-0 right-0 z-40 glass-panel md:rounded-2xl md:top-4 md:left-6 md:right-6 px-4 md:px-6 py-2 md:py-3 flex items-center justify-between gap-4 shadow-xl border-t-0 md:border-t">
         <div id="app-logo" class="flex items-center gap-2 text-xl md:text-2xl font-bold text-white cursor-pointer w-auto md:w-32 flex-shrink-0" onclick="ui.switchView('home'); ui.closeMobileSearch();">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 md:w-8 md:h-8 text-green-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+            <img src="assets/DTunes2.svg" alt="D'Tunes logo" class="w-7 h-7 md:w-9 md:h-9 rounded-xl shadow-lg shadow-cyan-500/20">
             <span>D'Tunes</span>
             <span class="beta-label" aria-label="D'Tunes beta">Beta</span>
         </div>
@@ -125,8 +125,9 @@
         <div class="flex-1 w-full hidden md:block"></div>
         
         <!-- Account Area (Profile & Settings) -->
-        <div id="header-account" class="relative flex items-center justify-end w-auto md:w-32 flex-shrink-0">
-            <button class="w-8 h-8 md:w-10 md:h-10 rounded-full border border-white/20 overflow-hidden hover:border-green-400 transition cursor-pointer" onclick="document.getElementById('profile-dropdown').classList.toggle('hidden')">
+        <div id="header-account" class="relative flex items-center justify-end gap-2 w-auto md:w-48 flex-shrink-0">
+            <button id="dverse-header-auth-button" class="desktop-auth-button hidden rounded-full bg-[var(--accent-color)] px-4 py-2 text-sm font-black text-black shadow-lg shadow-cyan-500/20 hover:scale-105 transition" onclick="cloudLibrary.toggleAuth()">Sign in</button>
+            <button class="w-8 h-8 md:w-10 md:h-10 rounded-full border border-white/20 overflow-hidden hover:border-[var(--accent-color)] transition cursor-pointer" onclick="document.getElementById('profile-dropdown').classList.toggle('hidden')">
                 <img src="https://placehold.co/100x100/111/fff?text=U" id="header-avatar" class="w-full h-full object-cover">
             </button>
             
@@ -355,33 +356,23 @@
                     </div>
 
                     <div class="border-t border-white/10 pt-6">
-                        <div class="flex items-center justify-between gap-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 mb-6">
+                        <div class="flex items-center justify-between gap-3 mb-4">
+                            <div>
+                                <h3 class="text-lg font-bold text-white mb-1">Equalizer</h3>
+                                <p class="text-sm text-gray-400">Shape playback with a working 10-band EQ for this device.</p>
+                            </div>
+                            <button onclick="ui.resetEqualizer()" class="text-xs font-bold px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 transition">Reset EQ</button>
+                        </div>
+                        <div id="eq-bands" class="eq-bands" aria-label="10-band equalizer"></div>
+                    </div>
+
+                    <div class="border-t border-white/10 pt-6">
+                        <div class="flex items-center justify-between gap-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
                             <div>
                                 <h3 class="text-lg font-bold text-white mb-1">Reset D'Tunes</h3>
                                 <p class="text-sm text-gray-300">Clear playlists, likes, history, queue, settings, and saved playback from this browser.</p>
                             </div>
                             <button onclick="ui.clearAllData()" class="flex-shrink-0 rounded-full bg-red-500 px-4 py-2 text-sm font-black text-white shadow-lg shadow-red-500/20 hover:scale-105 transition">Clear All Data</button>
-                        </div>
-                        <div class="flex items-center justify-between gap-3 mb-4">
-                            <div>
-                                <h3 class="text-lg font-bold text-white mb-1">Equalizer</h3>
-                                <p class="text-sm text-gray-400">Tune bass, mids, and treble for the current device.</p>
-                            </div>
-                            <button onclick="ui.resetEqualizer()" class="text-xs font-bold px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 transition">Reset</button>
-                        </div>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <label class="glass-panel rounded-xl p-4 block">
-                                <span class="text-sm font-bold text-white flex justify-between">Bass <span id="eq-bass-value" class="text-green-400">0 dB</span></span>
-                                <input id="eq-bass" type="range" min="-12" max="12" step="1" class="w-full mt-4" oninput="ui.updateEqualizer('bass', this.value)">
-                            </label>
-                            <label class="glass-panel rounded-xl p-4 block">
-                                <span class="text-sm font-bold text-white flex justify-between">Mids <span id="eq-mid-value" class="text-green-400">0 dB</span></span>
-                                <input id="eq-mid" type="range" min="-12" max="12" step="1" class="w-full mt-4" oninput="ui.updateEqualizer('mid', this.value)">
-                            </label>
-                            <label class="glass-panel rounded-xl p-4 block">
-                                <span class="text-sm font-bold text-white flex justify-between">Treble <span id="eq-treble-value" class="text-green-400">0 dB</span></span>
-                                <input id="eq-treble" type="range" min="-12" max="12" step="1" class="w-full mt-4" oninput="ui.updateEqualizer('treble', this.value)">
-                            </label>
                         </div>
                     </div>
 

@@ -282,6 +282,36 @@
         // ============================================
         // STATE & PERSISTENCE
         // ============================================
+        const EQ_BANDS = [
+            { key: 'eq32', label: '32', frequency: 32, type: 'lowshelf' },
+            { key: 'eq64', label: '64', frequency: 64, type: 'peaking' },
+            { key: 'eq125', label: '125', frequency: 125, type: 'peaking' },
+            { key: 'eq250', label: '250', frequency: 250, type: 'peaking' },
+            { key: 'eq500', label: '500', frequency: 500, type: 'peaking' },
+            { key: 'eq1k', label: '1k', frequency: 1000, type: 'peaking' },
+            { key: 'eq2k', label: '2k', frequency: 2000, type: 'peaking' },
+            { key: 'eq4k', label: '4k', frequency: 4000, type: 'peaking' },
+            { key: 'eq8k', label: '8k', frequency: 8000, type: 'peaking' },
+            { key: 'eq16k', label: '16k', frequency: 16000, type: 'highshelf' }
+        ];
+        const FLAT_EQUALIZER = Object.fromEntries(EQ_BANDS.map((band) => [band.key, 0]));
+        const normalizeEqualizerSettings = (stored = {}) => {
+            const normalized = { ...FLAT_EQUALIZER };
+            EQ_BANDS.forEach((band) => {
+                if (Number.isFinite(Number(stored[band.key]))) normalized[band.key] = Number(stored[band.key]);
+            });
+            if (Number.isFinite(Number(stored.bass))) {
+                normalized.eq32 = normalized.eq64 = normalized.eq125 = Number(stored.bass);
+            }
+            if (Number.isFinite(Number(stored.mid))) {
+                normalized.eq500 = normalized.eq1k = normalized.eq2k = Number(stored.mid);
+            }
+            if (Number.isFinite(Number(stored.treble))) {
+                normalized.eq4k = normalized.eq8k = normalized.eq16k = Number(stored.treble);
+            }
+            return normalized;
+        };
+
         const state = { 
             queue: [], userQueue: [], idx: -1, playing: false, loading: false, loaded: false, shuffle: false, repeat: 0, currentTrack: null,
             likedIds: JSON.parse(localStorage.getItem('likedIds') || '[]'),
@@ -291,7 +321,7 @@
             playlists: JSON.parse(localStorage.getItem('playlists') || '{}'),
             username: localStorage.getItem('username') || 'Guest User',
             quality: localStorage.getItem('audioQuality') || 'high',
-            equalizer: JSON.parse(localStorage.getItem('equalizerSettings') || '{"bass":0,"mid":0,"treble":0}'),
+            equalizer: normalizeEqualizerSettings(JSON.parse(localStorage.getItem('equalizerSettings') || '{}')),
             forYouSongs: [],
             searchDebounce: null, hoverProgress: -1, lastHoverProgress: 0.5, isDragging: false, 
             upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false, nextTrackPreloadId: null
@@ -565,14 +595,18 @@
                 const avatarUrl = meta.avatar_url || meta.picture || `https://placehold.co/100x100/111/fff?text=${encodeURIComponent(displayName.charAt(0).toUpperCase())}`;
                 const label = document.getElementById('dverse-account-label');
                 const authButton = document.getElementById('dverse-auth-button');
+                const headerAuthButton = document.getElementById('dverse-header-auth-button');
                 const settingsButton = document.getElementById('dverse-settings-auth-button');
                 if (label) label.textContent = signedIn ? email : "D'Verse Cloud";
                 if (authButton) authButton.textContent = signedIn ? 'Sign out' : 'Sign in';
+                if (headerAuthButton) headerAuthButton.classList.toggle('hidden', signedIn);
                 if (settingsButton) settingsButton.textContent = signedIn ? 'Sign out' : 'Sign in';
                 if (signedIn) {
                     const username = document.getElementById('dd-username');
                     const headerAvatar = document.getElementById('header-avatar');
                     const mobileAvatar = document.getElementById('mobile-nav-avatar');
+                    state.username = displayName;
+                    localStorage.setItem('username', displayName);
                     if (username) username.textContent = displayName;
                     if (headerAvatar) headerAvatar.src = avatarUrl;
                     if (mobileAvatar) mobileAvatar.src = avatarUrl;
@@ -1115,24 +1149,25 @@
         let vizCanvas = null, vizSeekTrack = null, lastClipProgress = -1;
         let resizeCanvas = () => {};
         const applyEqualizer = () => {
-            if (!eqFilters.bass) return;
-            eqFilters.bass.gain.value = Number(state.equalizer.bass || 0);
-            eqFilters.mid.gain.value = Number(state.equalizer.mid || 0);
-            eqFilters.treble.gain.value = Number(state.equalizer.treble || 0);
+            EQ_BANDS.forEach((band) => {
+                if (eqFilters[band.key]) eqFilters[band.key].gain.value = Number(state.equalizer[band.key] || 0);
+            });
         };
         function setupAudioContext() {
-            if (isIOSDevice) return;
             try {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)(); analyser = audioContext.createAnalyser(); source = audioContext.createMediaElementSource(audio);
-                eqFilters = {
-                    bass: audioContext.createBiquadFilter(),
-                    mid: audioContext.createBiquadFilter(),
-                    treble: audioContext.createBiquadFilter()
-                };
-                eqFilters.bass.type = 'lowshelf'; eqFilters.bass.frequency.value = 180;
-                eqFilters.mid.type = 'peaking'; eqFilters.mid.frequency.value = 1100; eqFilters.mid.Q.value = 0.8;
-                eqFilters.treble.type = 'highshelf'; eqFilters.treble.frequency.value = 4200;
-                source.connect(eqFilters.bass); eqFilters.bass.connect(eqFilters.mid); eqFilters.mid.connect(eqFilters.treble); eqFilters.treble.connect(analyser); analyser.connect(audioContext.destination); analyser.fftSize = 256;
+                eqFilters = {};
+                let previousNode = source;
+                EQ_BANDS.forEach((band) => {
+                    const filter = audioContext.createBiquadFilter();
+                    filter.type = band.type;
+                    filter.frequency.value = band.frequency;
+                    filter.Q.value = 1.1;
+                    eqFilters[band.key] = filter;
+                    previousNode.connect(filter);
+                    previousNode = filter;
+                });
+                previousNode.connect(analyser); analyser.connect(audioContext.destination); analyser.fftSize = 256;
                 applyEqualizer();
                 analyserData = new Uint8Array(analyser.frequencyBinCount);
                 isAudioContextInitialized = true;
@@ -1442,22 +1477,35 @@
                 }
             },
             renderEqualizerSettings: () => {
-                ['bass', 'mid', 'treble'].forEach((band) => {
-                    const value = Number(state.equalizer[band] || 0);
-                    const input = document.getElementById(`eq-${band}`);
-                    const label = document.getElementById(`eq-${band}-value`);
+                const container = document.getElementById('eq-bands');
+                if (!container) return;
+                if (!container.dataset.rendered) {
+                    container.innerHTML = EQ_BANDS.map((band) => `
+                        <label class="eq-band" title="${band.frequency} Hz">
+                            <span id="${band.key}-value" class="eq-value">0 dB</span>
+                            <input id="${band.key}" type="range" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="${band.label} Hz" oninput="ui.updateEqualizer('${band.key}', this.value)">
+                            <span class="eq-label">${band.label}</span>
+                        </label>
+                    `).join('');
+                    container.dataset.rendered = 'true';
+                }
+                EQ_BANDS.forEach((band) => {
+                    const value = Number(state.equalizer[band.key] || 0);
+                    const input = document.getElementById(band.key);
+                    const label = document.getElementById(`${band.key}-value`);
                     if (input) input.value = value;
                     if (label) label.textContent = `${value > 0 ? '+' : ''}${value} dB`;
                 });
             },
             updateEqualizer: (band, value) => {
+                if (!Object.prototype.hasOwnProperty.call(FLAT_EQUALIZER, band)) return;
                 state.equalizer[band] = Number(value);
                 localStorage.setItem('equalizerSettings', JSON.stringify(state.equalizer));
                 ui.renderEqualizerSettings();
                 applyEqualizer();
             },
             resetEqualizer: () => {
-                state.equalizer = { bass: 0, mid: 0, treble: 0 };
+                state.equalizer = { ...FLAT_EQUALIZER };
                 localStorage.setItem('equalizerSettings', JSON.stringify(state.equalizer));
                 ui.renderEqualizerSettings();
                 applyEqualizer();
@@ -1490,7 +1538,7 @@
                 state.playlists = {};
                 state.username = 'Guest User';
                 state.quality = 'high';
-                state.equalizer = { bass: 0, mid: 0, treble: 0 };
+                state.equalizer = { ...FLAT_EQUALIZER };
                 state.forYouSongs = [];
                 state.queueExpanded = false;
                 document.getElementById('queue-wrapper').classList.remove('queue-expanded', 'preview-expanded', 'track-swap-out');
