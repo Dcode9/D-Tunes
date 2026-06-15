@@ -913,7 +913,7 @@ html[data-ui-mode="mobile"] .swipe-song::after {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    z-index: -1;
+    z-index: 2;
     font-size: 10px;
     font-weight: 900;
     letter-spacing: 0.08em;
@@ -931,8 +931,14 @@ html[data-ui-mode="mobile"] .swipe-song::after {
     right: 14px;
     color: var(--accent-color-2);
 }
+html[data-ui-mode="mobile"] .swipe-song.swipe-add-next { background: linear-gradient(90deg, color-mix(in srgb, var(--accent-color) 26%, #121212), #121212 55%) !important; }
+html[data-ui-mode="mobile"] .swipe-song.swipe-add-queue { background: linear-gradient(270deg, color-mix(in srgb, var(--accent-color-2) 26%, #121212), #121212 55%) !important; }
 html[data-ui-mode="mobile"] .swipe-song.swipe-add-next::before,
-html[data-ui-mode="mobile"] .swipe-song.swipe-add-queue::after { opacity: 1; }
+html[data-ui-mode="mobile"] .swipe-song.swipe-add-queue::after,
+html[data-ui-mode="mobile"] .swipe-song.swipe-committed-next::before,
+html[data-ui-mode="mobile"] .swipe-song.swipe-committed-queue::after { opacity: 1; }
+html[data-ui-mode="mobile"] .swipe-song.swipe-committed-next,
+html[data-ui-mode="mobile"] .swipe-song.swipe-committed-queue { transform: scale(0.985); background: color-mix(in srgb, var(--accent-color) 18%, #121212) !important; }
 
 .queue-drag-handle {
     flex: 0 0 auto;
@@ -987,3 +993,9 @@ html[data-ui-mode="mobile"] body.mobile-player-open #history-list {
 
 .liked-songs-art { border-color: color-mix(in srgb, var(--accent-color) 20%, transparent); }
 .liked-songs-art:hover { border-color: color-mix(in srgb, var(--accent-color) 60%, transparent); }
+
+.search-results-content.is-updating { opacity: 0.82; }
+.search-results-content.is-updating::after { content: 'Updating…'; position: sticky; bottom: 0; display: block; margin: 0.25rem auto 0; width: max-content; border-radius: 9999px; padding: 0.2rem 0.55rem; font-size: 10px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; color: #001015; background: var(--accent-color); }
+
+.top-result-action { display: inline-flex; align-items: center; justify-content: center; width: 2.35rem; height: 2.35rem; border-radius: 9999px; color: #001015; background: var(--accent-color); box-shadow: 0 12px 30px color-mix(in srgb, var(--accent-color) 24%, transparent); }
+.top-result-actions { flex-wrap: wrap; justify-content: flex-end; }

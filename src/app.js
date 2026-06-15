@@ -57,6 +57,7 @@
         };
 
         const updateMarquees = () => {
+            if (typeof window.__stripTouchHoverClasses === 'function') window.__stripTouchHoverClasses();
             document.querySelectorAll('.marquee-container').forEach(container => {
                 if(container.offsetParent === null) return;
                 const text = container.querySelector('.marquee-text');
@@ -379,6 +380,20 @@
                 }
             }
         };
+
+
+        const stripTouchHoverClasses = () => {
+            if (!deviceMode.isMobileUI()) return;
+            document.querySelectorAll('[class*="hover:"], [class*="group-hover:"]').forEach((el) => {
+                const kept = String(el.className)
+                    .split(/\s+/)
+                    .filter(Boolean)
+                    .filter(cls => !cls.includes('hover:') && !cls.includes('group-hover:'));
+                el.className = kept.join(' ');
+            });
+        };
+
+        window.__stripTouchHoverClasses = stripTouchHoverClasses;
 
         const haptics = {
             presets: {
@@ -855,7 +870,6 @@
             if (!state.loaded) return;
             try {
                 if (audioContext && audioContext.state === 'suspended') await audioContext.resume();
-                if (!isAudioContextInitialized) setupAudioContext();
                 await audio.play();
             } catch (e) { state.playing = false; ui.updatePlayBtn(); }
         };
@@ -985,7 +999,7 @@
                     });
                     
                     if (audioContext && audioContext.state === 'suspended') audioContext.resume();
-                    if (!isAudioContextInitialized) setupAudioContext();
+                    if (Object.values(state.equalizer).some(value => Number(value) !== 0) && !isAudioContextInitialized) setupAudioContext();
                     
                     ui.updateMetadata(track); ui.renderQueue(); primeNextTrack(); 
                     
@@ -1124,8 +1138,13 @@
 
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
+                const preservedVolume = audio.volume;
+                audio.muted = false;
                 persist.save();
                 cloudLibrary.flushPlaybackState(true);
+                setTimeout(() => { audio.volume = preservedVolume; audio.muted = false; }, 0);
+            } else if (state.playing) {
+                audio.muted = false;
             }
             if ('mediaSession' in navigator && document.visibilityState === 'hidden' && state.playing) {
                 navigator.mediaSession.playbackState = 'playing';
@@ -1502,6 +1521,7 @@
                 state.equalizer[band] = Number(value);
                 localStorage.setItem('equalizerSettings', JSON.stringify(state.equalizer));
                 ui.renderEqualizerSettings();
+                if (!isAudioContextInitialized && state.currentTrack && Object.values(state.equalizer).some(value => Number(value) !== 0)) setupAudioContext();
                 applyEqualizer();
             },
             resetEqualizer: () => {
@@ -2068,20 +2088,24 @@
                 input.addEventListener('input', (e) => {
                     clearTimeout(state.searchDebounce); const query = e.target.value.trim();
                     if (query.length < 2) { dropWrapper.classList.remove('active'); results.innerHTML = ''; return; }
-                    
+                    dropWrapper.classList.add('active');
+                    results.classList.add('is-updating');
+                    const requestedQuery = query;
                     state.searchDebounce = setTimeout(async () => {
-                        results.innerHTML = '<div class="p-4 text-center text-gray-400 text-sm">Searching...</div>'; 
-                        dropWrapper.classList.add('active');
-                        
-                        const songs = await jiosaavnAPI.searchSongs(query, 6); 
-                        if(songs.length === 0) { dropWrapper.classList.remove('active'); results.innerHTML = ''; return; }
-                        
+                        const songs = await jiosaavnAPI.searchSongs(requestedQuery, 6);
+                        if (input.value.trim() !== requestedQuery) return;
+                        results.classList.remove('is-updating');
+                        if(songs.length === 0) {
+                            results.innerHTML = '<div class="p-4 text-center text-gray-400 text-sm">No songs found</div>';
+                            return;
+                        }
                         results.innerHTML = '<div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1 pl-2 drop-shadow-md">Songs</div>' + songs.map(song => {
                             const storeId = songStore.add(song);
                             return ui.createSongPill(song, `ui.playFromQuickSearch('${storeId}')`, 'quicksearch');
                         }).join('');
+                        stripTouchHoverClasses();
                         updateMarquees();
-                    }, 180);
+                    }, deviceMode.isMobileUI() ? 120 : 180);
                 });
                 
                 input.addEventListener('keydown', (e) => {
@@ -2124,9 +2148,17 @@
                                     <div class="marquee-container w-full ml-2"><span class="marquee-text">${utils.escapeHtml(data.top.artist)}</span></div>
                                 </div>
                             </div>
-                            <button class="p-2 bg-black/60 backdrop-blur-md rounded-full text-white opacity-100 md:opacity-0 md:group-hover:opacity-100 transition flex-shrink-0 shadow-lg z-20" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${topStoreId}')">
-                                <svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>
-                            </button>
+                            <div class="top-result-actions flex items-center gap-2 flex-shrink-0 z-20">
+                                <button class="top-result-action" title="Play next" onclick="event.stopPropagation(); player.addNext(songStore.get('${topStoreId}'))">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+                                </button>
+                                <button class="top-result-action" title="Add to queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${topStoreId}'))">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
+                                </button>
+                                <button class="top-result-action" title="Add to library" onclick="event.stopPropagation(); player.likeSong('${utils.escapeJs(data.top.id)}')">
+                                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                                </button>
+                            </div>
                         </div>
 
                         <div class="flex items-center gap-3">
@@ -2192,6 +2224,7 @@
                 if (!state.queueExpanded) ui.toggleQueue();
             },
             init: async () => {
+                stripTouchHoverClasses();
                 ui.updateProfileUI();
                 const preferredLanguageSelect = document.getElementById('preferred-language-select');
                 if (preferredLanguageSelect) preferredLanguageSelect.value = localStorage.getItem('preferredLanguage') || '';
@@ -2524,8 +2557,11 @@
                 if (Math.abs(dx) > 72 && Math.abs(dx) > Math.abs(dy) * 1.2) {
                     const song = songStore.get(row.dataset.storeId);
                     if (!song) return;
+                    const commitClass = dx > 0 ? 'swipe-committed-next' : 'swipe-committed-queue';
+                    row.classList.add(commitClass);
                     if (dx > 0) player.addNext(song); else player.addToQueue(song);
                     haptics.pulse('medium');
+                    setTimeout(() => row.classList.remove(commitClass), 420);
                     e.preventDefault();
                 }
             }, { passive: false });
