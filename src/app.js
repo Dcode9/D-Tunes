@@ -1426,7 +1426,7 @@
                                             <p class="text-xs text-gray-400">${pl.tracks?.total || 0} tracks</p>
                                         </div>
                                     </div>
-                                    <svg class="w-5 h-5 text-gray-500 group-hover:text-green-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                                    <svg class="w-5 h-5 text-gray-500 group-hover:text-[var(--accent-color)] transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                                 </div>
                             `).join('');
                         }
@@ -1678,7 +1678,7 @@
                     <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center text-4xl ${likedStyle.bg}">
                         ${likedStyle.icon.replace('w-20 h-20', 'w-12 h-12')}
                         <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                            <span class="bg-green-500 text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+                            <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
                         </div>
                     </div>
                     <button class="absolute top-4 right-4 p-1.5 bg-black/60 backdrop-blur-md rounded-full text-white opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shadow-lg hover:bg-white/20 z-10" onclick="event.stopPropagation(); ctxMenu.showPlaylist(event, 'Liked Songs')">
@@ -1692,9 +1692,9 @@
 
                 html += `
                 <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer create-playlist-card" onclick="ui.toggleModal(true)">
-                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center bg-gradient-to-br from-green-500/35 via-emerald-900/45 to-zinc-950 border border-green-300/20 group-hover:border-green-300/60 transition">
+                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center liked-songs-art bg-gradient-to-br from-cyan-500/35 via-cyan-950/45 to-zinc-950 border transition">
                         <div class="absolute inset-0" style="background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.28), transparent 34%);"></div>
-                        <span class="relative w-14 h-14 rounded-full bg-green-500 text-black flex items-center justify-center shadow-xl shadow-green-500/25 group-hover:scale-110 transition">
+                        <span class="relative w-14 h-14 rounded-full bg-[var(--accent-color)] text-black flex items-center justify-center shadow-xl shadow-cyan-500/25 group-hover:scale-110 transition">
                             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
                         </span>
                     </div>
@@ -1723,7 +1723,7 @@
                         <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center text-4xl font-bold ${style.bg}">
                             ${style.icon}
                             <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                                <span class="bg-green-500 text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+                                <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
                             </div>
                         </div>
                         <button class="absolute top-4 right-4 p-1.5 bg-black/60 backdrop-blur-md rounded-full text-white opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shadow-lg hover:bg-white/20 z-10" onclick="event.stopPropagation(); ctxMenu.showPlaylist(event, '${utils.escapeJs(name)}')">
@@ -1799,7 +1799,7 @@
                     <div class="relative aspect-square rounded-lg overflow-hidden mb-3 bg-gray-800 shadow-md cursor-pointer" onclick="${clickHandler}">
                         <img src="${item.img}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" loading="lazy">
                         <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                            <span class="bg-green-500 text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+                            <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
                         </div>
                     </div>
                     ${menuBtn}
@@ -1820,17 +1820,28 @@
                     </div>
                 `;
             },
+            createQueuePill: (song, section, index) => {
+                const storeId = songStore.add(song);
+                const safeSection = utils.escapeHtml(section);
+                return `
+                <div class="queue-reorder-row glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/90 cursor-pointer mb-2" draggable="true" data-queue-section="${safeSection}" data-queue-index="${index}" data-store-id="${storeId}" onclick="playSongById('${storeId}')" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                    <button class="queue-drag-handle" title="Drag to rearrange" aria-label="Rearrange ${utils.escapeHtml(song.name)}" onclick="event.stopPropagation()" type="button">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M9 5a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM9 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM9 19a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z"/></svg>
+                    </button>
+                    ${ui.createSongPillInner(song)}
+                </div>`;
+            },
             createSongPill: (song, clickHandlerStr, context = 'queue') => {
                 const storeId = songStore.add(song);
                 const hoverBtnVis = context === 'quicksearch' ? 'opacity-100' : 'opacity-100 md:opacity-0 group-hover:opacity-100';
                 
                 return `
-                <div class="glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/90 hover-pause group cursor-pointer mb-2" onclick="${clickHandlerStr}" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                <div class="swipe-song glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/90 hover-pause group cursor-pointer mb-2" data-store-id="${storeId}" onclick="${clickHandlerStr}" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
                     ${ui.createSongPillInner(song)}
                     <div class="flex items-center ${hoverBtnVis} transition-opacity duration-200 mr-1">
                         <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition hidden md:flex" title="Play Next" onclick="event.stopPropagation(); player.addNext(songStore.get('${storeId}'))"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg></button>
                         <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition hidden md:flex" title="Add to Queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${storeId}'))"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg></button>
-                        <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition flex md:hidden" title="Options" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${storeId}')"><svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg></button>
+                        <span class="swipe-hint md:hidden text-[10px] text-gray-500 uppercase tracking-wider">Swipe</span>
                     </div>
                 </div>`;
             },
@@ -1839,7 +1850,7 @@
                 const removeBtnHtml = contextPlaylistName ? `<button class="p-2 text-red-400 hover:text-red-500 rounded-full hover:bg-red-500/10 hidden md:block" title="Remove" onclick="event.stopPropagation(); ui.removeSongFromPlaylist('${utils.escapeJs(contextPlaylistName)}', '${utils.escapeJs(song.id)}')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>` : '';
                 
                 return `
-                <div class="group flex items-center gap-4 p-2 rounded-lg glass-panel hover:bg-white/10 transition hover-pause" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                <div class="swipe-song group flex items-center gap-4 p-2 rounded-lg glass-panel hover:bg-white/10 transition hover-pause" data-store-id="${storeId}" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
                     <div class="relative w-12 h-12 flex-shrink-0 cursor-pointer rounded-md overflow-hidden" onclick="playSongById('${storeId}')">
                         <img src="${song.img}" class="w-full h-full object-cover" loading="lazy">
                         <div class="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
@@ -1851,7 +1862,7 @@
                     <div class="flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition mr-2">
                         <button class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 hidden md:block" title="Play Next" onclick="event.stopPropagation(); player.addNext(songStore.get('${storeId}'))"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg></button>
                         <button class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 hidden md:block" title="Add to Queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${storeId}'))"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg></button>
-                        <button class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 block md:hidden" title="Options" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${storeId}')"><svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg></button>
+                        <span class="swipe-hint block md:hidden text-[10px] text-gray-500 uppercase tracking-wider">Swipe</span>
                         ${removeBtnHtml}
                     </div>
                 </div>`;
@@ -1862,11 +1873,11 @@
                 <div class="for-you-card glass-panel rounded-3xl overflow-hidden relative flex-shrink-0 w-64 h-80 group cursor-pointer hover-pause" onclick="playSongById('${storeId}')">
                     <img src="${song.img}" class="absolute inset-0 w-full h-full object-cover transition duration-700 group-hover:scale-110" loading="lazy">
                     <div class="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent"></div>
-                    <button class="absolute top-4 right-4 w-10 h-10 rounded-full bg-green-500 text-black flex items-center justify-center shadow-xl opacity-95 group-hover:scale-110 transition" onclick="event.stopPropagation(); playSongById('${storeId}')">
+                    <button class="absolute top-4 right-4 w-10 h-10 rounded-full bg-[var(--accent-color)] text-black flex items-center justify-center shadow-xl opacity-95 group-hover:scale-110 transition" onclick="event.stopPropagation(); playSongById('${storeId}')">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                     </button>
                     <div class="absolute bottom-0 left-0 right-0 p-5">
-                        <div class="inline-flex px-2 py-1 rounded-full bg-white/10 text-[10px] uppercase tracking-wider text-green-300 mb-3">For You</div>
+                        <div class="inline-flex px-2 py-1 rounded-full bg-white/10 text-[10px] uppercase tracking-wider text-[var(--accent-color)] mb-3">For You</div>
                         <div class="marquee-container"><h3 class="text-xl font-black text-white marquee-text">${utils.escapeHtml(song.name)}</h3></div>
                         <div class="marquee-container mt-1"><p class="text-sm text-gray-300 marquee-text">${utils.escapeHtml(song.artist)}</p></div>
                     </div>
@@ -1876,7 +1887,7 @@
                 ui.switchView('playlist');
                 document.getElementById('playlist-view-title').textContent = title;
                 document.getElementById('playlist-view-count').textContent = `${songs.length} tracks`;
-                document.getElementById('pl-view-art').innerHTML = '<div class="w-full h-full bg-gradient-to-br from-green-500 to-blue-900 flex items-center justify-center"><svg class="w-20 h-20 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>';
+                document.getElementById('pl-view-art').innerHTML = '<div class="w-full h-full bg-gradient-to-br from-[var(--accent-color)] to-cyan-950 flex items-center justify-center"><svg class="w-20 h-20 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>';
                 document.getElementById('playlist-songs-list').innerHTML = songs.map(song => ui.createListRow(song)).join('');
                 document.getElementById('playlist-play-all').onclick = () => {
                     if(songs.length > 0) { state.queue = [...songs]; state.userQueue = []; state.idx = 0; player.playDirect(songs[0]); }
@@ -1977,6 +1988,32 @@
                 }
                 updateMarquees();
             },
+            queueTrackForSection: (section, index) => {
+                if (section === 'manual') return state.userQueue[index] || null;
+                const upcoming = state.shuffle ? state.queue.filter((_, i) => i !== state.idx) : state.queue.slice(state.idx + 1);
+                return upcoming[index] || null;
+            },
+            reorderQueueItem: (fromSection, fromIndex, toSection, toIndex) => {
+                if (fromSection !== toSection) return;
+                const from = Number(fromIndex);
+                const to = Number(toIndex);
+                if (!Number.isInteger(from) || !Number.isInteger(to) || from === to) return;
+                if (fromSection === 'manual') {
+                    const [item] = state.userQueue.splice(from, 1);
+                    if (!item) return;
+                    state.userQueue.splice(to, 0, item);
+                } else if (fromSection === 'auto' && !state.shuffle) {
+                    const base = state.idx + 1;
+                    const [item] = state.queue.splice(base + from, 1);
+                    if (!item) return;
+                    state.queue.splice(base + to, 0, item);
+                } else {
+                    return;
+                }
+                ui.renderQueue();
+                primeNextTrack();
+                persist.save();
+            },
             renderQueue: () => {
                 const listEl = document.getElementById('queue-list');
                 const clearBtn = document.getElementById('btn-clear-queue');
@@ -1989,12 +2026,12 @@
                 let html = '';
                 if (state.userQueue.length > 0) {
                     html += `<div class="text-[10px] text-white font-bold uppercase tracking-wider mb-1 pl-2 mt-1 drop-shadow-md">Queue</div>`;
-                    html += state.userQueue.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`)).join('');
+                    html += state.userQueue.map((song, index) => ui.createQueuePill(song, 'manual', index)).join('');
                 }
                 const upcoming = state.shuffle ? state.queue.filter((_, i) => i !== state.idx).slice(0, 10) : state.queue.slice(state.idx + 1, state.idx + 11);
                 if (upcoming.length > 0) {
                     html += `<div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1 pl-2 mt-3 drop-shadow-md">Autoplay</div>`;
-                    html += upcoming.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`)).join('');
+                    html += upcoming.map((song, index) => ui.createQueuePill(song, 'auto', index)).join('');
                 }
                 listEl.innerHTML = html === '' ? '<div class="text-xs text-gray-500 p-3 rounded-xl border border-white/5 bg-white/5">Queue is empty. Add songs and they will appear here instantly.</div>' : html;
                 updateMarquees();
@@ -2093,7 +2130,7 @@
                         </div>
 
                         <div class="flex items-center gap-3">
-                            <button onclick="playSongById('${topStoreId}')" class="bg-green-500 text-black px-6 py-2 rounded-full font-bold hover:scale-105 transition shadow-lg shadow-green-500/30 flex items-center gap-2 z-20 relative">
+                            <button onclick="playSongById('${topStoreId}')" class="bg-[var(--accent-color)] text-black px-6 py-2 rounded-full font-bold hover:scale-105 transition shadow-lg shadow-cyan-500/30 flex items-center gap-2 z-20 relative">
                                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play
                             </button>
                         </div>
@@ -2425,6 +2462,74 @@
 
             document.addEventListener('mobile-player-opened', resetExpandedPlayerScroll);
 
+            let queueDragSource = null;
+            document.addEventListener('dragstart', (e) => {
+                const row = e.target.closest('.queue-reorder-row');
+                if (!row) return;
+                queueDragSource = { section: row.dataset.queueSection, index: Number(row.dataset.queueIndex) };
+                row.classList.add('is-dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', JSON.stringify(queueDragSource));
+            });
+            document.addEventListener('dragover', (e) => {
+                const row = e.target.closest('.queue-reorder-row');
+                if (!row || !queueDragSource) return;
+                e.preventDefault();
+                row.classList.add('drag-over');
+            });
+            document.addEventListener('dragleave', (e) => {
+                e.target.closest('.queue-reorder-row')?.classList.remove('drag-over');
+            });
+            document.addEventListener('drop', (e) => {
+                const row = e.target.closest('.queue-reorder-row');
+                if (!row || !queueDragSource) return;
+                e.preventDefault();
+                ui.reorderQueueItem(queueDragSource.section, queueDragSource.index, row.dataset.queueSection, Number(row.dataset.queueIndex));
+                document.querySelectorAll('.queue-reorder-row').forEach(el => el.classList.remove('drag-over', 'is-dragging'));
+                queueDragSource = null;
+            });
+            document.addEventListener('dragend', () => {
+                document.querySelectorAll('.queue-reorder-row').forEach(el => el.classList.remove('drag-over', 'is-dragging'));
+                queueDragSource = null;
+            });
+
+            let swipeSongStart = null;
+            document.addEventListener('touchstart', (e) => {
+                const row = e.target.closest('.swipe-song');
+                if (!row || !deviceMode.isMobileUI() || e.target.closest('button, input, select, textarea')) return;
+                const touch = e.changedTouches[0];
+                swipeSongStart = { row, x: touch.clientX, y: touch.clientY, moved: false };
+            }, { passive: true });
+            document.addEventListener('touchmove', (e) => {
+                if (!swipeSongStart) return;
+                const touch = e.changedTouches[0];
+                const dx = touch.clientX - swipeSongStart.x;
+                const dy = touch.clientY - swipeSongStart.y;
+                if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+                    swipeSongStart.moved = true;
+                    swipeSongStart.row.style.transform = `translateX(${Math.max(-92, Math.min(92, dx))}px)`;
+                    swipeSongStart.row.classList.toggle('swipe-add-next', dx > 18);
+                    swipeSongStart.row.classList.toggle('swipe-add-queue', dx < -18);
+                }
+            }, { passive: true });
+            document.addEventListener('touchend', (e) => {
+                if (!swipeSongStart) return;
+                const { row, x, y } = swipeSongStart;
+                const touch = e.changedTouches[0];
+                const dx = touch.clientX - x;
+                const dy = touch.clientY - y;
+                row.style.transform = '';
+                row.classList.remove('swipe-add-next', 'swipe-add-queue');
+                swipeSongStart = null;
+                if (Math.abs(dx) > 72 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+                    const song = songStore.get(row.dataset.storeId);
+                    if (!song) return;
+                    if (dx > 0) player.addNext(song); else player.addToQueue(song);
+                    haptics.pulse('medium');
+                    e.preventDefault();
+                }
+            }, { passive: false });
+
             let lastPersistSecond = -1;
             audio.addEventListener('timeupdate', () => {
                 if (Number.isFinite(audio.duration) && audio.duration > 0 && !state.isDragging) {
@@ -2525,7 +2630,7 @@
                         return `<div class="flex items-center gap-2 p-1.5 hover:bg-white/10 rounded cursor-pointer transition" onclick="window.stageSongForPlaylist('${id}')">
                             <img src="${song.img}" class="w-8 h-8 rounded object-cover">
                             <div class="flex-1 min-w-0"><p class="text-xs text-white truncate">${utils.escapeHtml(song.name)}</p><p class="text-[10px] text-gray-400 truncate">${utils.escapeHtml(song.artist)}</p></div>
-                            <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            <svg class="w-4 h-4 text-[var(--accent-color)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                         </div>`;
                     }).join('');
                 }, 400);
