@@ -282,6 +282,36 @@
         // ============================================
         // STATE & PERSISTENCE
         // ============================================
+        const EQ_BANDS = [
+            { key: 'eq32', label: '32', frequency: 32, type: 'lowshelf' },
+            { key: 'eq64', label: '64', frequency: 64, type: 'peaking' },
+            { key: 'eq125', label: '125', frequency: 125, type: 'peaking' },
+            { key: 'eq250', label: '250', frequency: 250, type: 'peaking' },
+            { key: 'eq500', label: '500', frequency: 500, type: 'peaking' },
+            { key: 'eq1k', label: '1k', frequency: 1000, type: 'peaking' },
+            { key: 'eq2k', label: '2k', frequency: 2000, type: 'peaking' },
+            { key: 'eq4k', label: '4k', frequency: 4000, type: 'peaking' },
+            { key: 'eq8k', label: '8k', frequency: 8000, type: 'peaking' },
+            { key: 'eq16k', label: '16k', frequency: 16000, type: 'highshelf' }
+        ];
+        const FLAT_EQUALIZER = Object.fromEntries(EQ_BANDS.map((band) => [band.key, 0]));
+        const normalizeEqualizerSettings = (stored = {}) => {
+            const normalized = { ...FLAT_EQUALIZER };
+            EQ_BANDS.forEach((band) => {
+                if (Number.isFinite(Number(stored[band.key]))) normalized[band.key] = Number(stored[band.key]);
+            });
+            if (Number.isFinite(Number(stored.bass))) {
+                normalized.eq32 = normalized.eq64 = normalized.eq125 = Number(stored.bass);
+            }
+            if (Number.isFinite(Number(stored.mid))) {
+                normalized.eq500 = normalized.eq1k = normalized.eq2k = Number(stored.mid);
+            }
+            if (Number.isFinite(Number(stored.treble))) {
+                normalized.eq4k = normalized.eq8k = normalized.eq16k = Number(stored.treble);
+            }
+            return normalized;
+        };
+
         const state = { 
             queue: [], userQueue: [], idx: -1, playing: false, loading: false, loaded: false, shuffle: false, repeat: 0, currentTrack: null,
             likedIds: JSON.parse(localStorage.getItem('likedIds') || '[]'),
@@ -291,10 +321,10 @@
             playlists: JSON.parse(localStorage.getItem('playlists') || '{}'),
             username: localStorage.getItem('username') || 'Guest User',
             quality: localStorage.getItem('audioQuality') || 'high',
-            equalizer: JSON.parse(localStorage.getItem('equalizerSettings') || '{"bass":0,"mid":0,"treble":0}'),
+            equalizer: normalizeEqualizerSettings(JSON.parse(localStorage.getItem('equalizerSettings') || '{}')),
             forYouSongs: [],
             searchDebounce: null, hoverProgress: -1, lastHoverProgress: 0.5, isDragging: false, 
-            upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false
+            upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false, nextTrackPreloadId: null
         };
 
         const deviceMode = {
@@ -565,14 +595,18 @@
                 const avatarUrl = meta.avatar_url || meta.picture || `https://placehold.co/100x100/111/fff?text=${encodeURIComponent(displayName.charAt(0).toUpperCase())}`;
                 const label = document.getElementById('dverse-account-label');
                 const authButton = document.getElementById('dverse-auth-button');
+                const headerAuthButton = document.getElementById('dverse-header-auth-button');
                 const settingsButton = document.getElementById('dverse-settings-auth-button');
                 if (label) label.textContent = signedIn ? email : "D'Verse Cloud";
                 if (authButton) authButton.textContent = signedIn ? 'Sign out' : 'Sign in';
+                if (headerAuthButton) headerAuthButton.classList.toggle('hidden', signedIn);
                 if (settingsButton) settingsButton.textContent = signedIn ? 'Sign out' : 'Sign in';
                 if (signedIn) {
                     const username = document.getElementById('dd-username');
                     const headerAvatar = document.getElementById('header-avatar');
                     const mobileAvatar = document.getElementById('mobile-nav-avatar');
+                    state.username = displayName;
+                    localStorage.setItem('username', displayName);
                     if (username) username.textContent = displayName;
                     if (headerAvatar) headerAvatar.src = avatarUrl;
                     if (mobileAvatar) mobileAvatar.src = avatarUrl;
@@ -779,9 +813,57 @@
         const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         audio.setAttribute('playsinline', '');
         audio.setAttribute('webkit-playsinline', '');
-        audio.preload = 'metadata';
+        audio.preload = 'auto';
+        const preloadAudio = new Audio();
+        preloadAudio.preload = 'auto';
+        preloadAudio.crossOrigin = 'anonymous';
         let isPlaybackPending = false;
         let isAudioRecoveryPending = false;
+
+
+        const getUpcomingTrack = () => {
+            if (state.userQueue.length > 0) return state.userQueue[0];
+            if (state.queue.length === 0) return null;
+            if (state.shuffle) return state.queue.find((_, i) => i !== state.idx) || null;
+            return state.idx >= 0 && state.idx < state.queue.length - 1 ? state.queue[state.idx + 1] : null;
+        };
+
+        const primeNextTrack = async () => {
+            const nextTrack = getUpcomingTrack();
+            if (!nextTrack?.id || state.nextTrackPreloadId === nextTrack.id) return;
+            state.nextTrackPreloadId = nextTrack.id;
+            try {
+                const freshDetails = nextTrack.url ? null : await jiosaavnAPI.getSong(nextTrack.id);
+                const playUrl = freshDetails?.url || nextTrack.url;
+                if (!playUrl || state.nextTrackPreloadId !== nextTrack.id) return;
+                Object.assign(nextTrack, freshDetails || {}, { url: playUrl });
+                preloadAudio.src = playUrl;
+                preloadAudio.load();
+            } catch (e) {}
+        };
+
+        const updateMediaPosition = () => {
+            if (!('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function' || !state.currentTrack) return;
+            const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : Number(state.currentTrack.duration) || 0;
+            const position = Number.isFinite(audio.currentTime) ? Math.max(0, Math.min(audio.currentTime, duration || audio.currentTime)) : 0;
+            if (duration > 0) {
+                try { navigator.mediaSession.setPositionState({ duration, playbackRate: audio.playbackRate || 1, position }); } catch (e) {}
+            }
+        };
+
+        const requestPlay = async () => {
+            if (!state.loaded) return;
+            try {
+                if (audioContext && audioContext.state === 'suspended') await audioContext.resume();
+                if (!isAudioContextInitialized) setupAudioContext();
+                await audio.play();
+            } catch (e) { state.playing = false; ui.updatePlayBtn(); }
+        };
+
+        const requestPause = () => {
+            if (!state.loaded) return;
+            audio.pause();
+        };
 
         const recoverFromAudioError = async () => {
             if (!state.currentTrack || isAudioRecoveryPending) return;
@@ -905,7 +987,7 @@
                     if (audioContext && audioContext.state === 'suspended') audioContext.resume();
                     if (!isAudioContextInitialized) setupAudioContext();
                     
-                    ui.updateMetadata(track); ui.renderQueue(); 
+                    ui.updateMetadata(track); ui.renderQueue(); primeNextTrack(); 
                     
                     state.playHistory = state.playHistory.filter(t => t.id !== track.id);
                     state.playHistory.unshift(track);
@@ -927,7 +1009,7 @@
             },
             togglePlay: () => {
                 if(!state.loaded) return;
-                if(state.playing) { audio.pause(); } else { audio.play(); if (!isAudioContextInitialized) setupAudioContext(); }
+                if(state.playing || !audio.paused) { requestPause(); } else { requestPlay(); }
             },
             next: () => { 
                 if (state.userQueue.length > 0) { const nextSong = state.userQueue.shift(); player.playDirect(nextSong); } 
@@ -979,8 +1061,8 @@
                 if (!document.getElementById('view-playlist').classList.contains('hidden') && document.getElementById('playlist-view-title').textContent === 'Liked Songs') { ui.openPlaylist('Liked Songs'); }
             },
             toggleLike: () => { player.likeSong(); },
-            addNext: (song) => { state.userQueue.unshift(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); persist.save(); },
-            addToQueue: (song) => { state.userQueue.push(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); persist.save(); },
+            addNext: (song) => { state.userQueue.unshift(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); primeNextTrack(); persist.save(); },
+            addToQueue: (song) => { state.userQueue.push(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); primeNextTrack(); persist.save(); },
             clearQueue: () => {
                 state.userQueue = [];
                 state.queue = state.currentTrack ? [state.currentTrack] : [];
@@ -988,6 +1070,7 @@
                 state.upNextTriggered = false;
                 document.getElementById('queue-wrapper').classList.remove('preview-expanded', 'track-swap-out');
                 ui.renderQueue();
+                primeNextTrack();
                 persist.save();
             },
             showSimilarSongs: async () => {
@@ -1032,6 +1115,13 @@
 
         audio.addEventListener('error', recoverFromAudioError);
 
+        setInterval(() => {
+            if (!state.playing || state.repeat === 2 || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+            if (audio.ended || audio.duration - audio.currentTime <= 0.35) {
+                player.next();
+            }
+        }, 1000);
+
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
                 persist.save();
@@ -1059,24 +1149,25 @@
         let vizCanvas = null, vizSeekTrack = null, lastClipProgress = -1;
         let resizeCanvas = () => {};
         const applyEqualizer = () => {
-            if (!eqFilters.bass) return;
-            eqFilters.bass.gain.value = Number(state.equalizer.bass || 0);
-            eqFilters.mid.gain.value = Number(state.equalizer.mid || 0);
-            eqFilters.treble.gain.value = Number(state.equalizer.treble || 0);
+            EQ_BANDS.forEach((band) => {
+                if (eqFilters[band.key]) eqFilters[band.key].gain.value = Number(state.equalizer[band.key] || 0);
+            });
         };
         function setupAudioContext() {
-            if (isIOSDevice) return;
             try {
                 audioContext = new (window.AudioContext || window.webkitAudioContext)(); analyser = audioContext.createAnalyser(); source = audioContext.createMediaElementSource(audio);
-                eqFilters = {
-                    bass: audioContext.createBiquadFilter(),
-                    mid: audioContext.createBiquadFilter(),
-                    treble: audioContext.createBiquadFilter()
-                };
-                eqFilters.bass.type = 'lowshelf'; eqFilters.bass.frequency.value = 180;
-                eqFilters.mid.type = 'peaking'; eqFilters.mid.frequency.value = 1100; eqFilters.mid.Q.value = 0.8;
-                eqFilters.treble.type = 'highshelf'; eqFilters.treble.frequency.value = 4200;
-                source.connect(eqFilters.bass); eqFilters.bass.connect(eqFilters.mid); eqFilters.mid.connect(eqFilters.treble); eqFilters.treble.connect(analyser); analyser.connect(audioContext.destination); analyser.fftSize = 256;
+                eqFilters = {};
+                let previousNode = source;
+                EQ_BANDS.forEach((band) => {
+                    const filter = audioContext.createBiquadFilter();
+                    filter.type = band.type;
+                    filter.frequency.value = band.frequency;
+                    filter.Q.value = 1.1;
+                    eqFilters[band.key] = filter;
+                    previousNode.connect(filter);
+                    previousNode = filter;
+                });
+                previousNode.connect(analyser); analyser.connect(audioContext.destination); analyser.fftSize = 256;
                 applyEqualizer();
                 analyserData = new Uint8Array(analyser.frequencyBinCount);
                 isAudioContextInitialized = true;
@@ -1335,7 +1426,7 @@
                                             <p class="text-xs text-gray-400">${pl.tracks?.total || 0} tracks</p>
                                         </div>
                                     </div>
-                                    <svg class="w-5 h-5 text-gray-500 group-hover:text-green-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                                    <svg class="w-5 h-5 text-gray-500 group-hover:text-[var(--accent-color)] transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                                 </div>
                             `).join('');
                         }
@@ -1386,22 +1477,35 @@
                 }
             },
             renderEqualizerSettings: () => {
-                ['bass', 'mid', 'treble'].forEach((band) => {
-                    const value = Number(state.equalizer[band] || 0);
-                    const input = document.getElementById(`eq-${band}`);
-                    const label = document.getElementById(`eq-${band}-value`);
+                const container = document.getElementById('eq-bands');
+                if (!container) return;
+                if (!container.dataset.rendered) {
+                    container.innerHTML = EQ_BANDS.map((band) => `
+                        <label class="eq-band" title="${band.frequency} Hz">
+                            <span id="${band.key}-value" class="eq-value">0 dB</span>
+                            <input id="${band.key}" type="range" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="${band.label} Hz" oninput="ui.updateEqualizer('${band.key}', this.value)">
+                            <span class="eq-label">${band.label}</span>
+                        </label>
+                    `).join('');
+                    container.dataset.rendered = 'true';
+                }
+                EQ_BANDS.forEach((band) => {
+                    const value = Number(state.equalizer[band.key] || 0);
+                    const input = document.getElementById(band.key);
+                    const label = document.getElementById(`${band.key}-value`);
                     if (input) input.value = value;
                     if (label) label.textContent = `${value > 0 ? '+' : ''}${value} dB`;
                 });
             },
             updateEqualizer: (band, value) => {
+                if (!Object.prototype.hasOwnProperty.call(FLAT_EQUALIZER, band)) return;
                 state.equalizer[band] = Number(value);
                 localStorage.setItem('equalizerSettings', JSON.stringify(state.equalizer));
                 ui.renderEqualizerSettings();
                 applyEqualizer();
             },
             resetEqualizer: () => {
-                state.equalizer = { bass: 0, mid: 0, treble: 0 };
+                state.equalizer = { ...FLAT_EQUALIZER };
                 localStorage.setItem('equalizerSettings', JSON.stringify(state.equalizer));
                 ui.renderEqualizerSettings();
                 applyEqualizer();
@@ -1434,7 +1538,7 @@
                 state.playlists = {};
                 state.username = 'Guest User';
                 state.quality = 'high';
-                state.equalizer = { bass: 0, mid: 0, treble: 0 };
+                state.equalizer = { ...FLAT_EQUALIZER };
                 state.forYouSongs = [];
                 state.queueExpanded = false;
                 document.getElementById('queue-wrapper').classList.remove('queue-expanded', 'preview-expanded', 'track-swap-out');
@@ -1574,7 +1678,7 @@
                     <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center text-4xl ${likedStyle.bg}">
                         ${likedStyle.icon.replace('w-20 h-20', 'w-12 h-12')}
                         <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                            <span class="bg-green-500 text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+                            <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
                         </div>
                     </div>
                     <button class="absolute top-4 right-4 p-1.5 bg-black/60 backdrop-blur-md rounded-full text-white opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shadow-lg hover:bg-white/20 z-10" onclick="event.stopPropagation(); ctxMenu.showPlaylist(event, 'Liked Songs')">
@@ -1588,9 +1692,9 @@
 
                 html += `
                 <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer create-playlist-card" onclick="ui.toggleModal(true)">
-                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center bg-gradient-to-br from-green-500/35 via-emerald-900/45 to-zinc-950 border border-green-300/20 group-hover:border-green-300/60 transition">
+                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center liked-songs-art bg-gradient-to-br from-cyan-500/35 via-cyan-950/45 to-zinc-950 border transition">
                         <div class="absolute inset-0" style="background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.28), transparent 34%);"></div>
-                        <span class="relative w-14 h-14 rounded-full bg-green-500 text-black flex items-center justify-center shadow-xl shadow-green-500/25 group-hover:scale-110 transition">
+                        <span class="relative w-14 h-14 rounded-full bg-[var(--accent-color)] text-black flex items-center justify-center shadow-xl shadow-cyan-500/25 group-hover:scale-110 transition">
                             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
                         </span>
                     </div>
@@ -1619,7 +1723,7 @@
                         <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center text-4xl font-bold ${style.bg}">
                             ${style.icon}
                             <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                                <span class="bg-green-500 text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+                                <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
                             </div>
                         </div>
                         <button class="absolute top-4 right-4 p-1.5 bg-black/60 backdrop-blur-md rounded-full text-white opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shadow-lg hover:bg-white/20 z-10" onclick="event.stopPropagation(); ctxMenu.showPlaylist(event, '${utils.escapeJs(name)}')">
@@ -1695,7 +1799,7 @@
                     <div class="relative aspect-square rounded-lg overflow-hidden mb-3 bg-gray-800 shadow-md cursor-pointer" onclick="${clickHandler}">
                         <img src="${item.img}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" loading="lazy">
                         <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                            <span class="bg-green-500 text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+                            <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
                         </div>
                     </div>
                     ${menuBtn}
@@ -1716,17 +1820,32 @@
                     </div>
                 `;
             },
+            createQueuePill: (song, section, index) => {
+                const storeId = songStore.add(song);
+                const safeSection = utils.escapeHtml(section);
+                return `
+                <div class="queue-reorder-row glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/90 cursor-pointer mb-2" draggable="true" data-queue-section="${safeSection}" data-queue-index="${index}" data-store-id="${storeId}" onclick="playSongById('${storeId}')" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                    <button class="queue-drag-handle" title="Drag to rearrange" aria-label="Rearrange ${utils.escapeHtml(song.name)}" onclick="event.stopPropagation()" type="button">
+                        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M9 5a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM9 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM9 19a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z"/></svg>
+                    </button>
+                    ${ui.createSongPillInner(song)}
+                </div>`;
+            },
             createSongPill: (song, clickHandlerStr, context = 'queue') => {
                 const storeId = songStore.add(song);
                 const hoverBtnVis = context === 'quicksearch' ? 'opacity-100' : 'opacity-100 md:opacity-0 group-hover:opacity-100';
                 
                 return `
-                <div class="glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/90 hover-pause group cursor-pointer mb-2" onclick="${clickHandlerStr}" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
-                    ${ui.createSongPillInner(song)}
-                    <div class="flex items-center ${hoverBtnVis} transition-opacity duration-200 mr-1">
-                        <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition hidden md:flex" title="Play Next" onclick="event.stopPropagation(); player.addNext(songStore.get('${storeId}'))"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg></button>
-                        <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition hidden md:flex" title="Add to Queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${storeId}'))"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg></button>
-                        <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition flex md:hidden" title="Options" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${storeId}')"><svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg></button>
+                <div class="swipe-song glass-panel rounded-2xl shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/90 hover-pause group cursor-pointer mb-2" data-store-id="${storeId}" onclick="${clickHandlerStr}" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                    <div class="swipe-action-pane swipe-action-next">Play next</div>
+                    <div class="swipe-action-pane swipe-action-queue">Queue</div>
+                    <div class="swipe-track p-2 pr-4 flex items-center w-full">
+                        ${ui.createSongPillInner(song)}
+                        <div class="flex items-center ${hoverBtnVis} transition-opacity duration-200 mr-1">
+                            <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition hidden md:flex" title="Play Next" onclick="event.stopPropagation(); player.addNext(songStore.get('${storeId}'))"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg></button>
+                            <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition hidden md:flex" title="Add to Queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${storeId}'))"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg></button>
+                            <span class="swipe-hint md:hidden text-[10px] text-gray-500 uppercase tracking-wider">Swipe</span>
+                        </div>
                     </div>
                 </div>`;
             },
@@ -1735,20 +1854,24 @@
                 const removeBtnHtml = contextPlaylistName ? `<button class="p-2 text-red-400 hover:text-red-500 rounded-full hover:bg-red-500/10 hidden md:block" title="Remove" onclick="event.stopPropagation(); ui.removeSongFromPlaylist('${utils.escapeJs(contextPlaylistName)}', '${utils.escapeJs(song.id)}')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>` : '';
                 
                 return `
-                <div class="group flex items-center gap-4 p-2 rounded-lg glass-panel hover:bg-white/10 transition hover-pause" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
-                    <div class="relative w-12 h-12 flex-shrink-0 cursor-pointer rounded-md overflow-hidden" onclick="playSongById('${storeId}')">
-                        <img src="${song.img}" class="w-full h-full object-cover" loading="lazy">
-                        <div class="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
-                    </div>
-                    <div class="flex-1 min-w-0 cursor-pointer flex flex-col justify-center" onclick="playSongById('${storeId}')">
-                        <div class="marquee-container w-full"><h4 class="text-white font-medium text-sm marquee-text">${utils.escapeHtml(song.name)}</h4></div>
-                        <div class="marquee-container w-full mt-0.5"><p class="text-gray-400 text-xs marquee-text">${utils.escapeHtml(song.artist)}</p></div>
-                    </div>
-                    <div class="flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition mr-2">
-                        <button class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 hidden md:block" title="Play Next" onclick="event.stopPropagation(); player.addNext(songStore.get('${storeId}'))"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg></button>
-                        <button class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 hidden md:block" title="Add to Queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${storeId}'))"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg></button>
-                        <button class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 block md:hidden" title="Options" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${storeId}')"><svg width="20" height="20" fill="currentColor" viewBox="0 0 16 16"><path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg></button>
-                        ${removeBtnHtml}
+                <div class="swipe-song group rounded-lg glass-panel hover:bg-white/10 transition hover-pause" data-store-id="${storeId}" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                    <div class="swipe-action-pane swipe-action-next">Play next</div>
+                    <div class="swipe-action-pane swipe-action-queue">Queue</div>
+                    <div class="swipe-track flex items-center gap-4 p-2 w-full">
+                        <div class="relative w-12 h-12 flex-shrink-0 cursor-pointer rounded-md overflow-hidden" onclick="playSongById('${storeId}')">
+                            <img src="${song.img}" class="w-full h-full object-cover" loading="lazy">
+                            <div class="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+                        </div>
+                        <div class="flex-1 min-w-0 cursor-pointer flex flex-col justify-center" onclick="playSongById('${storeId}')">
+                            <div class="marquee-container w-full"><h4 class="text-white font-medium text-sm marquee-text">${utils.escapeHtml(song.name)}</h4></div>
+                            <div class="marquee-container w-full mt-0.5"><p class="text-gray-400 text-xs marquee-text">${utils.escapeHtml(song.artist)}</p></div>
+                        </div>
+                        <div class="flex items-center gap-2 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition mr-2">
+                            <button class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 hidden md:block" title="Play Next" onclick="event.stopPropagation(); player.addNext(songStore.get('${storeId}'))"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg></button>
+                            <button class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 hidden md:block" title="Add to Queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${storeId}'))"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg></button>
+                            <span class="swipe-hint block md:hidden text-[10px] text-gray-500 uppercase tracking-wider">Swipe</span>
+                            ${removeBtnHtml}
+                        </div>
                     </div>
                 </div>`;
             },
@@ -1758,11 +1881,11 @@
                 <div class="for-you-card glass-panel rounded-3xl overflow-hidden relative flex-shrink-0 w-64 h-80 group cursor-pointer hover-pause" onclick="playSongById('${storeId}')">
                     <img src="${song.img}" class="absolute inset-0 w-full h-full object-cover transition duration-700 group-hover:scale-110" loading="lazy">
                     <div class="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent"></div>
-                    <button class="absolute top-4 right-4 w-10 h-10 rounded-full bg-green-500 text-black flex items-center justify-center shadow-xl opacity-95 group-hover:scale-110 transition" onclick="event.stopPropagation(); playSongById('${storeId}')">
+                    <button class="absolute top-4 right-4 w-10 h-10 rounded-full bg-[var(--accent-color)] text-black flex items-center justify-center shadow-xl opacity-95 group-hover:scale-110 transition" onclick="event.stopPropagation(); playSongById('${storeId}')">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                     </button>
                     <div class="absolute bottom-0 left-0 right-0 p-5">
-                        <div class="inline-flex px-2 py-1 rounded-full bg-white/10 text-[10px] uppercase tracking-wider text-green-300 mb-3">For You</div>
+                        <div class="inline-flex px-2 py-1 rounded-full bg-white/10 text-[10px] uppercase tracking-wider text-[var(--accent-color)] mb-3">For You</div>
                         <div class="marquee-container"><h3 class="text-xl font-black text-white marquee-text">${utils.escapeHtml(song.name)}</h3></div>
                         <div class="marquee-container mt-1"><p class="text-sm text-gray-300 marquee-text">${utils.escapeHtml(song.artist)}</p></div>
                     </div>
@@ -1772,7 +1895,7 @@
                 ui.switchView('playlist');
                 document.getElementById('playlist-view-title').textContent = title;
                 document.getElementById('playlist-view-count').textContent = `${songs.length} tracks`;
-                document.getElementById('pl-view-art').innerHTML = '<div class="w-full h-full bg-gradient-to-br from-green-500 to-blue-900 flex items-center justify-center"><svg class="w-20 h-20 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>';
+                document.getElementById('pl-view-art').innerHTML = '<div class="w-full h-full bg-gradient-to-br from-[var(--accent-color)] to-cyan-950 flex items-center justify-center"><svg class="w-20 h-20 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>';
                 document.getElementById('playlist-songs-list').innerHTML = songs.map(song => ui.createListRow(song)).join('');
                 document.getElementById('playlist-play-all').onclick = () => {
                     if(songs.length > 0) { state.queue = [...songs]; state.userQueue = []; state.idx = 0; player.playDirect(songs[0]); }
@@ -1795,7 +1918,7 @@
                     artist.textContent = loading ? `Loading • ${state.currentTrack.artist || 'Preparing audio'}` : (state.currentTrack.artist || 'Unknown Artist');
                 }
                 if ('mediaSession' in navigator) {
-                    navigator.mediaSession.playbackState = loading ? 'none' : (state.playing ? 'playing' : 'paused');
+                    navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused';
                 }
                 updateMarquees();
             },
@@ -1817,16 +1940,18 @@
                     const safeSetHandler = (action, handler) => {
                         try { navigator.mediaSession.setActionHandler(action, handler); } catch (e) {}
                     };
-                    safeSetHandler('play', player.togglePlay);
-                    safeSetHandler('pause', player.togglePlay);
+                    safeSetHandler('play', requestPlay);
+                    safeSetHandler('pause', requestPause);
                     safeSetHandler('previoustrack', player.prev);
                     safeSetHandler('nexttrack', player.next);
-                    safeSetHandler('seekbackward', (details) => { audio.currentTime = Math.max(audio.currentTime - (details.seekOffset || 10), 0); });
-                    safeSetHandler('seekforward', (details) => { audio.currentTime = Math.min(audio.currentTime + (details.seekOffset || 10), audio.duration || 0); });
-                    safeSetHandler('seekto', (details) => {
-                        if (!details || !Number.isFinite(details.seekTime)) return;
-                        audio.currentTime = Math.max(0, Math.min(details.seekTime, audio.duration || details.seekTime));
-                    });
+                    const seekToTime = (time) => {
+                        const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : Number(state.currentTrack?.duration) || time;
+                        audio.currentTime = Math.max(0, Math.min(Number(time) || 0, duration));
+                        updateMediaPosition();
+                    };
+                    safeSetHandler('seekbackward', (details) => seekToTime(audio.currentTime - (details?.seekOffset || 10)));
+                    safeSetHandler('seekforward', (details) => seekToTime(audio.currentTime + (details?.seekOffset || 10)));
+                    safeSetHandler('seekto', (details) => { if (details && Number.isFinite(details.seekTime)) seekToTime(details.seekTime); });
                 }
                 
                 const mPlayBtn = document.getElementById('m-icon-play');
@@ -1846,6 +1971,21 @@
                     mPlayBtn.className = state.playing ? 'hidden' : 'flex';
                     mPauseBtn.className = state.playing ? 'flex' : 'hidden';
                 }
+            },
+            renderCompactSwipePreview: () => {
+                const prevSlot = document.getElementById('compact-swipe-prev');
+                const nextSlot = document.getElementById('compact-swipe-next');
+                if (!prevSlot || !nextSlot) return;
+                const prevIdx = state.queue.length ? (state.idx <= 0 ? state.queue.length - 1 : state.idx - 1) : -1;
+                const prevTrack = prevIdx >= 0 ? state.queue[prevIdx] : null;
+                const nextTrack = getUpcomingTrack();
+                const preview = (track, label) => track ? `
+                    <div class="glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/95">
+                        <div class="text-[10px] font-black uppercase tracking-wider text-[var(--accent-color)] px-2">${label}</div>
+                        ${ui.createSongPillInner(track)}
+                    </div>` : '';
+                prevSlot.innerHTML = preview(prevTrack, 'Previous');
+                nextSlot.innerHTML = preview(nextTrack, 'Next');
             },
             toggleQueue: () => {
                 state.queueExpanded = !state.queueExpanded;
@@ -1873,6 +2013,32 @@
                 }
                 updateMarquees();
             },
+            queueTrackForSection: (section, index) => {
+                if (section === 'manual') return state.userQueue[index] || null;
+                const upcoming = state.shuffle ? state.queue.filter((_, i) => i !== state.idx) : state.queue.slice(state.idx + 1);
+                return upcoming[index] || null;
+            },
+            reorderQueueItem: (fromSection, fromIndex, toSection, toIndex) => {
+                if (fromSection !== toSection) return;
+                const from = Number(fromIndex);
+                const to = Number(toIndex);
+                if (!Number.isInteger(from) || !Number.isInteger(to) || from === to) return;
+                if (fromSection === 'manual') {
+                    const [item] = state.userQueue.splice(from, 1);
+                    if (!item) return;
+                    state.userQueue.splice(to, 0, item);
+                } else if (fromSection === 'auto' && !state.shuffle) {
+                    const base = state.idx + 1;
+                    const [item] = state.queue.splice(base + from, 1);
+                    if (!item) return;
+                    state.queue.splice(base + to, 0, item);
+                } else {
+                    return;
+                }
+                ui.renderQueue();
+                primeNextTrack();
+                persist.save();
+            },
             renderQueue: () => {
                 const listEl = document.getElementById('queue-list');
                 const clearBtn = document.getElementById('btn-clear-queue');
@@ -1885,12 +2051,12 @@
                 let html = '';
                 if (state.userQueue.length > 0) {
                     html += `<div class="text-[10px] text-white font-bold uppercase tracking-wider mb-1 pl-2 mt-1 drop-shadow-md">Queue</div>`;
-                    html += state.userQueue.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`)).join('');
+                    html += state.userQueue.map((song, index) => ui.createQueuePill(song, 'manual', index)).join('');
                 }
                 const upcoming = state.shuffle ? state.queue.filter((_, i) => i !== state.idx).slice(0, 10) : state.queue.slice(state.idx + 1, state.idx + 11);
                 if (upcoming.length > 0) {
                     html += `<div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1 pl-2 mt-3 drop-shadow-md">Autoplay</div>`;
-                    html += upcoming.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`)).join('');
+                    html += upcoming.map((song, index) => ui.createQueuePill(song, 'auto', index)).join('');
                 }
                 listEl.innerHTML = html === '' ? '<div class="text-xs text-gray-500 p-3 rounded-xl border border-white/5 bg-white/5">Queue is empty. Add songs and they will appear here instantly.</div>' : html;
                 updateMarquees();
@@ -1989,7 +2155,7 @@
                         </div>
 
                         <div class="flex items-center gap-3">
-                            <button onclick="playSongById('${topStoreId}')" class="bg-green-500 text-black px-6 py-2 rounded-full font-bold hover:scale-105 transition shadow-lg shadow-green-500/30 flex items-center gap-2 z-20 relative">
+                            <button onclick="playSongById('${topStoreId}')" class="bg-[var(--accent-color)] text-black px-6 py-2 rounded-full font-bold hover:scale-105 transition shadow-lg shadow-cyan-500/30 flex items-center gap-2 z-20 relative">
                                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play
                             </button>
                         </div>
@@ -2185,6 +2351,7 @@
                 currentProgress = Math.max(0, Math.min(1, nextTime / audio.duration));
                 if (Math.abs(audio.currentTime - nextTime) > 0.08) {
                     audio.currentTime = nextTime;
+                    updateMediaPosition();
                 }
             });
 
@@ -2193,6 +2360,7 @@
                 const nextTime = parseFloat(seekBar.value);
                 if (!Number.isFinite(nextTime)) return;
                 audio.currentTime = nextTime;
+                updateMediaPosition();
                 currentProgress = Math.max(0, Math.min(1, nextTime / audio.duration));
                 setDragging(false);
             });
@@ -2200,8 +2368,12 @@
             audio.addEventListener('loadedmetadata', () => {
                 if (Number.isFinite(audio.duration) && audio.duration > 0) {
                     seekBar.max = audio.duration;
+                    updateMediaPosition();
+                    primeNextTrack();
                 }
             });
+            audio.addEventListener('durationchange', updateMediaPosition);
+            audio.addEventListener('seeked', updateMediaPosition);
 
             container.addEventListener('mousemove', (e) => {
                 if(!state.loaded || !audio.duration) return; const rect = container.getBoundingClientRect();
@@ -2239,12 +2411,14 @@
                 touchDeltaY = e.changedTouches[0].screenY - touchStartY;
                 if (Math.abs(touchDeltaX) < 8 && Math.abs(touchDeltaY) < 8) return;
                 if (Math.abs(touchDeltaX) > Math.abs(touchDeltaY)) {
-                    const clamped = Math.max(-112, Math.min(112, touchDeltaX));
+                    const width = island?.getBoundingClientRect().width || window.innerWidth;
+                    const clamped = Math.max(-width * 0.92, Math.min(width * 0.92, touchDeltaX));
                     activeArea?.style.setProperty('--swipe-x', `${clamped}px`);
                     activeArea?.classList.toggle('swipe-left', clamped < -12);
                     activeArea?.classList.toggle('swipe-right', clamped > 12);
+                    e.preventDefault();
                 }
-            }, {passive: true});
+            }, {passive: false});
             island.addEventListener('touchend', e => {
                 if (!deviceMode.isMobileUI() || !state.currentTrack || document.body.classList.contains('mobile-player-open')) return;
                 if (e.target.closest('button')) { resetCompactSwipe(); return; }
@@ -2317,15 +2491,91 @@
 
             document.addEventListener('mobile-player-opened', resetExpandedPlayerScroll);
 
+            let queueDragSource = null;
+            document.addEventListener('dragstart', (e) => {
+                const row = e.target.closest('.queue-reorder-row');
+                if (!row) return;
+                queueDragSource = { section: row.dataset.queueSection, index: Number(row.dataset.queueIndex) };
+                row.classList.add('is-dragging');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', JSON.stringify(queueDragSource));
+            });
+            document.addEventListener('dragover', (e) => {
+                const row = e.target.closest('.queue-reorder-row');
+                if (!row || !queueDragSource) return;
+                e.preventDefault();
+                row.classList.add('drag-over');
+            });
+            document.addEventListener('dragleave', (e) => {
+                e.target.closest('.queue-reorder-row')?.classList.remove('drag-over');
+            });
+            document.addEventListener('drop', (e) => {
+                const row = e.target.closest('.queue-reorder-row');
+                if (!row || !queueDragSource) return;
+                e.preventDefault();
+                ui.reorderQueueItem(queueDragSource.section, queueDragSource.index, row.dataset.queueSection, Number(row.dataset.queueIndex));
+                document.querySelectorAll('.queue-reorder-row').forEach(el => el.classList.remove('drag-over', 'is-dragging'));
+                queueDragSource = null;
+            });
+            document.addEventListener('dragend', () => {
+                document.querySelectorAll('.queue-reorder-row').forEach(el => el.classList.remove('drag-over', 'is-dragging'));
+                queueDragSource = null;
+            });
+
+            let swipeSongStart = null;
+            document.addEventListener('touchstart', (e) => {
+                const row = e.target.closest('.swipe-song');
+                if (!row || !deviceMode.isMobileUI() || e.target.closest('button, input, select, textarea')) return;
+                const touch = e.changedTouches[0];
+                swipeSongStart = { row, x: touch.clientX, y: touch.clientY, moved: false };
+            }, { passive: true });
+            document.addEventListener('touchmove', (e) => {
+                if (!swipeSongStart) return;
+                const touch = e.changedTouches[0];
+                const dx = touch.clientX - swipeSongStart.x;
+                const dy = touch.clientY - swipeSongStart.y;
+                if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+                    swipeSongStart.moved = true;
+                    const clamped = Math.max(-118, Math.min(118, dx));
+                    swipeSongStart.row.style.setProperty('--swipe-x', `${clamped}px`);
+                    swipeSongStart.row.classList.add('is-swiping');
+                    swipeSongStart.row.classList.toggle('swipe-add-next', dx > 18);
+                    swipeSongStart.row.classList.toggle('swipe-add-queue', dx < -18);
+                    e.preventDefault();
+                }
+            }, { passive: false });
+            document.addEventListener('touchend', (e) => {
+                if (!swipeSongStart) return;
+                const { row, x, y } = swipeSongStart;
+                const touch = e.changedTouches[0];
+                const dx = touch.clientX - x;
+                const dy = touch.clientY - y;
+                const committed = Math.abs(dx) > 72 && Math.abs(dx) > Math.abs(dy) * 1.2;
+                if (committed) {
+                    row.classList.add(dx > 0 ? 'commit-next' : 'commit-queue');
+                    row.style.setProperty('--swipe-x', dx > 0 ? '115%' : '-115%');
+                    const song = songStore.get(row.dataset.storeId);
+                    setTimeout(() => {
+                        if (song) { if (dx > 0) player.addNext(song); else player.addToQueue(song); }
+                        row.classList.remove('is-swiping', 'swipe-add-next', 'swipe-add-queue', 'commit-next', 'commit-queue');
+                        row.style.setProperty('--swipe-x', '0px');
+                    }, 150);
+                    haptics.pulse('medium');
+                    e.preventDefault();
+                } else {
+                    row.classList.remove('is-swiping', 'swipe-add-next', 'swipe-add-queue');
+                    row.style.setProperty('--swipe-x', '0px');
+                }
+                swipeSongStart = null;
+            }, { passive: false });
+
             let lastPersistSecond = -1;
             audio.addEventListener('timeupdate', () => {
                 if (Number.isFinite(audio.duration) && audio.duration > 0 && !state.isDragging) {
                     seekBar.max = audio.duration; seekBar.value = audio.currentTime;
                     currentProgress = audio.currentTime / audio.duration;
                     if ('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function' && state.currentTrack) {
-                        try {
-                            navigator.mediaSession.setPositionState({ duration: audio.duration, playbackRate: audio.playbackRate || 1, position: audio.currentTime });
-                        } catch (e) {}
+                        updateMediaPosition();
                     }
                     if (currentProgress >= 0.9 && state.currentTrack && recommendationEvents.completedSongId !== state.currentTrack.id) {
                         recommendationEvents.completedSongId = state.currentTrack.id;
@@ -2343,13 +2593,14 @@
 
                     // Morphing 10s Preview Logic 
                     const timeRemaining = audio.duration - audio.currentTime;
-                    const hasNext = state.userQueue.length > 0 || (state.queue.length > 0 && state.idx < state.queue.length - 1);
+                    const hasNext = Boolean(getUpcomingTrack());
                     const wrap = document.getElementById('queue-wrapper');
                     
                     if (timeRemaining <= 10 && timeRemaining > 0 && hasNext) {
                         if (!state.upNextTriggered && !state.queueExpanded) {
                             state.upNextTriggered = true;
-                            let nextTrack = state.userQueue.length > 0 ? state.userQueue[0] : (state.shuffle ? state.queue.filter((_, i) => i !== state.idx)[0] : state.queue[state.idx + 1]);
+                            let nextTrack = getUpcomingTrack();
+                            primeNextTrack();
                             if (nextTrack) {
                                 document.getElementById('queue-preview-pill').innerHTML = ui.createSongPillInner(nextTrack);
                                 document.getElementById('queue-preview-pill').className = "glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/90 transition-all duration-400";
@@ -2378,11 +2629,11 @@
                     wrap.classList.add('track-swap-out');
                     setTimeout(() => {
                         wrap.classList.remove('preview-expanded', 'track-swap-out');
-                        if(state.repeat === 2) { audio.currentTime = 0; audio.play(); state.upNextTriggered = false; } else player.next();
-                    }, 400); // Wait for CSS swap out morph
+                        if(state.repeat === 2) { audio.currentTime = 0; requestPlay(); state.upNextTriggered = false; } else player.next();
+                    }, document.visibilityState === 'hidden' ? 0 : 400); // Wait for CSS swap out morph only when visible
                 } else {
                     wrap.classList.remove('preview-expanded', 'track-swap-out');
-                    if(state.repeat === 2) { audio.currentTime = 0; audio.play(); state.upNextTriggered = false; } else player.next();
+                    if(state.repeat === 2) { audio.currentTime = 0; requestPlay(); state.upNextTriggered = false; } else player.next();
                 }
             });
 
@@ -2418,7 +2669,7 @@
                         return `<div class="flex items-center gap-2 p-1.5 hover:bg-white/10 rounded cursor-pointer transition" onclick="window.stageSongForPlaylist('${id}')">
                             <img src="${song.img}" class="w-8 h-8 rounded object-cover">
                             <div class="flex-1 min-w-0"><p class="text-xs text-white truncate">${utils.escapeHtml(song.name)}</p><p class="text-[10px] text-gray-400 truncate">${utils.escapeHtml(song.artist)}</p></div>
-                            <svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            <svg class="w-4 h-4 text-[var(--accent-color)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                         </div>`;
                     }).join('');
                 }, 400);
