@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
     <title>D'Tunes</title>
-    <link rel="icon" href="data:,">
+    <link rel="icon" href="assets/DTunes2.svg">
     
     <!-- Libraries -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -26,10 +26,10 @@
     <div id="profile-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
         <div class="glass-panel p-6 rounded-2xl w-full max-w-sm shadow-2xl border border-white/10 transform transition-transform flex flex-col">
             <h3 class="text-xl font-bold text-white mb-4 flex-shrink-0">Edit Profile</h3>
-            <input type="text" id="edit-username-input" placeholder="Your Name" class="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white mb-6 focus:outline-none focus:border-green-400 transition flex-shrink-0" autocomplete="off" maxlength="20">
+            <input type="text" id="edit-username-input" placeholder="Your Name" class="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white mb-6 focus:outline-none focus:border-[var(--accent-color)] transition flex-shrink-0" autocomplete="off" maxlength="20">
             <div class="flex justify-end gap-3 pt-2">
                 <button onclick="ui.toggleProfileModal(false)" class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition font-medium">Cancel</button>
-                <button onclick="ui.saveProfile()" class="px-6 py-2 rounded-lg bg-green-500 text-black font-bold hover:scale-105 transition shadow-lg shadow-green-500/30">Save</button>
+                <button onclick="ui.saveProfile()" class="px-6 py-2 rounded-lg bg-[var(--accent-color)] text-black font-bold hover:scale-105 transition shadow-lg shadow-cyan-500/30">Save</button>
             </div>
         </div>
     </div>
@@ -38,7 +38,7 @@
     <div id="playlist-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
         <div class="glass-panel p-6 rounded-2xl w-full max-w-lg shadow-2xl border border-white/10 transform transition-transform flex flex-col max-h-[90vh]">
             <h3 class="text-xl font-bold text-white mb-4 flex-shrink-0">Create Playlist</h3>
-            <input type="text" id="new-playlist-name" placeholder="My Awesome Mix" class="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white mb-4 focus:outline-none focus:border-green-400 transition flex-shrink-0" autocomplete="off">
+            <input type="text" id="new-playlist-name" placeholder="My Awesome Mix" class="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white mb-4 focus:outline-none focus:border-[var(--accent-color)] transition flex-shrink-0" autocomplete="off">
             
             <div class="relative mb-4 flex-shrink-0">
                 <input type="text" id="pl-song-search" placeholder="Search songs to add..." class="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-white/30 transition" autocomplete="off">
@@ -52,7 +52,7 @@
 
             <div class="flex justify-end gap-3 border-t border-white/5 pt-4 flex-shrink-0">
                 <button onclick="ui.toggleModal(false)" class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition font-medium">Cancel</button>
-                <button onclick="ui.createPlaylist()" class="px-6 py-2 rounded-lg bg-green-500 text-black font-bold hover:scale-105 transition shadow-lg shadow-green-500/30">Create</button>
+                <button onclick="ui.createPlaylist()" class="px-6 py-2 rounded-lg bg-[var(--accent-color)] text-black font-bold hover:scale-105 transition shadow-lg shadow-cyan-500/30">Create</button>
             </div>
         </div>
     </div>
@@ -116,16 +116,18 @@
     <!-- TOP HEADER -->
     <header class="fixed top-0 left-0 right-0 z-40 glass-panel md:rounded-2xl md:top-4 md:left-6 md:right-6 px-4 md:px-6 py-2 md:py-3 flex items-center justify-between gap-4 shadow-xl border-t-0 md:border-t">
         <div id="app-logo" class="flex items-center gap-2 text-xl md:text-2xl font-bold text-white cursor-pointer w-auto md:w-32 flex-shrink-0" onclick="ui.switchView('home'); ui.closeMobileSearch();">
-            <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 md:w-8 md:h-8 text-green-400" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+            <img src="assets/DTunes2.svg" alt="D'Tunes logo" class="w-7 h-7 md:w-9 md:h-9 rounded-xl shadow-lg shadow-cyan-500/20">
             <span>D'Tunes</span>
+            <span class="beta-label" aria-label="D'Tunes beta">Beta</span>
         </div>
 
         <!-- Desktop layout placeholder where search *would* be -->
         <div class="flex-1 w-full hidden md:block"></div>
         
         <!-- Account Area (Profile & Settings) -->
-        <div id="header-account" class="relative flex items-center justify-end w-auto md:w-32 flex-shrink-0">
-            <button class="w-8 h-8 md:w-10 md:h-10 rounded-full border border-white/20 overflow-hidden hover:border-green-400 transition cursor-pointer" onclick="document.getElementById('profile-dropdown').classList.toggle('hidden')">
+        <div id="header-account" class="relative flex items-center justify-end gap-2 w-auto md:w-48 flex-shrink-0">
+            <button id="dverse-header-auth-button" class="desktop-auth-button hidden rounded-full bg-[var(--accent-color)] px-4 py-2 text-sm font-black text-black shadow-lg shadow-cyan-500/20 hover:scale-105 transition" onclick="cloudLibrary.toggleAuth()">Sign in</button>
+            <button class="w-8 h-8 md:w-10 md:h-10 rounded-full border border-white/20 overflow-hidden hover:border-[var(--accent-color)] transition cursor-pointer" onclick="document.getElementById('profile-dropdown').classList.toggle('hidden')">
                 <img src="https://placehold.co/100x100/111/fff?text=U" id="header-avatar" class="w-full h-full object-cover">
             </button>
             
@@ -137,7 +139,7 @@
                 <div class="px-3 py-2 border-b border-white/10">
                     <p id="dverse-account-label" class="text-xs font-bold text-white truncate">D'Verse Cloud</p>
                     <p id="dverse-account-status" class="text-[11px] text-gray-400 leading-4 mt-0.5">Not signed in</p>
-                    <button id="dverse-auth-button" class="w-full mt-2 rounded-lg bg-green-400 text-black text-xs font-black py-2 hover:bg-green-300 transition" onclick="cloudLibrary.toggleAuth()">Sign in</button>
+                    <button id="dverse-auth-button" class="w-full mt-2 rounded-lg bg-[var(--accent-color)] text-black text-xs font-black py-2 hover:bg-[var(--accent-color-2)] transition" onclick="cloudLibrary.toggleAuth()">Sign in</button>
                 </div>
                 <button class="w-full text-left px-3 py-2 mt-1 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition flex items-center gap-2" onclick="ui.switchView('settings'); document.getElementById('profile-dropdown').classList.add('hidden')">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
@@ -194,7 +196,7 @@
                 </div>
                 <div class="row-blur-left"></div><div id="for-you-grid" class="horizontal-scroll"></div><div class="row-blur-right"></div>
                 <div id="for-you-actions" class="hidden px-4 md:px-8 mt-5 flex flex-wrap items-center gap-3 relative z-20">
-                    <button onclick="homeView.playForYou()" class="px-5 py-2.5 rounded-full bg-green-500 text-black font-bold hover:scale-105 transition shadow-lg shadow-green-500/20">Autoplay For You</button>
+                    <button onclick="homeView.playForYou()" class="px-5 py-2.5 rounded-full bg-[var(--accent-color)] text-black font-bold hover:scale-105 transition shadow-lg shadow-cyan-500/20">Autoplay For You</button>
                     <button onclick="homeView.queueForYou()" class="px-5 py-2.5 rounded-full bg-white/10 text-white font-bold hover:bg-white/20 transition">Add to Queue</button>
                     <span id="for-you-count" class="text-xs text-gray-400"></span>
                 </div>
@@ -219,7 +221,7 @@
                     </select>
                 </div>
                 <div class="px-4 md:px-8 flex flex-wrap gap-2 relative z-20">
-                    <button onclick="homeView.loadGeneratedPlaylist('for-you')" class="px-4 py-2 rounded-full bg-green-500 text-black font-bold hover:scale-105 transition">For You</button>
+                    <button onclick="homeView.loadGeneratedPlaylist('for-you')" class="px-4 py-2 rounded-full bg-[var(--accent-color)] text-black font-bold hover:scale-105 transition">For You</button>
                     <button onclick="homeView.loadGeneratedPlaylist('late-night')" class="px-4 py-2 rounded-full bg-white/10 text-white font-bold hover:bg-white/20 transition">Late Night</button>
                     <button onclick="homeView.loadGeneratedPlaylist('discovery')" class="px-4 py-2 rounded-full bg-white/10 text-white font-bold hover:bg-white/20 transition">Discovery</button>
                     <button onclick="homeView.loadGeneratedPlaylist('language-mix')" class="px-4 py-2 rounded-full bg-white/10 text-white font-bold hover:bg-white/20 transition">Language Mix</button>
@@ -252,7 +254,7 @@
                     <h2 class="text-2xl md:text-3xl font-bold text-white">Your Library</h2>
                     <p class="text-sm text-gray-400 mt-1">Playlists, liked songs, liked artists, and listening history.</p>
                 </div>
-                <button onclick="ui.toggleModal(true)" class="px-4 py-2 rounded-full bg-green-500 text-black text-sm font-bold hover:scale-105 transition">Create Playlist</button>
+                <button onclick="ui.toggleModal(true)" class="px-4 py-2 rounded-full bg-[var(--accent-color)] text-black text-sm font-bold hover:scale-105 transition">Create Playlist</button>
             </div>
 
             <section class="mb-12 relative">
@@ -317,7 +319,7 @@
                         <div class="w-full flex flex-col min-w-0">
                             <div class="marquee-container mb-2 w-full"><h2 class="text-2xl md:text-4xl font-bold text-white marquee-text font-bold" id="playlist-view-title">Name</h2></div>
                             <p class="text-gray-400 mb-6 text-sm" id="playlist-view-count">0 tracks</p>
-                            <button id="playlist-play-all" class="bg-green-500 text-black px-8 py-3 rounded-full font-bold hover:scale-105 transition shadow-lg shadow-green-500/30 flex items-center justify-center gap-2 w-full max-w-xs mx-auto md:mx-0">
+                            <button id="playlist-play-all" class="bg-[var(--accent-color)] text-black px-8 py-3 rounded-full font-bold hover:scale-105 transition shadow-lg shadow-cyan-500/30 flex items-center justify-center gap-2 w-full max-w-xs mx-auto md:mx-0">
                                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play All
                             </button>
                         </div>
@@ -334,19 +336,19 @@
             <h2 class="text-2xl md:text-3xl font-bold text-white mb-8 relative z-20">Settings</h2>
             <div class="glass-panel p-6 rounded-2xl max-w-2xl relative z-10">
                 <div class="flex flex-col gap-6">
-                    <div class="rounded-2xl border border-green-400/20 bg-green-400/10 p-4">
+                    <div class="accent-panel rounded-2xl p-4">
                         <div class="flex items-center justify-between gap-4">
                             <div class="min-w-0">
                                 <h3 class="text-lg font-bold text-white mb-1">D'Verse Cloud</h3>
                                 <p id="dverse-settings-status" class="text-sm text-gray-300">Sign in to sync history, liked songs, and playlists.</p>
                             </div>
-                            <button id="dverse-settings-auth-button" onclick="cloudLibrary.toggleAuth()" class="flex-shrink-0 rounded-full bg-green-400 px-4 py-2 text-sm font-black text-black shadow-lg shadow-green-500/20 hover:scale-105 transition">Sign in</button>
+                            <button id="dverse-settings-auth-button" onclick="cloudLibrary.toggleAuth()" class="flex-shrink-0 rounded-full bg-[var(--accent-color)] px-4 py-2 text-sm font-black text-black shadow-lg shadow-cyan-500/20 hover:scale-105 transition">Sign in</button>
                         </div>
                     </div>
                     <div>
                         <h3 class="text-lg font-bold text-white mb-2">Audio Quality</h3>
                         <p class="text-sm text-gray-400 mb-4">Choose the default streaming quality for your music. (Applies to next track)</p>
-                        <select id="setting-audio-quality" class="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-green-400 transition appearance-none cursor-pointer" onchange="ui.updateSettings('quality', this.value)">
+                        <select id="setting-audio-quality" class="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[var(--accent-color)] transition appearance-none cursor-pointer" onchange="ui.updateSettings('quality', this.value)">
                             <option value="low" class="bg-gray-900">Low (Data Saver)</option>
                             <option value="medium" class="bg-gray-900">Medium (Standard)</option>
                             <option value="high" class="bg-gray-900">High (Best Quality)</option>
@@ -354,33 +356,23 @@
                     </div>
 
                     <div class="border-t border-white/10 pt-6">
-                        <div class="flex items-center justify-between gap-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-4 mb-6">
+                        <div class="flex items-center justify-between gap-3 mb-4">
+                            <div>
+                                <h3 class="text-lg font-bold text-white mb-1">Equalizer</h3>
+                                <p class="text-sm text-gray-400">Shape playback with a working 10-band EQ for this device.</p>
+                            </div>
+                            <button onclick="ui.resetEqualizer()" class="text-xs font-bold px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 transition">Reset EQ</button>
+                        </div>
+                        <div id="eq-bands" class="eq-bands" aria-label="10-band equalizer"></div>
+                    </div>
+
+                    <div class="border-t border-white/10 pt-6">
+                        <div class="flex items-center justify-between gap-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
                             <div>
                                 <h3 class="text-lg font-bold text-white mb-1">Reset D'Tunes</h3>
                                 <p class="text-sm text-gray-300">Clear playlists, likes, history, queue, settings, and saved playback from this browser.</p>
                             </div>
                             <button onclick="ui.clearAllData()" class="flex-shrink-0 rounded-full bg-red-500 px-4 py-2 text-sm font-black text-white shadow-lg shadow-red-500/20 hover:scale-105 transition">Clear All Data</button>
-                        </div>
-                        <div class="flex items-center justify-between gap-3 mb-4">
-                            <div>
-                                <h3 class="text-lg font-bold text-white mb-1">Equalizer</h3>
-                                <p class="text-sm text-gray-400">Tune bass, mids, and treble for the current device.</p>
-                            </div>
-                            <button onclick="ui.resetEqualizer()" class="text-xs font-bold px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 transition">Reset</button>
-                        </div>
-                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            <label class="glass-panel rounded-xl p-4 block">
-                                <span class="text-sm font-bold text-white flex justify-between">Bass <span id="eq-bass-value" class="text-green-400">0 dB</span></span>
-                                <input id="eq-bass" type="range" min="-12" max="12" step="1" class="w-full mt-4" oninput="ui.updateEqualizer('bass', this.value)">
-                            </label>
-                            <label class="glass-panel rounded-xl p-4 block">
-                                <span class="text-sm font-bold text-white flex justify-between">Mids <span id="eq-mid-value" class="text-green-400">0 dB</span></span>
-                                <input id="eq-mid" type="range" min="-12" max="12" step="1" class="w-full mt-4" oninput="ui.updateEqualizer('mid', this.value)">
-                            </label>
-                            <label class="glass-panel rounded-xl p-4 block">
-                                <span class="text-sm font-bold text-white flex justify-between">Treble <span id="eq-treble-value" class="text-green-400">0 dB</span></span>
-                                <input id="eq-treble" type="range" min="-12" max="12" step="1" class="w-full mt-4" oninput="ui.updateEqualizer('treble', this.value)">
-                            </label>
                         </div>
                     </div>
 
