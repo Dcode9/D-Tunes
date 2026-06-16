@@ -10,19 +10,17 @@
             escapeJs: (text) => text ? text.toString().replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "\\n").replace(/\r/g, "\\r") : ''
         };
 
+        const GITHUB_DETUNED_SVG = 'https://raw.githubusercontent.com/Datamaverik/D-Tunes/main/assets/DTunes2.svg';
         const FALLBACK_ART_CANDIDATES = [
+            GITHUB_DETUNED_SVG,
+            'assets/DTunes2.svg',
+            './assets/DTunes2.svg',
+            '/assets/DTunes2.svg',
             'DTunes.svg',
             './DTunes.svg',
-            '/DTunes.svg',
-            'public/assets/DTunes-transparent.svg',
-            './public/assets/DTunes-transparent.svg',
-            '/public/assets/DTunes-transparent.svg',
-            'assets/DTunes-transparent.svg',
-            './assets/DTunes-transparent.svg',
-            '/assets/DTunes-transparent.svg'
+            '/DTunes.svg'
         ];
         const FALLBACK_ART = FALLBACK_ART_CANDIDATES[0];
-        const FALLBACK_ART_DATA_URI = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><rect width="512" height="512" fill="#0b0e16"/><circle cx="256" cy="256" r="170" fill="#161b2b"/><path d="M220 164v198a48 48 0 1 1-24-41.5V164h24zm96-36v162a48 48 0 1 1-24-41.5V128h24z" fill="#f3f4f6"/></svg>')}`;
 
         const sanitizeImageUrl = (value) => {
             const url = String(value || '').trim();
@@ -52,7 +50,7 @@
                 }
 
                 target.dataset.fallbackLocked = '1';
-                target.src = FALLBACK_ART_DATA_URI;
+                target.alt = target.alt || "D'Tunes artwork unavailable";
             }, true);
         };
 
@@ -841,6 +839,12 @@
             if (state.queue.length === 0) return null;
             if (state.shuffle) return state.queue.find((_, i) => i !== state.idx) || null;
             return state.idx >= 0 && state.idx < state.queue.length - 1 ? state.queue[state.idx + 1] : null;
+        };
+
+        const getPreviousTrack = () => {
+            if (state.queue.length === 0) return null;
+            if (state.idx > 0) return state.queue[state.idx - 1];
+            return state.queue.length > 1 ? state.queue[state.queue.length - 1] : null;
         };
 
         const primeNextTrack = async () => {
@@ -1840,6 +1844,14 @@
                     </div>
                 `;
             },
+            renderCompactSwipePreview: () => {
+                const prev = document.getElementById('compact-swipe-prev');
+                const next = document.getElementById('compact-swipe-next');
+                const render = (song, label) => song ? `<div class="mobile-swipe-preview-card glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/90"><span class="mobile-swipe-label">${label}</span>${ui.createSongPillInner(song)}</div>` : '';
+                if (prev) prev.innerHTML = render(getPreviousTrack(), 'Previous');
+                if (next) next.innerHTML = render(getUpcomingTrack(), 'Next');
+                updateMarquees();
+            },
             createQueuePill: (song, section, index) => {
                 const storeId = songStore.add(song);
                 const safeSection = utils.escapeHtml(section);
@@ -2540,7 +2552,9 @@
                 const dy = touch.clientY - swipeSongStart.y;
                 if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
                     swipeSongStart.moved = true;
-                    swipeSongStart.row.style.transform = `translateX(${Math.max(-92, Math.min(92, dx))}px)`;
+                    const clamped = Math.max(-140, Math.min(140, dx));
+                    swipeSongStart.row.style.setProperty('--song-swipe-x', `${clamped}px`);
+                    swipeSongStart.row.classList.add('is-swiping');
                     swipeSongStart.row.classList.toggle('swipe-add-next', dx > 18);
                     swipeSongStart.row.classList.toggle('swipe-add-queue', dx < -18);
                 }
@@ -2551,17 +2565,18 @@
                 const touch = e.changedTouches[0];
                 const dx = touch.clientX - x;
                 const dy = touch.clientY - y;
-                row.style.transform = '';
-                row.classList.remove('swipe-add-next', 'swipe-add-queue');
+                row.style.setProperty('--song-swipe-x', '0px');
+                row.classList.remove('is-swiping', 'swipe-add-next', 'swipe-add-queue');
                 swipeSongStart = null;
                 if (Math.abs(dx) > 72 && Math.abs(dx) > Math.abs(dy) * 1.2) {
                     const song = songStore.get(row.dataset.storeId);
                     if (!song) return;
                     const commitClass = dx > 0 ? 'swipe-committed-next' : 'swipe-committed-queue';
                     row.classList.add(commitClass);
+                    row.style.setProperty('--song-swipe-x', dx > 0 ? '115%' : '-115%');
                     if (dx > 0) player.addNext(song); else player.addToQueue(song);
                     haptics.pulse('medium');
-                    setTimeout(() => row.classList.remove(commitClass), 420);
+                    setTimeout(() => { row.classList.remove(commitClass); row.style.setProperty('--song-swipe-x', '0px'); }, 420);
                     e.preventDefault();
                 }
             }, { passive: false });
