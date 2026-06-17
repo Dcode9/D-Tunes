@@ -993,6 +993,8 @@
                     ui.updateMetadata(track, { loading: true });
                     
                     ui.enableControls(); await audio.play();
+                    state.loading = false;
+                    ui.setPlayerLoading(false);
                     const isRepeatStart = recommendationEvents.lastStartedSongId === track.id && Date.now() - recommendationEvents.currentPlayStartAt < 15 * 60 * 1000;
                     recommendationEvents.currentPlayStartAt = Date.now();
                     recommendationEvents.lastStartedSongId = track.id;
@@ -1020,7 +1022,7 @@
                 } catch (error) {
                     state.playing = false;
                     state.loading = false;
-                    document.getElementById('info-island')?.classList.remove('is-loading');
+                    ui.setPlayerLoading(false);
                     ui.updatePlayBtn();
                 } 
                 finally { isPlaybackPending = false; }
@@ -1124,7 +1126,7 @@
                 ui.setPlayerLoading(true);
             });
         });
-        ['canplay', 'playing', 'loadeddata'].forEach((eventName) => {
+        ['canplay', 'canplaythrough', 'playing', 'loadeddata', 'loadedmetadata'].forEach((eventName) => {
             audio.addEventListener(eventName, () => {
                 state.loading = false;
                 ui.setPlayerLoading(false);
@@ -1856,11 +1858,11 @@
                 const storeId = songStore.add(song);
                 const safeSection = utils.escapeHtml(section);
                 return `
-                <div class="queue-reorder-row glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/90 cursor-pointer mb-2" draggable="true" data-queue-section="${safeSection}" data-queue-index="${index}" data-store-id="${storeId}" onclick="playSongById('${storeId}')" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                <div class="queue-reorder-row glass-panel rounded-2xl p-2 pr-2 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/90 cursor-pointer mb-2" draggable="true" data-queue-section="${safeSection}" data-queue-index="${index}" data-store-id="${storeId}" onclick="playSongById('${storeId}')" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                    ${ui.createSongPillInner(song)}
                     <button class="queue-drag-handle" title="Drag to rearrange" aria-label="Rearrange ${utils.escapeHtml(song.name)}" onclick="event.stopPropagation()" type="button">
                         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M9 5a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM9 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM9 19a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z"/></svg>
                     </button>
-                    ${ui.createSongPillInner(song)}
                 </div>`;
             },
             createSongPill: (song, clickHandlerStr, context = 'queue') => {
@@ -2467,6 +2469,44 @@
             }, {passive: true});
             island.addEventListener('touchcancel', resetCompactSwipe, {passive: true});
 
+            const albumArtSwipeTarget = document.getElementById('album-art-wrapper');
+            let albumSwipeStart = null;
+            const resetAlbumSwipe = () => {
+                albumSwipeStart = null;
+                albumArtSwipeTarget?.style.setProperty('--album-swipe-x', '0px');
+                albumArtSwipeTarget?.classList.remove('album-swiping');
+            };
+            albumArtSwipeTarget?.addEventListener('touchstart', e => {
+                if (!deviceMode.isMobileUI() || !document.body.classList.contains('mobile-player-open') || !state.currentTrack) return;
+                const touch = e.changedTouches[0];
+                albumSwipeStart = { x: touch.clientX, y: touch.clientY };
+                albumArtSwipeTarget.classList.add('album-swiping');
+            }, { passive: true });
+            albumArtSwipeTarget?.addEventListener('touchmove', e => {
+                if (!albumSwipeStart) return;
+                const touch = e.changedTouches[0];
+                const dx = touch.clientX - albumSwipeStart.x;
+                const dy = touch.clientY - albumSwipeStart.y;
+                if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) {
+                    albumArtSwipeTarget.style.setProperty('--album-swipe-x', `${Math.max(-120, Math.min(120, dx))}px`);
+                }
+            }, { passive: true });
+            albumArtSwipeTarget?.addEventListener('touchend', e => {
+                if (!albumSwipeStart) return;
+                const touch = e.changedTouches[0];
+                const dx = touch.clientX - albumSwipeStart.x;
+                const dy = touch.clientY - albumSwipeStart.y;
+                if (Math.abs(dx) > 72 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+                    const goNext = dx < 0;
+                    albumArtSwipeTarget.style.setProperty('--album-swipe-x', goNext ? '-120%' : '120%');
+                    haptics.pulse('soft');
+                    setTimeout(() => { if (goNext) player.next(); else player.prev(); resetAlbumSwipe(); }, 180);
+                } else {
+                    resetAlbumSwipe();
+                }
+            }, { passive: true });
+            albumArtSwipeTarget?.addEventListener('touchcancel', resetAlbumSwipe, { passive: true });
+
             // Expanded mobile player: let the sheet scroll to the queue, but collapse
             // when the user returns to the top or pulls down from the top.
             const playerFooter = document.getElementById('player-footer');
@@ -2552,11 +2592,13 @@
                 const dy = touch.clientY - swipeSongStart.y;
                 if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
                     swipeSongStart.moved = true;
-                    const clamped = Math.max(-140, Math.min(140, dx));
+                    const clamped = Math.max(-128, Math.min(128, dx));
+                    const progress = Math.min(1, Math.abs(clamped) / 96);
                     swipeSongStart.row.style.setProperty('--song-swipe-x', `${clamped}px`);
+                    swipeSongStart.row.style.setProperty('--swipe-scale', progress.toFixed(3));
                     swipeSongStart.row.classList.add('is-swiping');
-                    swipeSongStart.row.classList.toggle('swipe-add-next', dx > 18);
-                    swipeSongStart.row.classList.toggle('swipe-add-queue', dx < -18);
+                    swipeSongStart.row.classList.toggle('swipe-show-next', dx < -14);
+                    swipeSongStart.row.classList.toggle('swipe-show-queue', dx > 14);
                 }
             }, { passive: true });
             document.addEventListener('touchend', (e) => {
@@ -2566,17 +2608,19 @@
                 const dx = touch.clientX - x;
                 const dy = touch.clientY - y;
                 row.style.setProperty('--song-swipe-x', '0px');
-                row.classList.remove('is-swiping', 'swipe-add-next', 'swipe-add-queue');
+                row.style.setProperty('--swipe-scale', '0');
+                row.classList.remove('is-swiping', 'swipe-show-next', 'swipe-show-queue');
                 swipeSongStart = null;
                 if (Math.abs(dx) > 72 && Math.abs(dx) > Math.abs(dy) * 1.2) {
                     const song = songStore.get(row.dataset.storeId);
                     if (!song) return;
-                    const commitClass = dx > 0 ? 'swipe-committed-next' : 'swipe-committed-queue';
+                    const addNext = dx < 0;
+                    const commitClass = addNext ? 'swipe-committed-next' : 'swipe-committed-queue';
                     row.classList.add(commitClass);
-                    row.style.setProperty('--song-swipe-x', dx > 0 ? '115%' : '-115%');
-                    if (dx > 0) player.addNext(song); else player.addToQueue(song);
+                    row.style.setProperty('--song-swipe-x', addNext ? '-115%' : '115%');
+                    if (addNext) player.addNext(song); else player.addToQueue(song);
                     haptics.pulse('medium');
-                    setTimeout(() => { row.classList.remove(commitClass); row.style.setProperty('--song-swipe-x', '0px'); }, 420);
+                    setTimeout(() => { row.classList.remove(commitClass); row.style.setProperty('--song-swipe-x', '0px'); row.style.setProperty('--swipe-scale', '0'); }, 420);
                     e.preventDefault();
                 }
             }, { passive: false });

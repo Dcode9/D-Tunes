@@ -903,43 +903,6 @@ html[data-ui-mode="mobile"] .group-hover\:scale-110 {
     opacity: inherit;
     transform: none !important;
 }
-html[data-ui-mode="mobile"] .swipe-song {
-    position: relative;
-    touch-action: pan-y;
-    transition: transform 0.16s ease, background 0.16s ease;
-}
-html[data-ui-mode="mobile"] .swipe-song::before,
-html[data-ui-mode="mobile"] .swipe-song::after {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 2;
-    font-size: 10px;
-    font-weight: 900;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    opacity: 0;
-    transition: opacity 0.16s ease;
-}
-html[data-ui-mode="mobile"] .swipe-song::before {
-    content: 'Play next';
-    left: 14px;
-    color: var(--accent-color);
-}
-html[data-ui-mode="mobile"] .swipe-song::after {
-    content: 'Queue';
-    right: 14px;
-    color: var(--accent-color-2);
-}
-html[data-ui-mode="mobile"] .swipe-song.swipe-add-next { background: linear-gradient(90deg, color-mix(in srgb, var(--accent-color) 26%, #121212), #121212 55%) !important; }
-html[data-ui-mode="mobile"] .swipe-song.swipe-add-queue { background: linear-gradient(270deg, color-mix(in srgb, var(--accent-color-2) 26%, #121212), #121212 55%) !important; }
-html[data-ui-mode="mobile"] .swipe-song.swipe-add-next::before,
-html[data-ui-mode="mobile"] .swipe-song.swipe-add-queue::after,
-html[data-ui-mode="mobile"] .swipe-song.swipe-committed-next::before,
-html[data-ui-mode="mobile"] .swipe-song.swipe-committed-queue::after { opacity: 1; }
-html[data-ui-mode="mobile"] .swipe-song.swipe-committed-next,
-html[data-ui-mode="mobile"] .swipe-song.swipe-committed-queue { transform: scale(0.985); background: color-mix(in srgb, var(--accent-color) 18%, #121212) !important; }
-
 .queue-drag-handle {
     flex: 0 0 auto;
     display: inline-flex;
@@ -1042,16 +1005,6 @@ html[data-ui-mode="mobile"] .mobile-swipe-label {
     text-transform: uppercase;
     color: var(--accent-color);
 }
-html[data-ui-mode="mobile"] .swipe-song {
-    --song-swipe-x: 0px;
-    overflow: hidden;
-    transform: translate3d(var(--song-swipe-x), 0, 0);
-    will-change: transform;
-}
-html[data-ui-mode="mobile"] .swipe-song.is-swiping { transition: none !important; }
-html[data-ui-mode="mobile"] .swipe-song:not(.is-swiping) { transition: transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.18s ease; }
-html[data-ui-mode="mobile"] .swipe-song.swipe-committed-next,
-html[data-ui-mode="mobile"] .swipe-song.swipe-committed-queue { transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.18s ease !important; }
 html[data-ui-mode="mobile"] body.mobile-search-open #search-positioner {
     bottom: calc(76px + env(safe-area-inset-bottom) + var(--mobile-keyboard-lift)) !important;
     z-index: 220;
@@ -1061,4 +1014,174 @@ html[data-ui-mode="mobile"] body.mobile-search-open #search-dropdown {
 }
 html[data-ui-mode="mobile"] body.mobile-search-open #search-dropdown .search-results-content {
     max-height: min(58dvh, 430px);
+}
+
+/* Rebuilt mobile search stack: nav at bottom, now-playing above it, search above now-playing, results above search. */
+html[data-ui-mode="mobile"] body.mobile-search-open #player-footer {
+    bottom: calc(82px + env(safe-area-inset-bottom)) !important;
+    z-index: 170;
+    transform: translateY(0) !important;
+    opacity: 1 !important;
+    pointer-events: auto;
+}
+html[data-ui-mode="mobile"] body.mobile-search-open #search-positioner {
+    bottom: calc(164px + env(safe-area-inset-bottom) + var(--mobile-keyboard-lift)) !important;
+    z-index: 240;
+}
+html[data-ui-mode="mobile"] body.mobile-search-open #search-dropdown {
+    bottom: calc(100% + 10px);
+    z-index: 250;
+}
+html[data-ui-mode="mobile"] body.mobile-search-open #search-dropdown .search-results-content {
+    max-height: min(52dvh, 420px) !important;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Rebuilt song-row swipe actions. The row follows the finger; action buttons grow behind it. */
+html[data-ui-mode="mobile"] .swipe-song {
+    --song-swipe-x: 0px;
+    --swipe-scale: 0;
+    isolation: isolate;
+    overflow: hidden !important;
+    transform: translate3d(var(--song-swipe-x), 0, 0) !important;
+    transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.18s ease !important;
+    will-change: transform;
+}
+html[data-ui-mode="mobile"] .swipe-song.is-swiping {
+    transition: none !important;
+}
+html[data-ui-mode="mobile"] .swipe-song::before,
+html[data-ui-mode="mobile"] .swipe-song::after {
+    top: 50% !important;
+    z-index: 4 !important;
+    pointer-events: none;
+    width: 48px;
+    height: 48px;
+    border-radius: 9999px;
+    display: grid;
+    place-items: center;
+    opacity: 0 !important;
+    transform: translateY(-50%) scale(var(--swipe-scale)) !important;
+    transition: opacity 0.12s ease, transform 0.12s ease !important;
+    color: #001015 !important;
+    font-size: 0 !important;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.28);
+}
+html[data-ui-mode="mobile"] .swipe-song::before {
+    content: '+' !important;
+    left: 14px !important;
+    background: var(--accent-color-2);
+}
+html[data-ui-mode="mobile"] .swipe-song::after {
+    content: '▶' !important;
+    right: 14px !important;
+    background: var(--accent-color);
+}
+html[data-ui-mode="mobile"] .swipe-song.swipe-show-queue::before,
+html[data-ui-mode="mobile"] .swipe-song.swipe-show-next::after,
+html[data-ui-mode="mobile"] .swipe-song.swipe-committed-queue::before,
+html[data-ui-mode="mobile"] .swipe-song.swipe-committed-next::after {
+    opacity: 1 !important;
+    font-size: 20px !important;
+}
+html[data-ui-mode="mobile"] .swipe-song.swipe-show-queue {
+    background: linear-gradient(90deg, color-mix(in srgb, var(--accent-color-2) 30%, #121212), #121212 56%) !important;
+}
+html[data-ui-mode="mobile"] .swipe-song.swipe-show-next {
+    background: linear-gradient(270deg, color-mix(in srgb, var(--accent-color) 30%, #121212), #121212 56%) !important;
+}
+html[data-ui-mode="mobile"] .swipe-song.swipe-committed-next,
+html[data-ui-mode="mobile"] .swipe-song.swipe-committed-queue {
+    transition: transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), background 0.18s ease !important;
+}
+
+/* Mobile expanded player layout: down arrow, swipable album art, title, controls, then queue/history. */
+html[data-ui-mode="mobile"] body.mobile-player-open #player-footer {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+    overflow: hidden !important;
+    padding: calc(14px + env(safe-area-inset-top)) 14px calc(14px + env(safe-area-inset-bottom)) !important;
+}
+html[data-ui-mode="mobile"] body.mobile-player-open .mobile-collapse-btn {
+    position: static !important;
+    align-self: flex-start !important;
+    display: inline-flex !important;
+    width: 42px;
+    height: 42px;
+    align-items: center;
+    justify-content: center;
+    margin: 0 0 2px 0;
+}
+html[data-ui-mode="mobile"] body.mobile-player-open #player-active-area {
+    order: 1 !important;
+    overflow: visible !important;
+    margin: 0 !important;
+}
+html[data-ui-mode="mobile"] body.mobile-player-open #info-island {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 12px !important;
+    transform: none !important;
+    animation: none !important;
+}
+html[data-ui-mode="mobile"] body.mobile-player-open #album-art-wrapper {
+    --album-swipe-x: 0px;
+    order: 1;
+    width: min(74vw, 330px) !important;
+    height: min(74vw, 330px) !important;
+    margin: 0 auto !important;
+    transform: translate3d(var(--album-swipe-x), 0, 0) !important;
+    transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+    will-change: transform;
+    touch-action: pan-y;
+}
+html[data-ui-mode="mobile"] body.mobile-player-open #album-art-wrapper.album-swiping {
+    transition: none !important;
+}
+html[data-ui-mode="mobile"] body.mobile-player-open #info-island .flex-1 {
+    order: 2;
+    width: 100%;
+    text-align: center;
+}
+html[data-ui-mode="mobile"] body.mobile-player-open #p-like-btn { order: 3; }
+html[data-ui-mode="mobile"] body.mobile-player-open #player-card {
+    order: 2 !important;
+    display: flex !important;
+    flex-direction: column-reverse !important;
+    gap: 12px !important;
+    height: auto !important;
+    flex: 0 0 auto !important;
+}
+html[data-ui-mode="mobile"] body.mobile-player-open #queue-anchor {
+    order: 4 !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: hidden !important;
+}
+html[data-ui-mode="mobile"] body.mobile-player-open .mobile-queue-btn {
+    order: 3 !important;
+    flex: 0 0 auto !important;
+}
+html[data-ui-mode="mobile"] body.mobile-player-open #queue-wrapper.queue-expanded #queue-expandable-area,
+html[data-ui-mode="mobile"] body.mobile-player-open #queue-wrapper.queue-expanded #queue-full-content {
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: none !important;
+}
+html[data-ui-mode="mobile"] body.mobile-player-open #queue-list,
+html[data-ui-mode="mobile"] body.mobile-player-open #history-list {
+    overflow-y: auto !important;
+    min-height: 0 !important;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom)) !important;
+}
+.queue-drag-handle {
+    margin-left: auto !important;
+    margin-right: 0 !important;
+}
+.queue-reorder-row .marquee-container {
+    min-width: 0;
 }
