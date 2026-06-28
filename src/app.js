@@ -1651,15 +1651,16 @@
                 ui.switchView('playlist'); document.getElementById('playlist-view-title').textContent = utils.escapeHtml(name);
                 let songs = [];
                 if (name === 'Liked Songs') { 
-                    const loaded = [];
-                    for (let i = 0; i < state.likedIds.length; i++) {
-                        if(typeof state.likedIds[i] === 'string') {
-                            const fetched = await jiosaavnAPI.getSong(state.likedIds[i]);
-                            if(fetched) { loaded.push(fetched); state.likedIds[i] = fetched; }
-                        } else { loaded.push(state.likedIds[i]); }
-                    }
+                    const loaded = await Promise.all(state.likedIds.map(async (item, i) => {
+                        if (typeof item === 'string') {
+                            const fetched = await jiosaavnAPI.getSong(item);
+                            if (fetched) { state.likedIds[i] = fetched; return fetched; }
+                            return null;
+                        }
+                        return item;
+                    }));
                     localStorage.setItem('likedIds', JSON.stringify(state.likedIds));
-                    songs = loaded;
+                    songs = loaded.filter(Boolean);
                 } 
                 else { songs = state.playlists[name] || []; }
                 document.getElementById('playlist-view-count').textContent = `${songs.length} tracks`;
