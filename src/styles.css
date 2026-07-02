@@ -162,7 +162,7 @@
         #queue-wrapper.queue-expanded #btn-expand-queue { transform: rotate(180deg); color: white; opacity: 1; width: 2rem; }
 
         /* Morph Animation */
-        #queue-wrapper.track-swap-out #info-island { transform: translateY(-20px); opacity: 0; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
+        #queue-wrapper.track-swap-out #info-island { transform: translateY(-20px); opacity: 0; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease; }
         #queue-wrapper.track-swap-out #up-next-label { opacity: 0; transition: opacity 0.2s; }
         #queue-wrapper.track-swap-out #queue-preview-pill { transform: translateY(-70px); transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); }
 
@@ -904,6 +904,9 @@ html[data-ui-mode="mobile"] .group-hover\:scale-110 {
     transform: none !important;
 }
 html[data-ui-mode="mobile"] .swipe-song {
+    transition: transform 0.2s ease-out, background 0.2s ease, opacity 0.2s ease;
+    transition: transform 0.2s ease-out, background 0.2s ease, opacity 0.2s ease;
+
     position: relative;
     touch-action: pan-y;
     transition: transform 0.16s ease, background 0.16s ease;
@@ -938,7 +941,7 @@ html[data-ui-mode="mobile"] .swipe-song.swipe-add-queue::after,
 html[data-ui-mode="mobile"] .swipe-song.swipe-committed-next::before,
 html[data-ui-mode="mobile"] .swipe-song.swipe-committed-queue::after { opacity: 1; }
 html[data-ui-mode="mobile"] .swipe-song.swipe-committed-next,
-html[data-ui-mode="mobile"] .swipe-song.swipe-committed-queue { transform: scale(0.985); background: color-mix(in srgb, var(--accent-color) 18%, #121212) !important; }
+html[data-ui-mode="mobile"] .swipe-song.swipe-committed-queue { transform: scale(0.96) !important; background: color-mix(in srgb, var(--accent-color) 25%, #121212) !important; opacity: 0.8; }
 
 .queue-drag-handle {
     flex: 0 0 auto;
