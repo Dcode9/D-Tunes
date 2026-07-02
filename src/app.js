@@ -832,7 +832,8 @@
         const preloadAudio = new Audio();
         preloadAudio.preload = 'auto';
         preloadAudio.crossOrigin = 'anonymous';
-        let isPlaybackPending = false;
+        let playbackAbortController = null;
+        let preloadAbortController = null;
         let isAudioRecoveryPending = false;
 
 
@@ -845,12 +846,34 @@
 
         const primeNextTrack = async () => {
             const nextTrack = getUpcomingTrack();
-            if (!nextTrack?.id || state.nextTrackPreloadId === nextTrack.id) return;
+
+            if (!nextTrack || !nextTrack.id) {
+                if (preloadAbortController) {
+                    preloadAbortController.abort();
+                    preloadAbortController = null;
+                }
+                state.nextTrackPreloadId = null;
+                preloadAudio.removeAttribute('src');
+                preloadAudio.load();
+                return;
+            }
+
+            if (state.nextTrackPreloadId === nextTrack.id) return;
             state.nextTrackPreloadId = nextTrack.id;
+
+            if (preloadAbortController) {
+                preloadAbortController.abort();
+            }
+            preloadAbortController = new AbortController();
+            const signal = preloadAbortController.signal;
+
             try {
                 const freshDetails = nextTrack.url ? null : await jiosaavnAPI.getSong(nextTrack.id);
+                if (signal.aborted) return;
+
                 const playUrl = freshDetails?.url || nextTrack.url;
                 if (!playUrl || state.nextTrackPreloadId !== nextTrack.id) return;
+
                 Object.assign(nextTrack, freshDetails || {}, { url: playUrl });
                 preloadAudio.src = playUrl;
                 preloadAudio.load();
@@ -923,7 +946,7 @@
                 if(type === 'album') songs = (data.data?.songs || []).map(jiosaavnAPI.normalizeSong).filter(Boolean);
                 else if (type === 'artist') songs = (data.data?.topSongs || data.data?.songs || []).map(jiosaavnAPI.normalizeSong).filter(Boolean);
                 
-                if (songs.length > 0) { state.queue = songs; state.userQueue = []; state.idx = 0; player.playDirect(songs[0]); }
+                if (songs.length > 0) { player.replaceQueue(songs); }
             } catch(e) {}
         };
 
@@ -958,9 +981,13 @@
 
         const player = {
             playDirect: async (track) => {
-                if (!track || isPlaybackPending) return;
+                if (!track) return;
                 recommendationEvents.maybeRecordSkip();
-                isPlaybackPending = true;
+                if (playbackAbortController) {
+                    playbackAbortController.abort();
+                }
+                playbackAbortController = new AbortController();
+                const signal = playbackAbortController.signal;
                 
                 state.upNextTriggered = false;
                 state.loading = true;
@@ -979,6 +1006,7 @@
                     
                     if (!playUrl) throw new Error('No URL');
                     
+                    if (signal.aborted) return;
                     track = { ...track, ...freshDetails, url: playUrl };
                     audio.preload = 'auto';
                     audio.src = playUrl;
@@ -1019,23 +1047,59 @@
                     document.getElementById('info-island')?.classList.remove('is-loading');
                     ui.updatePlayBtn();
                 } 
-                finally { isPlaybackPending = false; }
+                finally { if (playbackAbortController && playbackAbortController.signal === signal) playbackAbortController = null; }
+            },
+
+            replaceQueue: (songs) => {
+                if (!Array.isArray(songs) || songs.length === 0) return;
+                state.queue = [...songs];
+                state.userQueue = [];
+                state.idx = 0;
+                player.playDirect(state.queue[0]);
+                ui.renderQueue();
+                primeNextTrack();
+                persist.save();
+            },
+            insertNext: (song) => {
+                if (!song) return;
+                state.userQueue.unshift(song);
+                recommendationEvents.record('queue_add', song, { context: { source: 'manual' } });
+                ui.renderQueue();
+                primeNextTrack();
+                persist.save();
+            },
+            insertLast: (song) => {
+                if (!song) return;
+                state.userQueue.push(song);
+                recommendationEvents.record('queue_add', song, { context: { source: 'manual' } });
+                ui.renderQueue();
+                primeNextTrack();
+                persist.save();
             },
             togglePlay: () => {
                 if(!state.loaded) return;
                 if(state.playing || !audio.paused) { requestPause(); } else { requestPlay(); }
             },
             next: () => { 
-                if (state.userQueue.length > 0) { const nextSong = state.userQueue.shift(); player.playDirect(nextSong); } 
-                else if (state.queue.length > 0) {
-                    let nextIdx = state.shuffle ? Math.floor(Math.random() * state.queue.length) : (state.idx + 1) % state.queue.length;
-                    state.idx = nextIdx; player.playDirect(state.queue[nextIdx]);
+                if (state.userQueue.length > 0) {
+                    const nextSong = state.userQueue.shift();
+                    player.playDirect(nextSong);
+                } else if (state.queue.length > 0) {
+                    if (state.shuffle) {
+                        let unplayed = state.queue.map((_, i) => i).filter(i => i !== state.idx);
+                        let nextIdx = unplayed.length > 0 ? unplayed[Math.floor(Math.random() * unplayed.length)] : state.idx;
+                        state.idx = nextIdx;
+                        player.playDirect(state.queue[nextIdx]);
+                    } else {
+                        state.idx = (state.idx + 1) % state.queue.length;
+                        player.playDirect(state.queue[state.idx]);
+                    }
                 }
             },
             prev: () => { 
                 if(state.queue.length === 0) return;
-                let prevIdx = state.idx - 1; if(prevIdx < 0) prevIdx = state.queue.length - 1;
-                state.idx = prevIdx; player.playDirect(state.queue[prevIdx]);
+                state.idx = (state.idx - 1 + state.queue.length) % state.queue.length;
+                player.playDirect(state.queue[state.idx]);
             },
             setVolume: (val) => { audio.volume = Math.max(0, Math.min(1, val)); },
             toggleShuffle: () => { state.shuffle = !state.shuffle; const btn = document.getElementById('btn-shuffle'); state.shuffle ? btn.classList.add('active-state') : btn.classList.remove('active-state'); ui.renderQueue(); persist.save(); },
@@ -1075,8 +1139,8 @@
                 if (!document.getElementById('view-playlist').classList.contains('hidden') && document.getElementById('playlist-view-title').textContent === 'Liked Songs') { ui.openPlaylist('Liked Songs'); }
             },
             toggleLike: () => { player.likeSong(); },
-            addNext: (song) => { state.userQueue.unshift(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); primeNextTrack(); persist.save(); },
-            addToQueue: (song) => { state.userQueue.push(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); primeNextTrack(); persist.save(); },
+            addNext: (song) => { player.insertNext(song); },
+            addToQueue: (song) => { player.insertLast(song); },
             clearQueue: () => {
                 state.userQueue = [];
                 state.queue = state.currentTrack ? [state.currentTrack] : [];
@@ -1138,15 +1202,14 @@
 
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
-                const preservedVolume = audio.volume;
-                audio.muted = false;
                 persist.save();
                 cloudLibrary.flushPlaybackState(true);
-                setTimeout(() => { audio.volume = preservedVolume; audio.muted = false; }, 0);
-            } else if (state.playing) {
-                audio.muted = false;
+            } else if (document.visibilityState === 'visible' && state.playing && audio.paused) {
+                // If we became visible and the app state thinks we are playing but audio paused
+                // (e.g. some browsers aggressively sleep), attempt to resume playback.
+                requestPlay();
             }
-            if ('mediaSession' in navigator && document.visibilityState === 'hidden' && state.playing) {
+            if ('mediaSession' in navigator && state.playing) {
                 navigator.mediaSession.playbackState = 'playing';
             }
         });
@@ -1336,8 +1399,7 @@
                         ui.switchQueueTab('upnext');
                     }
                     requestAnimationFrame(resizeCanvas);
-                    setTimeout(resizeCanvas, 120);
-                    setTimeout(resizeCanvas, 320);
+
                 } else {
                     document.body.classList.remove('mobile-player-open');
                 }
@@ -1639,7 +1701,7 @@
                     }
                 } 
                 else { songs = state.playlists[name] || []; }
-                if (songs.length > 0) { state.queue = [...songs]; state.userQueue = []; state.idx = 0; player.playDirect(songs[0]); }
+                if (songs.length > 0) { player.replaceQueue(songs); }
             },
             getPlaylistStyle: (name) => {
                 if (name === 'Liked Songs') return { bg: 'bg-gradient-to-br from-red-600 to-red-900', icon: '<svg class="w-20 h-20 text-red-500 drop-shadow-xl" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>' };
@@ -1684,7 +1746,7 @@
                     document.getElementById('pl-view-art').innerHTML = `<img src="${album.img}" class="w-full h-full object-cover">`;
                     document.getElementById('playlist-songs-list').innerHTML = album.songs.map(song => ui.createListRow(song)).join('');
                     document.getElementById('playlist-play-all').onclick = () => {
-                        if(album.songs.length > 0) { state.queue = [...album.songs]; state.userQueue = []; state.idx = 0; player.playDirect(album.songs[0]); }
+                        if(album.songs.length > 0) { player.replaceQueue(album.songs); }
                     };
                     updateMarquees();
                 }
@@ -1910,7 +1972,7 @@
                 document.getElementById('pl-view-art').innerHTML = '<div class="w-full h-full bg-gradient-to-br from-[var(--accent-color)] to-cyan-950 flex items-center justify-center"><svg class="w-20 h-20 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>';
                 document.getElementById('playlist-songs-list').innerHTML = songs.map(song => ui.createListRow(song)).join('');
                 document.getElementById('playlist-play-all').onclick = () => {
-                    if(songs.length > 0) { state.queue = [...songs]; state.userQueue = []; state.idx = 0; player.playDirect(songs[0]); }
+                    if(songs.length > 0) { player.replaceQueue(songs); }
                 };
                 updateMarquees();
             },
@@ -2220,7 +2282,16 @@
             queueForYou: async () => {
                 const songs = state.forYouSongs.length ? state.forYouSongs : await homeView.loadGeneratedPlaylist('for-you');
                 if (!songs || songs.length === 0) return;
-                state.queue = [...songs]; state.userQueue = []; state.idx = state.currentTrack ? -1 : 0; ui.renderQueue(); persist.save();
+
+                state.queue = [...songs];
+                state.userQueue = [];
+                state.idx = state.currentTrack ? -1 : 0;
+                ui.renderQueue();
+                persist.save();
+                if (!state.currentTrack && songs.length > 0) {
+                    player.playDirect(songs[0]);
+                }
+
                 if (!state.queueExpanded) ui.toggleQueue();
             },
             init: async () => {
