@@ -1087,10 +1087,18 @@
                 } else if (state.queue.length > 0) {
                     if (state.shuffle) {
                         let unplayed = state.queue.map((_, i) => i).filter(i => i !== state.idx);
+                        if (unplayed.length === 0 && state.repeat === 0) {
+                            requestPause();
+                            return;
+                        }
                         let nextIdx = unplayed.length > 0 ? unplayed[Math.floor(Math.random() * unplayed.length)] : state.idx;
                         state.idx = nextIdx;
                         player.playDirect(state.queue[nextIdx]);
                     } else {
+                        if (state.repeat === 0 && state.idx >= state.queue.length - 1) {
+                            requestPause();
+                            return;
+                        }
                         state.idx = (state.idx + 1) % state.queue.length;
                         player.playDirect(state.queue[state.idx]);
                     }
@@ -1192,13 +1200,6 @@
         });
 
         audio.addEventListener('error', recoverFromAudioError);
-
-        setInterval(() => {
-            if (!state.playing || state.repeat === 2 || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
-            if (audio.ended || audio.duration - audio.currentTime <= 0.35) {
-                player.next();
-            }
-        }, 1000);
 
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
@@ -2693,12 +2694,12 @@
                     });
                 }
                 const wrap = document.getElementById('queue-wrapper');
-                if(state.upNextTriggered && !state.queueExpanded) {
+                if(state.upNextTriggered && !state.queueExpanded && document.visibilityState !== 'hidden') {
                     wrap.classList.add('track-swap-out');
                     setTimeout(() => {
                         wrap.classList.remove('preview-expanded', 'track-swap-out');
                         if(state.repeat === 2) { audio.currentTime = 0; requestPlay(); state.upNextTriggered = false; } else player.next();
-                    }, document.visibilityState === 'hidden' ? 0 : 400); // Wait for CSS swap out morph only when visible
+                    }, 400); // Wait for CSS swap out morph only when visible
                 } else {
                     wrap.classList.remove('preview-expanded', 'track-swap-out');
                     if(state.repeat === 2) { audio.currentTime = 0; requestPlay(); state.upNextTriggered = false; } else player.next();
