@@ -213,10 +213,20 @@
     const session = await getSession();
     if (!session) return;
     const track = await upsertTrack(song);
+    const endedAt = context.ended_at || context.played_at || new Date().toISOString();
+    const durationMs = context.duration_ms ?? context.durationMs ?? null;
+    const startedAt = context.started_at || (durationMs
+      ? new Date(new Date(endedAt).getTime() - durationMs).toISOString()
+      : null);
     const { error } = await client.from('dtunes_history').insert({
       user_id: session.user.id,
       track_id: track.id,
-      context
+      played_at: endedAt,
+      duration_ms: durationMs,
+      started_at: startedAt,
+      ended_at: endedAt,
+      client: 'dtunes-web',
+      context: { source: 'dtunes-web', ...context }
     });
     if (error) throw error;
   }
@@ -253,6 +263,31 @@
     if (!session) return [];
     const { data, error } = await client
       .from('dtunes_likes')
+      .select('created_at, dtunes_tracks(*)')
+      .eq('user_id', session.user.id)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map((row) => songFromTrack(row.dtunes_tracks)).filter(Boolean);
+  }
+
+  async function setLibrary(song, inLibrary) {
+    if (!client || !song || !song.id) return;
+    const session = await getSession();
+    if (!session) return;
+    const track = await upsertTrack(song);
+    const query = client.from('dtunes_library');
+    const { error } = inLibrary
+      ? await query.upsert({ user_id: session.user.id, track_id: track.id })
+      : await query.delete().eq('user_id', session.user.id).eq('track_id', track.id);
+    if (error) throw error;
+  }
+
+  async function listLibrary() {
+    if (!client) return [];
+    const session = await getSession();
+    if (!session) return [];
+    const { data, error } = await client
+      .from('dtunes_library')
       .select('created_at, dtunes_tracks(*)')
       .eq('user_id', session.user.id)
       .order('created_at', { ascending: false });
@@ -402,6 +437,34 @@
     return true;
   }
 
+  async function fetchListeningStats(limit = 20) {
+    if (!client) return [];
+    const session = await getSession();
+    if (!session) return [];
+    const { data, error } = await client
+      .from('dtunes_listening_stats')
+      .select('play_count, total_duration_ms, last_played_at, dtunes_tracks(*)')
+      .eq('user_id', session.user.id)
+      .order('total_duration_ms', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return data || [];
+  }
+
+  async function fetchListeningDaily(limit = 14) {
+    if (!client) return [];
+    const session = await getSession();
+    if (!session) return [];
+    const { data, error } = await client
+      .from('dtunes_listening_daily')
+      .select('day, play_count, total_duration_ms')
+      .eq('user_id', session.user.id)
+      .order('day', { ascending: false })
+      .limit(limit);
+    if (error) throw error;
+    return data || [];
+  }
+
   window.dverse = {
     supabase: client,
     isConfigured: ready,
@@ -415,13 +478,17 @@
       listHistory,
       setLiked,
       listLikes,
+      setLibrary,
+      listLibrary,
       listPlaylists,
       savePlaylist,
       deletePlaylist,
       upsertTrack,
       getPlaybackState,
       savePlaybackState,
-      savePlaybackStateFast
+      savePlaybackStateFast,
+      fetchListeningStats,
+      fetchListeningDaily
     }
   };
   window.dispatchEvent(new CustomEvent('dverse:ready', { detail: { configured: ready } }));

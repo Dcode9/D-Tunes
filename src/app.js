@@ -314,6 +314,7 @@
         const state = { 
             queue: [], userQueue: [], idx: -1, playing: false, loading: false, loaded: false, shuffle: false, repeat: 0, currentTrack: null,
             likedIds: JSON.parse(localStorage.getItem('likedIds') || '[]'),
+            libraryIds: JSON.parse(localStorage.getItem('libraryIds') || '[]'),
             likedArtists: JSON.parse(localStorage.getItem('likedArtists') || '[]'),
             playHistory: JSON.parse(localStorage.getItem('playHistory') || '[]'),
             artistPlayCounts: JSON.parse(localStorage.getItem('artistPlayCounts') || '{}'),
@@ -539,6 +540,7 @@
             captureLocalSnapshot: () => ({
                 playHistory: [...(state.playHistory || [])],
                 likedIds: [...(state.likedIds || [])],
+                libraryIds: [...(state.libraryIds || [])],
                 playlists: Object.fromEntries(Object.entries(state.playlists || {}).map(([name, songs]) => [name, [...(songs || [])]])),
                 playbackState: (() => {
                     try { return JSON.parse(localStorage.getItem('playbackState') || 'null'); } catch (e) { return null; }
@@ -547,6 +549,7 @@
             snapshotHasContent: (snapshot) => Boolean(
                 snapshot?.playHistory?.length ||
                 snapshot?.likedIds?.length ||
+                snapshot?.libraryIds?.length ||
                 Object.keys(snapshot?.playlists || {}).length ||
                 snapshot?.playbackState?.track?.id
             ),
@@ -560,6 +563,7 @@
                 return JSON.stringify({
                     history: (snapshot.playHistory || []).map(songId).filter(Boolean),
                     likes: (snapshot.likedIds || []).map(songId).filter(Boolean),
+                    library: (snapshot.libraryIds || []).map(songId).filter(Boolean),
                     playlists,
                     playback: snapshot.playbackState?.track?.id
                         ? {
@@ -626,7 +630,7 @@
                     cloudLibrary.setStatus(`Signed in as ${email || displayName}. Syncing library...`);
                 } else {
                     ui.updateProfileUI();
-                    cloudLibrary.setStatus('Sign in to sync history, likes, and playlists.');
+                    cloudLibrary.setStatus('Sign in to sync history, library, likes, and playlists.');
                 }
             },
             toggleAuth: async () => {
@@ -664,15 +668,17 @@
                 try {
                     const localSnapshot = cloudLibrary.captureLocalSnapshot();
                     const shouldImportLocal = cloudLibrary.shouldPushLocalSnapshot(localSnapshot);
-                    const [history, likes, playlists, playbackState] = await Promise.all([
+                    const [history, likes, library, playlists, playbackState] = await Promise.all([
                         window.dverse.dtunes.listHistory(),
                         window.dverse.dtunes.listLikes(),
+                        window.dverse.dtunes.listLibrary(),
                         window.dverse.dtunes.listPlaylists(),
                         window.dverse.dtunes.getPlaybackState()
                     ]);
 
                     state.playHistory = cloudLibrary.compactSongs([...(history || []), ...state.playHistory]).slice(0, 100);
                     state.likedIds = cloudLibrary.compactSongs([...(likes || []), ...state.likedIds]);
+                    state.libraryIds = cloudLibrary.compactSongs([...(library || []), ...state.libraryIds]);
                     const mergedPlaylists = { ...state.playlists };
                     (playlists || []).forEach((playlist) => {
                         const localSongs = mergedPlaylists[playlist.name] || [];
@@ -682,6 +688,7 @@
 
                     localStorage.setItem('playHistory', JSON.stringify(state.playHistory));
                     localStorage.setItem('likedIds', JSON.stringify(state.likedIds));
+                    localStorage.setItem('libraryIds', JSON.stringify(state.libraryIds));
                     localStorage.setItem('playlists', JSON.stringify(state.playlists));
 
                     const preferredPlayback = cloudLibrary.choosePlaybackState(localSnapshot.playbackState, playbackState);
@@ -694,8 +701,11 @@
                     ui.renderLibraryLists();
                     ui.renderHistory();
                     homeView.renderRecentlyPlayed();
+                    if (document.getElementById('view-stats') && !document.getElementById('view-stats').classList.contains('hidden')) {
+                        statsView.render();
+                    }
                     if (shouldImportLocal) {
-                        await cloudLibrary.pushLocalSnapshot(localSnapshot, { history, likes, playlists });
+                        await cloudLibrary.pushLocalSnapshot(localSnapshot, { history, likes, library, playlists });
                         cloudLibrary.markLocalSnapshotSynced(cloudLibrary.captureLocalSnapshot());
                         cloudLibrary.setStatus('Local library imported to D\'Verse Cloud.');
                     } else {
@@ -717,6 +727,12 @@
                     .filter(Boolean);
                 for (const song of likedSongs) {
                     await window.dverse.dtunes.setLiked(song, true);
+                }
+                const librarySongs = (snapshot.libraryIds || [])
+                    .map((item) => cloudLibrary.resolveSnapshotSong(item, snapshot))
+                    .filter(Boolean);
+                for (const song of librarySongs) {
+                    await window.dverse.dtunes.setLibrary(song, true);
                 }
                 for (const song of (snapshot.playHistory || []).slice().reverse().slice(-50)) {
                     if (remoteHistoryIds.has(song?.id)) continue;
@@ -743,6 +759,13 @@
                 if (fast && window.dverse.dtunes.savePlaybackStateFast?.(playbackState)) return;
                 window.dverse.dtunes.savePlaybackState(playbackState).catch((error) => {
                     console.error('[DVerse] Failed to sync playback state:', error);
+                });
+            },
+            setLibrary: (song, inLibrary) => {
+                if (!cloudLibrary.session || !song?.id) return;
+                window.dverse.dtunes.setLibrary(song, inLibrary).catch((error) => {
+                    console.error('[DVerse] Failed to sync library:', error);
+                    cloudLibrary.setStatus('Could not sync library songs.');
                 });
             },
             recordPlay: (song) => {
@@ -792,11 +815,18 @@
                 document.getElementById('cm-play-next').onclick = () => { const s = songStore.get(ctxMenu.activeStoreId); if(s) player.addNext(s); };
                 document.getElementById('cm-add-queue').onclick = () => { const s = songStore.get(ctxMenu.activeStoreId); if(s) player.addToQueue(s); };
                 document.getElementById('cm-add-playlist').onclick = (e) => { e.stopPropagation(); menu.classList.add('hidden'); ctxMenu.showPlaylistSelector(); };
+                document.getElementById('cm-like-song').onclick = () => { const s = songStore.get(ctxMenu.activeStoreId); if(s) player.likeSong(s.id); menu.classList.add('hidden'); };
+                document.getElementById('cm-add-library').onclick = () => { const s = songStore.get(ctxMenu.activeStoreId); if(s) player.addToLibrary(s.id); menu.classList.add('hidden'); };
                 document.getElementById('cm-pl-play').onclick = () => { ui.playPlaylist(ctxMenu.activePlaylistName); };
                 document.getElementById('cm-pl-delete').onclick = () => { ui.deletePlaylist(ctxMenu.activePlaylistName); };
             },
             showSong: (event, storeId) => {
-                ctxMenu.activeStoreId = storeId; const menu = document.getElementById('context-menu'); 
+                ctxMenu.activeStoreId = storeId; const menu = document.getElementById('context-menu');
+                const song = songStore.get(storeId);
+                const likeLabel = document.getElementById('cm-like-song-label');
+                const libraryLabel = document.getElementById('cm-add-library-label');
+                if (likeLabel && song) likeLabel.textContent = player.isLiked(song.id) ? 'Unlike song' : 'Like song';
+                if (libraryLabel && song) libraryLabel.textContent = player.isInLibrary(song.id) ? 'Remove from Library' : 'Add to Library';
                 document.getElementById('cm-song-options').classList.remove('hidden'); document.getElementById('cm-playlist-options').classList.add('hidden');
                 menu.classList.remove('hidden'); const x = Math.min(event.clientX, window.innerWidth - 200); const y = Math.min(event.clientY, window.innerHeight - 150);
                 menu.style.left = `${x}px`; menu.style.top = `${y}px`;
@@ -1081,6 +1111,33 @@
                 if (!document.getElementById('view-playlist').classList.contains('hidden') && document.getElementById('playlist-view-title').textContent === 'Liked Songs') { ui.openPlaylist('Liked Songs'); }
             },
             toggleLike: () => { player.likeSong(); },
+            isLiked: (songId) => state.likedIds.some(item => (typeof item === 'object' ? item.id : item) === songId),
+            isInLibrary: (songId) => state.libraryIds.some(item => (typeof item === 'object' ? item.id : item) === songId),
+            addToLibrary: (songId = null) => {
+                let songToAdd = null;
+                if (!songId) {
+                    if (!state.currentTrack) return;
+                    songId = state.currentTrack.id;
+                    songToAdd = state.currentTrack;
+                } else {
+                    songToAdd = state.currentTrack?.id === songId ? state.currentTrack :
+                        state.queue.find(s => s.id === songId) ||
+                        state.userQueue.find(s => s.id === songId) ||
+                        state.playHistory.find(s => s.id === songId);
+                    if (!songToAdd) {
+                        for (let s of songStore.songs.values()) {
+                            if (s.id === songId) { songToAdd = s; break; }
+                        }
+                    }
+                }
+                const idx = state.libraryIds.findIndex(item => (typeof item === 'string' ? item === songId : item.id === songId));
+                const nextInLibrary = idx === -1;
+                if (idx === -1) state.libraryIds.push(songToAdd || songId);
+                else state.libraryIds.splice(idx, 1);
+                localStorage.setItem('libraryIds', JSON.stringify(state.libraryIds));
+                cloudLibrary.setLibrary(songToAdd || { id: songId }, nextInLibrary);
+                ui.renderLibraryLists();
+            },
             addNext: (song) => { state.userQueue.unshift(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); primeNextTrack(); persist.save(); },
             addToQueue: (song) => { state.userQueue.push(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); primeNextTrack(); persist.save(); },
             clearQueue: () => {
@@ -1303,8 +1360,10 @@
             },
 
             switchView: (view) => {
-                document.getElementById('view-home').classList.add('hidden'); document.getElementById('view-search').classList.add('hidden'); document.getElementById('view-playlist').classList.add('hidden'); document.getElementById('view-library').classList.add('hidden'); document.getElementById('view-settings').classList.add('hidden');
+                document.getElementById('view-home').classList.add('hidden'); document.getElementById('view-search').classList.add('hidden'); document.getElementById('view-playlist').classList.add('hidden'); document.getElementById('view-library').classList.add('hidden'); document.getElementById('view-settings').classList.add('hidden'); document.getElementById('view-stats').classList.add('hidden');
                 document.getElementById(`view-${view}`).classList.remove('hidden'); document.getElementById('main-container').scrollTo({ top: 0, behavior: 'smooth' });
+
+                if (view === 'stats') statsView.render();
 
                 if (view !== 'search') {
                     document.getElementById('search-dropdown').classList.remove('active');
@@ -1544,7 +1603,7 @@
                 audio.load();
                 Object.keys(localStorage).forEach((key) => {
                     if ([
-                        'likedIds', 'likedArtists', 'playHistory', 'artistPlayCounts', 'playlists', 'username',
+                        'likedIds', 'libraryIds', 'likedArtists', 'playHistory', 'artistPlayCounts', 'playlists', 'username',
                         'audioQuality', 'equalizerSettings', 'playbackState', 'preferredLanguage'
                     ].includes(key) || key.startsWith('recommendation')) {
                         localStorage.removeItem(key);
@@ -1558,6 +1617,7 @@
                 state.loaded = false;
                 state.currentTrack = null;
                 state.likedIds = [];
+                state.libraryIds = [];
                 state.likedArtists = [];
                 state.playHistory = [];
                 state.artistPlayCounts = {};
@@ -1766,12 +1826,12 @@
                 updateMarquees();
             },
             renderLibraryLists: () => {
-                const likedSongs = document.getElementById('library-liked-songs');
+                const librarySongs = document.getElementById('library-songs');
                 const likedArtists = document.getElementById('library-liked-artists');
                 const history = document.getElementById('library-history');
-                if (likedSongs) {
-                    const songs = state.likedIds.map(item => typeof item === 'object' ? item : state.playHistory.find(song => song.id === item)).filter(Boolean);
-                    likedSongs.innerHTML = songs.length ? songs.map(song => ui.createListRow(song)).join('') : '<p class="text-sm text-gray-500">Like songs to collect them here.</p>';
+                if (librarySongs) {
+                    const songs = state.libraryIds.map(item => typeof item === 'object' ? item : state.playHistory.find(song => song.id === item) || state.likedIds.find(item2 => (typeof item2 === 'object' ? item2.id : item2) === item)).filter(Boolean);
+                    librarySongs.innerHTML = songs.length ? songs.map(song => ui.createListRow(song)).join('') : '<p class="text-sm text-gray-500">Add songs to your library from search or the song menu.</p>';
                 }
                 if (likedArtists) {
                     likedArtists.innerHTML = state.likedArtists.length ? state.likedArtists.map(artist => ui.createArtistCard(artist)).join('') : '<p class="text-sm text-gray-500 col-span-full">Like artists from search results to collect them here.</p>';
@@ -2169,7 +2229,7 @@
                                 <button class="top-result-action" title="Add to queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${topStoreId}'))">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
                                 </button>
-                                <button class="top-result-action" title="Add to library" onclick="event.stopPropagation(); player.likeSong('${utils.escapeJs(data.top.id)}')">
+                                <button class="top-result-action" title="Add to library" onclick="event.stopPropagation(); player.addToLibrary('${utils.escapeJs(data.top.id)}')">
                                     <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
                                 </button>
                             </div>
@@ -2186,6 +2246,95 @@
                 document.getElementById('search-albums-grid').innerHTML = data.albums.map(item => ui.createCard(item)).join('');
                 document.getElementById('search-artists-grid').innerHTML = data.artists.map(item => ui.createCard(item)).join('');
                 updateMarquees();
+            }
+        };
+
+        const statsView = {
+            formatDuration: (ms) => {
+                const totalMinutes = Math.max(0, Math.round(Number(ms || 0) / 60000));
+                if (totalMinutes < 60) return `${totalMinutes} min`;
+                const hours = Math.floor(totalMinutes / 60);
+                const minutes = totalMinutes % 60;
+                return minutes ? `${hours} hr ${minutes} min` : `${hours} hr`;
+            },
+            localSummary: () => {
+                const uniqueTracks = new Set(state.playHistory.map(song => song?.id).filter(Boolean));
+                const totalPlays = state.playHistory.length;
+                const topArtists = Object.entries(state.artistPlayCounts || {})
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 5);
+                return { uniqueTracks: uniqueTracks.size, totalPlays, topArtists, source: 'local' };
+            },
+            renderCards: (summary, topTracks = [], daily = []) => {
+                const container = document.getElementById('stats-content');
+                const subtitle = document.getElementById('stats-subtitle');
+                if (!container) return;
+                if (subtitle) {
+                    subtitle.textContent = summary.source === 'cloud'
+                        ? 'Synced from D\'Verse Cloud — same data as the Android app.'
+                        : 'Local browser stats. Sign in to D\'Verse Cloud for full cross-device listening stats.';
+                }
+                const topArtistHtml = (summary.topArtists || []).length
+                    ? summary.topArtists.map(([name, count]) => `<div class="flex items-center justify-between py-2 border-b border-white/5"><span class="text-white truncate">${utils.escapeHtml(name)}</span><span class="text-gray-400 text-sm">${count} plays</span></div>`).join('')
+                    : '<p class="text-sm text-gray-500">No artist data yet.</p>';
+                const topTrackHtml = topTracks.length
+                    ? topTracks.map(row => {
+                        const track = row.dtunes_tracks || row.track || row;
+                        const title = track?.title || track?.name || 'Unknown';
+                        const artist = track?.artist || 'Artist';
+                        const plays = row.play_count || 0;
+                        const duration = statsView.formatDuration(row.total_duration_ms || 0);
+                        return `<div class="flex items-center justify-between py-2 border-b border-white/5 gap-3"><div class="min-w-0"><p class="text-white truncate">${utils.escapeHtml(title)}</p><p class="text-xs text-gray-400 truncate">${utils.escapeHtml(artist)}</p></div><div class="text-right flex-shrink-0"><p class="text-sm text-white">${plays} plays</p><p class="text-xs text-gray-400">${duration}</p></div></div>`;
+                    }).join('')
+                    : '<p class="text-sm text-gray-500">Play more songs to build track stats.</p>';
+                const dailyHtml = daily.length
+                    ? daily.map(row => `<div class="flex items-center justify-between py-2 border-b border-white/5"><span class="text-white">${utils.escapeHtml(row.day)}</span><span class="text-gray-400 text-sm">${row.play_count || 0} plays · ${statsView.formatDuration(row.total_duration_ms || 0)}</span></div>`).join('')
+                    : '<p class="text-sm text-gray-500">Daily stats appear after cloud listening sessions are recorded.</p>';
+                container.innerHTML = `
+                    <section class="glass-panel rounded-2xl p-6">
+                        <h3 class="text-lg font-bold text-white mb-4">Overview</h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div class="rounded-xl bg-white/5 p-4"><p class="text-xs text-gray-400">Unique tracks</p><p class="text-2xl font-bold text-white">${summary.uniqueTracks || 0}</p></div>
+                            <div class="rounded-xl bg-white/5 p-4"><p class="text-xs text-gray-400">Total plays</p><p class="text-2xl font-bold text-white">${summary.totalPlays || 0}</p></div>
+                        </div>
+                    </section>
+                    <section class="glass-panel rounded-2xl p-6">
+                        <h3 class="text-lg font-bold text-white mb-4">Top Artists</h3>
+                        ${topArtistHtml}
+                    </section>
+                    <section class="glass-panel rounded-2xl p-6 lg:col-span-2">
+                        <h3 class="text-lg font-bold text-white mb-4">Top Tracks</h3>
+                        ${topTrackHtml}
+                    </section>
+                    <section class="glass-panel rounded-2xl p-6 lg:col-span-2">
+                        <h3 class="text-lg font-bold text-white mb-4">Daily Listening</h3>
+                        ${dailyHtml}
+                    </section>`;
+            },
+            render: async () => {
+                const container = document.getElementById('stats-content');
+                if (!container) return;
+                container.innerHTML = '<p class="text-gray-400">Loading stats...</p>';
+                try {
+                    if (cloudLibrary.session && window.dverse?.dtunes?.fetchListeningStats) {
+                        const [topTracks, daily] = await Promise.all([
+                            window.dverse.dtunes.fetchListeningStats(10),
+                            window.dverse.dtunes.fetchListeningDaily(14)
+                        ]);
+                        const local = statsView.localSummary();
+                        statsView.renderCards({
+                            uniqueTracks: topTracks.length || local.uniqueTracks,
+                            totalPlays: topTracks.reduce((sum, row) => sum + Number(row.play_count || 0), 0) || local.totalPlays,
+                            topArtists: local.topArtists,
+                            source: 'cloud'
+                        }, topTracks, daily);
+                        return;
+                    }
+                    statsView.renderCards(statsView.localSummary(), [], []);
+                } catch (error) {
+                    console.error('[Stats] Failed to render stats:', error);
+                    statsView.renderCards(statsView.localSummary(), [], []);
+                }
             }
         };
 
@@ -2263,7 +2412,7 @@
             renderRecentlyPlayed: () => {
                 const grid = document.getElementById('recent-grid'); if(!grid) return;
                 if(state.playHistory.length === 0) { grid.innerHTML = '<p class="text-gray-500 pl-8">Play some songs to see them here.</p>'; return; }
-                grid.innerHTML = state.playHistory.map(song => ui.createCard(song)).join('');
+                grid.innerHTML = state.playHistory.slice(0, 8).map(song => ui.createCard(song)).join('');
                 updateMarquees();
             },
             generateQuickPicks: async () => {
