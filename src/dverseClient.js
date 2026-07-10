@@ -327,7 +327,7 @@
     return data?.[0] || null;
   }
 
-  async function savePlaylist(name, songs = []) {
+  async function savePlaylist(name, songs = [], style = null) {
     const session = await getSession();
     if (!client || !session || !name) return null;
     const existing = await findPlaylistByName(name);
@@ -336,6 +336,9 @@
       name,
       updated_at: new Date().toISOString()
     };
+    if (style && typeof style === 'object') {
+      playlistPatch.style = style;
+    }
     const { data: playlist, error: playlistError } = existing
       ? await client.from('dtunes_playlists').update(playlistPatch).eq('id', existing.id).select().single()
       : await client.from('dtunes_playlists').insert(playlistPatch).select().single();

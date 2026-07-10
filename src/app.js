@@ -319,6 +319,7 @@
             playHistory: JSON.parse(localStorage.getItem('playHistory') || '[]'),
             artistPlayCounts: JSON.parse(localStorage.getItem('artistPlayCounts') || '{}'),
             playlists: JSON.parse(localStorage.getItem('playlists') || '{}'),
+            playlistStyles: JSON.parse(localStorage.getItem('playlistStyles') || '{}'),
             username: localStorage.getItem('username') || 'Guest User',
             quality: localStorage.getItem('audioQuality') || 'high',
             equalizer: normalizeEqualizerSettings(JSON.parse(localStorage.getItem('equalizerSettings') || '{}')),
@@ -680,16 +681,25 @@
                     state.likedIds = cloudLibrary.compactSongs([...(likes || []), ...state.likedIds]);
                     state.libraryIds = cloudLibrary.compactSongs([...(library || []), ...state.libraryIds]);
                     const mergedPlaylists = { ...state.playlists };
+                    const mergedStyles = { ...state.playlistStyles };
                     (playlists || []).forEach((playlist) => {
                         const localSongs = mergedPlaylists[playlist.name] || [];
                         mergedPlaylists[playlist.name] = cloudLibrary.compactSongs([...(playlist.songs || []), ...localSongs]);
+                        if (playlist.style && typeof playlist.style === 'object') {
+                            mergedStyles[playlist.name] = {
+                                ...(mergedStyles[playlist.name] || {}),
+                                ...playlist.style
+                            };
+                        }
                     });
                     state.playlists = mergedPlaylists;
+                    state.playlistStyles = mergedStyles;
 
                     localStorage.setItem('playHistory', JSON.stringify(state.playHistory));
                     localStorage.setItem('likedIds', JSON.stringify(state.likedIds));
                     localStorage.setItem('libraryIds', JSON.stringify(state.libraryIds));
                     localStorage.setItem('playlists', JSON.stringify(state.playlists));
+                    localStorage.setItem('playlistStyles', JSON.stringify(state.playlistStyles));
 
                     const preferredPlayback = cloudLibrary.choosePlaybackState(localSnapshot.playbackState, playbackState);
                     if (preferredPlayback?.track?.id) {
@@ -784,7 +794,11 @@
             },
             savePlaylist: (name) => {
                 if (!cloudLibrary.session || !name || !state.playlists[name]) return;
-                window.dverse.dtunes.savePlaylist(name, state.playlists[name]).catch((error) => {
+                window.dverse.dtunes.savePlaylist(
+                    name,
+                    state.playlists[name],
+                    state.playlistStyles[name] || null
+                ).catch((error) => {
                     console.error('[DVerse] Failed to sync playlist:', error);
                     cloudLibrary.setStatus('Could not sync playlist changes.');
                 });
@@ -1483,10 +1497,92 @@
                     document.getElementById('pl-song-search').value = '';
                     document.getElementById('pl-search-results').innerHTML = '';
                     stagedPlaylistSongs = [];
+                    Object.assign(playlistCoverDraft, {
+                        color: '#0ea5e9',
+                        icon: 'MusicNote',
+                        shape: 'Circle',
+                        cornerRadius: 20,
+                        smoothness: 100,
+                        starSides: 5,
+                        starCurve: 0.15,
+                        starRotation: 0,
+                        starScale: 1
+                    });
+                    ui.initPlaylistCoverControls();
                     ui.renderStagedSongs();
                     document.getElementById('new-playlist-name').focus(); 
                 }
                 else { modal.classList.add('hidden'); }
+            },
+            initPlaylistCoverControls: () => {
+                const colorEl = document.getElementById('pl-color-picker');
+                const iconEl = document.getElementById('pl-icon-picker');
+                const shapeEl = document.getElementById('pl-shape-picker');
+                if (!colorEl || !iconEl || !shapeEl) return;
+
+                colorEl.innerHTML = PLAYLIST_COVER_COLORS.map((color) => `
+                    <button type="button" data-color="${color}" class="w-8 h-8 rounded-full border-2 ${playlistCoverDraft.color === color ? 'border-white scale-110' : 'border-transparent'} transition" style="background:${color}"></button>
+                `).join('');
+                iconEl.innerHTML = Object.keys(PLAYLIST_COVER_ICONS).map((name) => `
+                    <button type="button" data-icon="${name}" class="w-10 h-10 rounded-xl flex items-center justify-center ${playlistCoverDraft.icon === name ? 'bg-[var(--accent-color)] text-black' : 'bg-white/10 text-white'} transition">${PLAYLIST_COVER_ICONS[name]}</button>
+                `).join('');
+                shapeEl.innerHTML = PLAYLIST_COVER_SHAPES.map((shape) => `
+                    <button type="button" data-shape="${shape}" class="px-3 py-1.5 rounded-full text-xs font-bold ${playlistCoverDraft.shape === shape ? 'bg-[var(--accent-color)] text-black' : 'bg-white/10 text-gray-200'} transition">${shape}</button>
+                `).join('');
+
+                colorEl.querySelectorAll('button').forEach((btn) => {
+                    btn.onclick = () => {
+                        playlistCoverDraft.color = btn.dataset.color;
+                        ui.initPlaylistCoverControls();
+                    };
+                });
+                iconEl.querySelectorAll('button').forEach((btn) => {
+                    btn.onclick = () => {
+                        playlistCoverDraft.icon = btn.dataset.icon;
+                        ui.initPlaylistCoverControls();
+                    };
+                });
+                shapeEl.querySelectorAll('button').forEach((btn) => {
+                    btn.onclick = () => {
+                        playlistCoverDraft.shape = btn.dataset.shape;
+                        ui.initPlaylistCoverControls();
+                    };
+                });
+
+                const params = document.getElementById('pl-shape-params');
+                const cornerLabel = document.getElementById('pl-corner-label');
+                const sidesLabel = document.getElementById('pl-sides-label');
+                const cornerInput = document.getElementById('pl-corner-radius');
+                const sidesInput = document.getElementById('pl-star-sides');
+                params.classList.toggle('hidden', !(playlistCoverDraft.shape === 'SmoothRect' || playlistCoverDraft.shape === 'Star'));
+                cornerLabel.classList.toggle('hidden', playlistCoverDraft.shape !== 'SmoothRect');
+                sidesLabel.classList.toggle('hidden', playlistCoverDraft.shape !== 'Star');
+                if (cornerInput) {
+                    cornerInput.value = playlistCoverDraft.cornerRadius;
+                    document.getElementById('pl-corner-value').textContent = playlistCoverDraft.cornerRadius;
+                    cornerInput.oninput = () => {
+                        playlistCoverDraft.cornerRadius = Number(cornerInput.value);
+                        document.getElementById('pl-corner-value').textContent = playlistCoverDraft.cornerRadius;
+                        ui.refreshPlaylistCoverPreview();
+                    };
+                }
+                if (sidesInput) {
+                    sidesInput.value = playlistCoverDraft.starSides;
+                    document.getElementById('pl-sides-value').textContent = playlistCoverDraft.starSides;
+                    sidesInput.oninput = () => {
+                        playlistCoverDraft.starSides = Number(sidesInput.value);
+                        document.getElementById('pl-sides-value').textContent = playlistCoverDraft.starSides;
+                        ui.refreshPlaylistCoverPreview();
+                    };
+                }
+                ui.refreshPlaylistCoverPreview();
+            },
+            refreshPlaylistCoverPreview: () => {
+                const preview = document.getElementById('pl-cover-preview');
+                if (!preview) return;
+                preview.className = '';
+                preview.style.cssText = '';
+                preview.innerHTML = renderPlaylistCoverMarkup(playlistCoverDraft, 'w-14 h-14');
             },
             toggleSpotifyModal: async (show) => {
                 const modal = document.getElementById('spotify-modal');
@@ -1647,8 +1743,20 @@
             createPlaylist: () => {
                 const name = document.getElementById('new-playlist-name').value.trim();
                 if(name && !state.playlists[name]) { 
-                    state.playlists[name] = [...stagedPlaylistSongs]; 
-                    localStorage.setItem('playlists', JSON.stringify(state.playlists)); 
+                    state.playlists[name] = [...stagedPlaylistSongs];
+                    state.playlistStyles[name] = {
+                        color: playlistCoverDraft.color,
+                        icon: playlistCoverDraft.icon,
+                        shape: playlistCoverDraft.shape,
+                        cornerRadius: playlistCoverDraft.cornerRadius,
+                        smoothness: 100,
+                        starSides: playlistCoverDraft.starSides,
+                        starCurve: 0.15,
+                        starRotation: 0,
+                        starScale: 1
+                    };
+                    localStorage.setItem('playlists', JSON.stringify(state.playlists));
+                    localStorage.setItem('playlistStyles', JSON.stringify(state.playlistStyles));
                     cloudLibrary.savePlaylist(name);
                     ui.renderPlaylists(); 
                     ui.toggleModal(false); 
@@ -1691,7 +1799,10 @@
             },
             deletePlaylist: (name) => {
                 if(name === 'Liked Songs') return;
-                delete state.playlists[name]; localStorage.setItem('playlists', JSON.stringify(state.playlists));
+                delete state.playlists[name];
+                delete state.playlistStyles[name];
+                localStorage.setItem('playlists', JSON.stringify(state.playlists));
+                localStorage.setItem('playlistStyles', JSON.stringify(state.playlistStyles));
                 cloudLibrary.deletePlaylist(name);
                 ui.renderPlaylists(); ui.switchView('home');
             },
@@ -1708,10 +1819,18 @@
                 if (songs.length > 0) { state.queue = [...songs]; state.userQueue = []; state.idx = 0; player.playDirect(songs[0]); }
             },
             getPlaylistStyle: (name) => {
-                if (name === 'Liked Songs') return { bg: 'bg-gradient-to-br from-red-600 to-red-900', icon: '<svg class="w-20 h-20 text-red-500 drop-shadow-xl" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>' };
+                if (name === 'Liked Songs') return { bg: 'bg-gradient-to-br from-red-600 to-red-900', icon: '<svg class="w-20 h-20 text-red-500 drop-shadow-xl" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>', customHtml: null };
+                const custom = state.playlistStyles?.[name];
+                if (custom) {
+                    return {
+                        bg: '',
+                        icon: '',
+                        customHtml: renderPlaylistCoverMarkup(custom, 'w-full h-full')
+                    };
+                }
                 const themes = ['bg-gradient-to-br from-purple-500 to-indigo-600', 'bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-400 to-emerald-500', 'bg-[conic-gradient(at_bottom_left,_var(--tw-gradient-stops))] from-yellow-400 via-red-500 to-pink-500', 'bg-gradient-to-bl from-teal-400 to-blue-600', 'bg-gradient-to-tr from-pink-500 to-orange-400'];
                 const index = name.length % themes.length;
-                return { bg: themes[index], icon: `<span class="text-white drop-shadow-md uppercase">${name.substring(0, 2)}</span>` };
+                return { bg: themes[index], icon: `<span class="text-white drop-shadow-md uppercase">${name.substring(0, 2)}</span>`, customHtml: null };
             },
             openPlaylist: async (name) => {
                 ui.switchView('playlist'); document.getElementById('playlist-view-title').textContent = utils.escapeHtml(name);
@@ -1732,7 +1851,7 @@
                 
                 const style = ui.getPlaylistStyle(name);
                 document.getElementById('pl-view-art').className = `w-48 h-48 md:w-full md:aspect-square rounded-2xl shadow-2xl flex items-center justify-center text-5xl md:text-6xl font-bold text-white shadow-black/50 overflow-hidden ${style.bg}`;
-                document.getElementById('pl-view-art').innerHTML = style.icon;
+                document.getElementById('pl-view-art').innerHTML = style.customHtml || style.icon;
 
                 const listEl = document.getElementById('playlist-songs-list');
                 if (songs.length === 0) { listEl.innerHTML = '<p class="text-gray-400 py-4">No songs in this playlist yet.</p>'; } 
@@ -1762,7 +1881,7 @@
                 let html = `
                 <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer" onclick="ui.openPlaylist('Liked Songs')">
                     <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center text-4xl ${likedStyle.bg}">
-                        ${likedStyle.icon.replace('w-20 h-20', 'w-12 h-12')}
+                        ${(likedStyle.customHtml || likedStyle.icon).replace('w-20 h-20', 'w-12 h-12')}
                         <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
                             <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
                         </div>
@@ -1807,7 +1926,7 @@
                     html += `
                     <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer" onclick="ui.openPlaylist('${utils.escapeJs(name)}')">
                         <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center text-4xl font-bold ${style.bg}">
-                            ${style.icon}
+                            ${style.customHtml || style.icon}
                             <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
                                 <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
                             </div>
@@ -2145,6 +2264,59 @@
         // ============================================
         let lastFullSearch = '';
         let stagedPlaylistSongs = [];
+        const playlistCoverDraft = {
+            color: '#0ea5e9',
+            icon: 'MusicNote',
+            shape: 'Circle',
+            cornerRadius: 20,
+            smoothness: 100,
+            starSides: 5,
+            starCurve: 0.15,
+            starRotation: 0,
+            starScale: 1
+        };
+        const PLAYLIST_COVER_COLORS = [
+            '#0ea5e9', '#38bdf8', '#22c55e', '#86efac', '#a855f7',
+            '#d8b4fe', '#f97316', '#fdba74', '#ef4444', '#111827'
+        ];
+        const PLAYLIST_COVER_ICONS = {
+            MusicNote: '<svg viewBox="0 0 24 24" class="w-6 h-6" fill="currentColor"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>',
+            Headphones: '<svg viewBox="0 0 24 24" class="w-6 h-6" fill="currentColor"><path d="M12 3a9 9 0 0 0-9 9v7a2 2 0 0 0 2 2h3v-8H5v-1a7 7 0 0 1 14 0v1h-3v8h3a2 2 0 0 0 2-2v-7a9 9 0 0 0-9-9z"/></svg>',
+            Album: '<svg viewBox="0 0 24 24" class="w-6 h-6" fill="currentColor"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 14.5A4.5 4.5 0 1 1 16.5 12 4.5 4.5 0 0 1 12 16.5z"/></svg>',
+            Mic: '<svg viewBox="0 0 24 24" class="w-6 h-6" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg>',
+            Speaker: '<svg viewBox="0 0 24 24" class="w-6 h-6" fill="currentColor"><path d="M17 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zm-5 2a1.5 1.5 0 1 1-1.5 1.5A1.5 1.5 0 0 1 12 4zm0 16a4 4 0 1 1 4-4 4 4 0 0 1-4 4z"/></svg>',
+            Favorite: '<svg viewBox="0 0 24 24" class="w-6 h-6" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54z"/></svg>',
+            Piano: '<svg viewBox="0 0 24 24" class="w-6 h-6" fill="currentColor"><path d="M20 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1zM9 19H5v-6h1.5v4H9zm5 0h-4v-6H11v4h2v-4h1zm5 0h-4v-6H16v4H19z"/></svg>',
+            Queue: '<svg viewBox="0 0 24 24" class="w-6 h-6" fill="currentColor"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zm19-8v10l-7-5 7-5z"/></svg>'
+        };
+        const PLAYLIST_COVER_SHAPES = ['Circle', 'SmoothRect', 'RotatedPill', 'Star'];
+
+        function playlistShapeCss(style = {}) {
+            const shape = style.shape || 'Circle';
+            if (shape === 'SmoothRect') {
+                const radius = Math.max(0, Math.min(50, Number(style.cornerRadius ?? 20)));
+                return `border-radius:${radius}px`;
+            }
+            if (shape === 'RotatedPill') {
+                return 'border-radius:999px; transform: rotate(45deg) scale(0.85)';
+            }
+            if (shape === 'Star') {
+                const sides = Math.max(3, Math.min(20, Number(style.starSides ?? 5)));
+                // CSS approximation via clip-path polygon for a star-like look
+                return `clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%); border-radius:0`;
+            }
+            return 'border-radius:9999px';
+        }
+
+        function renderPlaylistCoverMarkup(style = {}, sizeClass = 'w-12 h-12') {
+            const color = style.color || '#0ea5e9';
+            const icon = PLAYLIST_COVER_ICONS[style.icon] || PLAYLIST_COVER_ICONS.MusicNote;
+            const shapeStyle = playlistShapeCss(style);
+            const iconWrap = style.shape === 'RotatedPill'
+                ? `<span style="transform: rotate(-45deg)">${icon}</span>`
+                : icon;
+            return `<div class="${sizeClass} flex items-center justify-center text-white overflow-hidden" style="background:${color}; ${shapeStyle}">${iconWrap}</div>`;
+        }
         
         const searchManager = {
             init: () => {

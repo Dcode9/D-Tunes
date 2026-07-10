@@ -39,6 +39,33 @@
         <div class="glass-panel p-6 rounded-2xl w-full max-w-lg shadow-2xl border border-white/10 transform transition-transform flex flex-col max-h-[90vh]">
             <h3 class="text-xl font-bold text-white mb-4 flex-shrink-0">Create Playlist</h3>
             <input type="text" id="new-playlist-name" placeholder="My Awesome Mix" class="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white mb-4 focus:outline-none focus:border-[var(--accent-color)] transition flex-shrink-0" autocomplete="off">
+
+            <div class="mb-4 flex-shrink-0 space-y-3">
+                <div class="flex items-center justify-between gap-3">
+                    <p class="text-xs font-bold uppercase tracking-wider text-gray-400">Cover</p>
+                    <div id="pl-cover-preview" class="w-14 h-14 rounded-xl flex items-center justify-center text-white shadow-lg overflow-hidden" style="background:#0ea5e9"></div>
+                </div>
+                <div>
+                    <p class="text-[11px] text-gray-400 mb-2">Background color</p>
+                    <div id="pl-color-picker" class="flex flex-wrap gap-2"></div>
+                </div>
+                <div>
+                    <p class="text-[11px] text-gray-400 mb-2">Icon</p>
+                    <div id="pl-icon-picker" class="flex flex-wrap gap-2"></div>
+                </div>
+                <div>
+                    <p class="text-[11px] text-gray-400 mb-2">Shape style</p>
+                    <div id="pl-shape-picker" class="flex flex-wrap gap-2"></div>
+                </div>
+                <div id="pl-shape-params" class="hidden space-y-2">
+                    <label id="pl-corner-label" class="hidden text-[11px] text-gray-400">Corner radius <span id="pl-corner-value">20</span>
+                        <input id="pl-corner-radius" type="range" min="0" max="50" value="20" class="w-full accent-[var(--accent-color)]">
+                    </label>
+                    <label id="pl-sides-label" class="hidden text-[11px] text-gray-400">Sides <span id="pl-sides-value">5</span>
+                        <input id="pl-star-sides" type="range" min="3" max="20" value="5" class="w-full accent-[var(--accent-color)]">
+                    </label>
+                </div>
+            </div>
             
             <div class="relative mb-4 flex-shrink-0">
                 <input type="text" id="pl-song-search" placeholder="Search songs to add..." class="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-white/30 transition" autocomplete="off">
