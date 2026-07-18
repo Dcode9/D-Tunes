@@ -7,7 +7,26 @@
                 const txt = document.createElement("textarea"); txt.innerHTML = html; return txt.value;
             },
             escapeHtml: (text) => text ? text.toString().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;") : '',
-            escapeJs: (text) => text ? text.toString().replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "\\n").replace(/\r/g, "\\r") : ''
+            escapeJs: (text) => text ? text.toString().replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "\\n").replace(/\r/g, "\\r") : '',
+            getRelativeDateLabel: (dateStr) => {
+                if (!dateStr) return 'Earlier';
+                try {
+                    const date = new Date(dateStr);
+                    const today = new Date();
+                    const yesterday = new Date();
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    
+                    if (date.toDateString() === today.toDateString()) {
+                        return 'Today';
+                    } else if (date.toDateString() === yesterday.toDateString()) {
+                        return 'Yesterday';
+                    } else {
+                        return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                    }
+                } catch (e) {
+                    return 'Earlier';
+                }
+            }
         };
 
         const GITHUB_DETUNED_SVG = 'https://raw.githubusercontent.com/Datamaverik/D-Tunes/main/assets/DTunes2.svg';
@@ -817,6 +836,61 @@
         };
         window.cloudLibrary = cloudLibrary;
 
+        const listeningSession = {
+            songId: null,
+            track: null,
+            startedAt: 0,
+            accumulatedMs: 0,
+            lastUpdate: 0,
+            isPlaying: false,
+            
+            start: (track) => {
+                listeningSession.finalize();
+                if (!track) return;
+                listeningSession.songId = track.id;
+                listeningSession.track = track;
+                listeningSession.startedAt = Date.now();
+                listeningSession.accumulatedMs = 0;
+                listeningSession.lastUpdate = Date.now();
+                listeningSession.isPlaying = !audio.paused;
+            },
+            
+            update: () => {
+                if (!listeningSession.songId || !listeningSession.isPlaying) return;
+                const now = Date.now();
+                listeningSession.accumulatedMs += (now - listeningSession.lastUpdate);
+                listeningSession.lastUpdate = now;
+            },
+            
+            setPlaying: (playing) => {
+                listeningSession.update();
+                listeningSession.isPlaying = playing;
+                listeningSession.lastUpdate = Date.now();
+            },
+            
+            finalize: () => {
+                listeningSession.update();
+                const song = listeningSession.track;
+                const ms = listeningSession.accumulatedMs;
+                if (song && ms >= 5000) { // minimum 5 seconds
+                    const endedAt = new Date().toISOString();
+                    const startedAt = new Date(Date.now() - ms).toISOString();
+                    if (cloudLibrary.session) {
+                        window.dverse.dtunes.recordPlay(song, {
+                            duration_ms: ms,
+                            started_at: startedAt,
+                            ended_at: endedAt,
+                            source: 'dtunes-web'
+                        }).catch(e => console.warn('[DVerse] recordPlay failed:', e));
+                    }
+                }
+                listeningSession.songId = null;
+                listeningSession.track = null;
+                listeningSession.accumulatedMs = 0;
+            }
+        };
+        window.listeningSession = listeningSession;
+
         // ============================================
         // CONTEXT MENU LOGIC
         // ============================================
@@ -1071,11 +1145,13 @@
                     
                     ui.updateMetadata(track); ui.renderQueue(); primeNextTrack(); 
                     
+                    const trackWithTime = { ...track, playedAt: new Date().toISOString() };
                     state.playHistory = state.playHistory.filter(t => t.id !== track.id);
-                    state.playHistory.unshift(track);
+                    state.playHistory.unshift(trackWithTime);
                     if(state.playHistory.length > 100) state.playHistory.pop();
                     localStorage.setItem('playHistory', JSON.stringify(state.playHistory));
-                    cloudLibrary.recordPlay(track);
+                    
+                    listeningSession.start(track);
                     
                     ui.renderHistory();
                     if(!document.getElementById('view-home').classList.contains('hidden')) homeView.renderRecentlyPlayed();
@@ -1234,6 +1310,7 @@
         audio.addEventListener('play', () => { 
             state.playing = true;
             state.wasPlayingBeforeHidden = true;
+            if (window.listeningSession) listeningSession.setPlaying(true);
             ui.updatePlayBtn();
             persist.save();
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
@@ -1247,6 +1324,7 @@
                 state.playing = false;
                 state.wasPlayingBeforeHidden = false;
             }
+            if (window.listeningSession) listeningSession.setPlaying(false);
             state.loading = false;
             ui.setPlayerLoading(false);
             ui.updatePlayBtn();
@@ -1284,7 +1362,7 @@
         setInterval(() => {
             if (!state.loaded || isPlaybackPending) return;
             const audioActuallyPlaying = !audio.paused && !audio.ended && audio.readyState > 2;
-            const stateDesync = (audioActuallyPlaying !== state.playing) && document.visibilityState !== 'hidden';
+            const stateDesync = (audioActuallyPlaying !== state.playing) && document.visibilityState !== 'hidden' && !state.wasPlayingBeforeHidden;
             if (stateDesync) {
                 state.playing = audioActuallyPlaying;
                 ui.updatePlayBtn();
@@ -1335,10 +1413,12 @@
             }
         });
         window.addEventListener('pagehide', () => {
+            if (window.listeningSession) listeningSession.finalize();
             persist.save();
             cloudLibrary.flushPlaybackState(true);
         });
         window.addEventListener('beforeunload', () => {
+            if (window.listeningSession) listeningSession.finalize();
             persist.save();
             cloudLibrary.flushPlaybackState(true);
         });
@@ -2422,7 +2502,22 @@
                 if(state.playHistory.length <= 1) {
                     histEl.innerHTML = '<div class="text-xs text-gray-500 p-2">No history yet</div>'; return;
                 }
-                histEl.innerHTML = state.playHistory.slice(1).map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`)).join('');
+                
+                // Group by relative date label
+                const groups = {};
+                state.playHistory.slice(1).forEach(song => {
+                    const label = utils.getRelativeDateLabel(song.playedAt);
+                    if (!groups[label]) groups[label] = [];
+                    groups[label].push(song);
+                });
+                
+                let html = '';
+                for (const [label, songs] of Object.entries(groups)) {
+                    html += `<div class="text-[10px] text-[var(--accent-color)] font-extrabold uppercase tracking-wider mt-4 mb-2 pl-2 border-l-2 border-[var(--accent-color)]">${utils.escapeHtml(label)}</div>`;
+                    html += songs.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`)).join('');
+                }
+                
+                histEl.innerHTML = html;
                 updateMarquees();
             }
         };
@@ -3116,6 +3211,7 @@
 
             let lastPersistSecond = -1;
             audio.addEventListener('timeupdate', () => {
+                if (window.listeningSession) listeningSession.update();
                 if (Number.isFinite(audio.duration) && audio.duration > 0 && !state.isDragging) {
                     seekBar.max = audio.duration; seekBar.value = audio.currentTime;
                     currentProgress = audio.currentTime / audio.duration;
