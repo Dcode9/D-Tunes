@@ -328,7 +328,8 @@
             equalizer: normalizeEqualizerSettings(JSON.parse(localStorage.getItem('equalizerSettings') || '{}')),
             forYouSongs: [],
             searchDebounce: null, hoverProgress: -1, lastHoverProgress: 0.5, isDragging: false, 
-            upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false, nextTrackPreloadId: null
+            upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false, nextTrackPreloadId: null,
+            wasPlayingBeforeHidden: false
         };
 
         const deviceMode = {
@@ -1231,15 +1232,27 @@
         };
 
         audio.addEventListener('play', () => { 
-            state.playing = true; ui.updatePlayBtn(); persist.save();
+            state.playing = true;
+            state.wasPlayingBeforeHidden = true;
+            ui.updatePlayBtn();
+            persist.save();
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
         });
         audio.addEventListener('pause', () => { 
-            state.playing = false;
+            // Only treat as a real user/app pause if the page is visible.
+            // Browsers suspend audio when the tab is hidden; we must not
+            // clobber state.playing in that case or the visibilitychange
+            // handler won't know to resume.
+            if (document.visibilityState !== 'hidden') {
+                state.playing = false;
+                state.wasPlayingBeforeHidden = false;
+            }
             state.loading = false;
             ui.setPlayerLoading(false);
             ui.updatePlayBtn();
-            persist.save();
+            if (document.visibilityState !== 'hidden') {
+                persist.save();
+            }
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
         });
 
@@ -1266,25 +1279,58 @@
             }
         }, 1000);
 
+        // Periodic state reconciliation: catches any desync between audio
+        // element and UI state (especially on mobile expanded player).
+        setInterval(() => {
+            if (!state.loaded || isPlaybackPending) return;
+            const audioActuallyPlaying = !audio.paused && !audio.ended && audio.readyState > 2;
+            const stateDesync = (audioActuallyPlaying !== state.playing) && document.visibilityState !== 'hidden';
+            if (stateDesync) {
+                state.playing = audioActuallyPlaying;
+                ui.updatePlayBtn();
+            }
+        }, 2000);
+
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
+                // Remember whether we were playing before the tab goes hidden.
+                // The browser may fire a 'pause' event on the audio element
+                // while the page is hidden, which our pause handler now guards
+                // against clobbering state.playing — but we still want a
+                // separate flag for maximum reliability.
+                state.wasPlayingBeforeHidden = state.playing || !audio.paused;
                 const preservedVolume = audio.volume;
                 audio.muted = false;
                 persist.save();
                 cloudLibrary.flushPlaybackState(true);
                 setTimeout(() => { audio.volume = preservedVolume; audio.muted = false; }, 0);
             } else {
-                if (state.playing) {
+                // Page became visible. Check if playback was interrupted.
+                const shouldResume = state.wasPlayingBeforeHidden || state.playing;
+                if (shouldResume) {
                     audio.muted = false;
                     if (audioContext && audioContext.state === 'suspended') {
-                        audioContext.resume().catch(err => console.warn('[DTunes] Could not resume audioContext on focus:', err));
+                        audioContext.resume().catch(err => console.warn('[DTunes] audioContext resume failed:', err));
                     }
                     if (audio.paused) {
-                        audio.play().catch(err => console.warn('[DTunes] Could not play audio on focus:', err));
+                        audio.play().then(() => {
+                            state.playing = true;
+                            ui.updatePlayBtn();
+                        }).catch(err => {
+                            console.warn('[DTunes] Could not resume audio on focus:', err);
+                            // If autoplay is blocked, reconcile state
+                            state.playing = false;
+                            state.wasPlayingBeforeHidden = false;
+                            ui.updatePlayBtn();
+                        });
+                    } else {
+                        // Audio is already playing, just make sure state is correct
+                        state.playing = true;
+                        ui.updatePlayBtn();
                     }
                 }
             }
-            if ('mediaSession' in navigator && document.visibilityState === 'hidden' && state.playing) {
+            if ('mediaSession' in navigator && document.visibilityState === 'hidden' && (state.playing || state.wasPlayingBeforeHidden)) {
                 navigator.mediaSession.playbackState = 'playing';
             }
         });
@@ -1339,6 +1385,8 @@
                 if (!state.loaded) return;
                 const canvas = vizCanvas; const dpr = Math.min(window.devicePixelRatio || 1, 2);
                 const width = canvas.width / dpr; const height = canvas.height / dpr; const centerY = height / 2; visualizerCtx.clearRect(0, 0, width, height);
+                // Always update the clip-path so the progress line stays visible
+                // even when paused.
                 if(vizSeekTrack && currentProgress !== lastClipProgress) {
                     const progressWidth = width * currentProgress;
                     canvas.style.clipPath = `inset(0 ${width - progressWidth}px 0 0)`;
@@ -1356,9 +1404,23 @@
                     targetLow = 0.2 + (0.16 * (0.5 + 0.5 * Math.sin(time * 2.8)));
                     targetMid = 0.12 + (0.09 * (0.5 + 0.5 * Math.cos(time * 3.4)));
                 } else {
-                    // Decay to silence when paused — skip expensive wave drawing if already flat.
+                    // Paused: decay the wave to flat, but always draw a flat
+                    // progress line so the completed portion stays visible.
                     smoothedLow += (0 - smoothedLow) * 0.1; smoothedMid += (0 - smoothedMid) * 0.1;
-                    if (smoothedLow < VIZ_SILENCE_THRESHOLD && smoothedMid < VIZ_SILENCE_THRESHOLD) return;
+                    if (smoothedLow < VIZ_SILENCE_THRESHOLD && smoothedMid < VIZ_SILENCE_THRESHOLD) {
+                        // Draw a flat line across the canvas at centerY so the
+                        // clip-path on the canvas still shows as a thin white
+                        // progress indicator.
+                        visualizerCtx.beginPath();
+                        visualizerCtx.moveTo(0, centerY);
+                        visualizerCtx.lineTo(width, centerY);
+                        visualizerCtx.lineWidth = 2;
+                        visualizerCtx.strokeStyle = '#fff';
+                        visualizerCtx.shadowColor = 'transparent';
+                        visualizerCtx.shadowBlur = 0;
+                        visualizerCtx.stroke();
+                        return;
+                    }
                 }
                 smoothedLow += (targetLow - smoothedLow) * 0.1; smoothedMid += (targetMid - smoothedMid) * 0.1;
                 let verticalScale = audio.duration > 0 ? (0.3 + 0.7 * Math.min(1, currentProgress / 0.4)) * 0.8 : 1.0;
@@ -2257,13 +2319,28 @@
                 updateMarquees();
             },
             updatePlayBtn: () => {
-                document.getElementById('icon-play').className = state.playing ? 'hidden' : 'flex ml-1';
-                document.getElementById('icon-pause').className = state.playing ? 'flex' : 'hidden';
+                // Reconcile state.playing with actual audio element state.
+                // If the audio is playing but state says otherwise (or vice versa),
+                // use the audio element as the source of truth — unless we're
+                // in the middle of loading a new track.
+                if (state.loaded && !isPlaybackPending) {
+                    const audioActuallyPlaying = !audio.paused && !audio.ended && audio.readyState > 2;
+                    if (audioActuallyPlaying && !state.playing) {
+                        state.playing = true;
+                    } else if (!audioActuallyPlaying && state.playing && document.visibilityState !== 'hidden') {
+                        // Only correct when visible; when hidden the browser may
+                        // have suspended audio but we still intend to play.
+                        state.playing = false;
+                    }
+                }
+                const playing = state.playing;
+                document.getElementById('icon-play').className = playing ? 'hidden' : 'flex ml-1';
+                document.getElementById('icon-pause').className = playing ? 'flex' : 'hidden';
                 const mPlayBtn = document.getElementById('m-icon-play');
                 const mPauseBtn = document.getElementById('m-icon-pause');
                 if(mPlayBtn && mPauseBtn) {
-                    mPlayBtn.className = state.playing ? 'hidden' : 'flex';
-                    mPauseBtn.className = state.playing ? 'flex' : 'hidden';
+                    mPlayBtn.className = playing ? 'hidden' : 'flex';
+                    mPauseBtn.className = playing ? 'flex' : 'hidden';
                 }
             },
             toggleQueue: () => {
