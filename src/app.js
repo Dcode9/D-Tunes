@@ -312,7 +312,10 @@
         };
 
         const state = { 
-            queue: [], userQueue: [], idx: -1, playing: false, loading: false, loaded: false, shuffle: false, repeat: 0, currentTrack: null,
+            queue: [], userQueue: [], idx: -1, playing: false, loading: false, loaded: false,
+            shuffle: localStorage.getItem('playShuffle') === 'true',
+            repeat: parseInt(localStorage.getItem('playRepeat') || '0', 10),
+            currentTrack: null,
             likedIds: JSON.parse(localStorage.getItem('likedIds') || '[]'),
             libraryIds: JSON.parse(localStorage.getItem('libraryIds') || '[]'),
             likedArtists: JSON.parse(localStorage.getItem('likedArtists') || '[]'),
@@ -917,9 +920,19 @@
         const requestPlay = async () => {
             if (!state.loaded) return;
             try {
-                if (audioContext && audioContext.state === 'suspended') await audioContext.resume();
+                if (audioContext && audioContext.state === 'suspended') {
+                    try {
+                        await audioContext.resume();
+                    } catch (acErr) {
+                        console.warn('[DTunes] Could not resume audioContext in background:', acErr);
+                    }
+                }
                 await audio.play();
-            } catch (e) { state.playing = false; ui.updatePlayBtn(); }
+            } catch (e) {
+                console.error('[DTunes] Playback failed:', e);
+                state.playing = false;
+                ui.updatePlayBtn();
+            }
         };
 
         const requestPause = () => {
@@ -1036,7 +1049,9 @@
                     state.loading = true;
                     ui.updateMetadata(track, { loading: true });
                     
-                    ui.enableControls(); await audio.play();
+                    ui.enableControls();
+                    audio.loop = (state.repeat === 2);
+                    await audio.play();
                     state.loading = false;
                     ui.setPlayerLoading(false);
                     const isRepeatStart = recommendationEvents.lastStartedSongId === track.id && Date.now() - recommendationEvents.currentPlayStartAt < 15 * 60 * 1000;
@@ -1048,7 +1063,9 @@
                         context: recommendationEvents.contextForTrack(track),
                     });
                     
-                    if (audioContext && audioContext.state === 'suspended') audioContext.resume();
+                    if (audioContext && audioContext.state === 'suspended') {
+                        audioContext.resume().catch(err => console.warn('[DTunes] Could not resume audioContext in playDirect:', err));
+                    }
                     if (Object.values(state.equalizer).some(value => Number(value) !== 0) && !isAudioContextInitialized) setupAudioContext();
                     
                     ui.updateMetadata(track); ui.renderQueue(); primeNextTrack(); 
@@ -1075,10 +1092,24 @@
                 if(!state.loaded) return;
                 if(state.playing || !audio.paused) { requestPause(); } else { requestPlay(); }
             },
-            next: () => { 
+            next: (force = false) => { 
                 if (state.userQueue.length > 0) { const nextSong = state.userQueue.shift(); player.playDirect(nextSong); } 
                 else if (state.queue.length > 0) {
-                    let nextIdx = state.shuffle ? Math.floor(Math.random() * state.queue.length) : (state.idx + 1) % state.queue.length;
+                    let nextIdx = state.shuffle ? Math.floor(Math.random() * state.queue.length) : state.idx + 1;
+                    if (nextIdx >= state.queue.length) {
+                        if (state.repeat === 1 || force) {
+                            nextIdx = 0;
+                        } else {
+                            audio.pause();
+                            audio.currentTime = 0;
+                            state.playing = false;
+                            state.loading = false;
+                            ui.setPlayerLoading(false);
+                            ui.updatePlayBtn();
+                            persist.save();
+                            return;
+                        }
+                    }
                     state.idx = nextIdx; player.playDirect(state.queue[nextIdx]);
                 }
             },
@@ -1088,8 +1119,19 @@
                 state.idx = prevIdx; player.playDirect(state.queue[prevIdx]);
             },
             setVolume: (val) => { audio.volume = Math.max(0, Math.min(1, val)); },
-            toggleShuffle: () => { state.shuffle = !state.shuffle; const btn = document.getElementById('btn-shuffle'); state.shuffle ? btn.classList.add('active-state') : btn.classList.remove('active-state'); ui.renderQueue(); persist.save(); },
-            toggleRepeat: () => { state.repeat = (state.repeat + 1) % 3; const btn = document.getElementById('btn-repeat'); state.repeat === 0 ? btn.classList.remove('active-state') : btn.classList.add('active-state'); audio.loop = (state.repeat === 2); },
+            toggleShuffle: () => { 
+                state.shuffle = !state.shuffle; 
+                localStorage.setItem('playShuffle', state.shuffle);
+                ui.updateShuffleBtn();
+                ui.renderQueue(); 
+                persist.save(); 
+            },
+            toggleRepeat: () => { 
+                state.repeat = (state.repeat + 1) % 3; 
+                localStorage.setItem('playRepeat', state.repeat);
+                ui.updateRepeatBtn(); 
+                persist.save(); 
+            },
             likeSong: (songId = null) => {
                 let songToLike = null;
                 if(!songId) { 
@@ -1120,6 +1162,13 @@
                 
                 localStorage.setItem('likedIds', JSON.stringify(state.likedIds));
                 cloudLibrary.setLiked(songToLike || { id: songId }, nextLiked);
+                // Liking always adds to Library Songs; unliking does not remove from library.
+                if (nextLiked && !player.isInLibrary(songId)) {
+                    state.libraryIds.push(songToLike || songId);
+                    localStorage.setItem('libraryIds', JSON.stringify(state.libraryIds));
+                    cloudLibrary.setLibrary(songToLike || { id: songId }, true);
+                    ui.renderLibraryLists();
+                }
                 if(state.currentTrack && state.currentTrack.id === songId) ui.updateMetadata(state.currentTrack); 
                 ui.renderPlaylists(); 
                 if (!document.getElementById('view-playlist').classList.contains('hidden') && document.getElementById('playlist-view-title').textContent === 'Liked Songs') { ui.openPlaylist('Liked Songs'); }
@@ -1186,7 +1235,11 @@
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
         });
         audio.addEventListener('pause', () => { 
-            state.playing = false; ui.updatePlayBtn(); persist.save();
+            state.playing = false;
+            state.loading = false;
+            ui.setPlayerLoading(false);
+            ui.updatePlayBtn();
+            persist.save();
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
         });
 
@@ -1220,8 +1273,16 @@
                 persist.save();
                 cloudLibrary.flushPlaybackState(true);
                 setTimeout(() => { audio.volume = preservedVolume; audio.muted = false; }, 0);
-            } else if (state.playing) {
-                audio.muted = false;
+            } else {
+                if (state.playing) {
+                    audio.muted = false;
+                    if (audioContext && audioContext.state === 'suspended') {
+                        audioContext.resume().catch(err => console.warn('[DTunes] Could not resume audioContext on focus:', err));
+                    }
+                    if (audio.paused) {
+                        audio.play().catch(err => console.warn('[DTunes] Could not play audio on focus:', err));
+                    }
+                }
             }
             if ('mediaSession' in navigator && document.visibilityState === 'hidden' && state.playing) {
                 navigator.mediaSession.playbackState = 'playing';
@@ -2116,16 +2177,46 @@
                 const island = document.getElementById('info-island');
                 const title = document.getElementById('p-title');
                 const artist = document.getElementById('p-artist');
-                island?.classList.toggle('is-loading', !!loading);
-                document.getElementById('album-art-wrapper')?.classList.toggle('is-loading', !!loading);
+                const activeLoading = !!loading && (state.playing || isPlaybackPending || state.loading);
+                island?.classList.toggle('is-loading', activeLoading);
+                document.getElementById('album-art-wrapper')?.classList.toggle('is-loading', activeLoading);
                 if (state.currentTrack) {
                     title.textContent = state.currentTrack.name || 'Loading track';
-                    artist.textContent = loading ? `Loading • ${state.currentTrack.artist || 'Preparing audio'}` : (state.currentTrack.artist || 'Unknown Artist');
+                    artist.textContent = activeLoading ? `Loading • ${state.currentTrack.artist || 'Preparing audio'}` : (state.currentTrack.artist || 'Unknown Artist');
                 }
                 if ('mediaSession' in navigator) {
                     navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused';
                 }
                 updateMarquees();
+            },
+            updateRepeatBtn: () => {
+                const btn = document.getElementById('btn-repeat');
+                if (!btn) return;
+                if (state.repeat === 0) {
+                    btn.classList.remove('active-state');
+                    btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`;
+                    btn.title = "Repeat Off";
+                } else if (state.repeat === 1) {
+                    btn.classList.add('active-state');
+                    btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`;
+                    btn.title = "Repeat All";
+                } else {
+                    btn.classList.add('active-state');
+                    btn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/><text x="12" y="15" font-size="8" font-weight="bold" fill="currentColor" stroke="none" text-anchor="middle">1</text></svg>`;
+                    btn.title = "Repeat One";
+                }
+                audio.loop = (state.repeat === 2);
+            },
+            updateShuffleBtn: () => {
+                const btn = document.getElementById('btn-shuffle');
+                if (!btn) return;
+                if (state.shuffle) {
+                    btn.classList.add('active-state');
+                    btn.title = "Shuffle On";
+                } else {
+                    btn.classList.remove('active-state');
+                    btn.title = "Shuffle Off";
+                }
             },
             updateMetadata: (track, options = {}) => {
                 document.getElementById('p-title').textContent = track.name; 
@@ -2148,7 +2239,7 @@
                     safeSetHandler('play', requestPlay);
                     safeSetHandler('pause', requestPause);
                     safeSetHandler('previoustrack', player.prev);
-                    safeSetHandler('nexttrack', player.next);
+                    safeSetHandler('nexttrack', () => player.next(true));
                     safeSetHandler('seekbackward', (details) => { audio.currentTime = Math.max(audio.currentTime - (details.seekOffset || 10), 0); updateMediaPosition(); });
                     safeSetHandler('seekforward', (details) => { audio.currentTime = Math.min(audio.currentTime + (details.seekOffset || 10), audio.duration || 0); updateMediaPosition(); });
                     safeSetHandler('seekto', (details) => {
@@ -3064,7 +3155,7 @@
 
             spotifyManager.checkToken();
 
-            ctxMenu.init(); searchManager.init(); persist.load(); homeView.init(); cloudLibrary.init(); requestAnimationFrame(viz.render);
+            ctxMenu.init(); searchManager.init(); persist.load(); ui.updateRepeatBtn(); ui.updateShuffleBtn(); homeView.init(); cloudLibrary.init(); requestAnimationFrame(viz.render);
             deviceMode.apply();
             
             window.addEventListener('resize', () => { deviceMode.apply(); ui.updateMobileSearchPosition(); updateMarquees(); });
