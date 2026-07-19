@@ -348,7 +348,7 @@
             forYouSongs: [],
             searchDebounce: null, hoverProgress: -1, lastHoverProgress: 0.5, isDragging: false, 
             upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false, nextTrackPreloadId: null,
-            wasPlayingBeforeHidden: false
+            wasPlayingBeforeHidden: false, userPaused: false
         };
 
         const deviceMode = {
@@ -994,6 +994,7 @@
 
         const requestPlay = async () => {
             if (!state.loaded) return;
+            state.userPaused = false;
             try {
                 if (audioContext && audioContext.state === 'suspended') {
                     try {
@@ -1012,6 +1013,7 @@
 
         const requestPause = () => {
             if (!state.loaded) return;
+            state.userPaused = true;
             audio.pause();
         };
 
@@ -1310,17 +1312,16 @@
         audio.addEventListener('play', () => { 
             state.playing = true;
             state.wasPlayingBeforeHidden = true;
+            state.userPaused = false;
             if (window.listeningSession) listeningSession.setPlaying(true);
             ui.updatePlayBtn();
             persist.save();
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
         });
         audio.addEventListener('pause', () => { 
-            // Only treat as a real user/app pause if the page is visible.
-            // Browsers suspend audio when the tab is hidden; we must not
-            // clobber state.playing in that case or the visibilitychange
-            // handler won't know to resume.
-            if (document.visibilityState !== 'hidden') {
+            // Only update play state if the user explicitly requested a pause,
+            // or if the playback naturally ended, or if the page is visible.
+            if (state.userPaused || audio.ended || document.visibilityState !== 'hidden') {
                 state.playing = false;
                 state.wasPlayingBeforeHidden = false;
             }
