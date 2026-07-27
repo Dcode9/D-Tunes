@@ -128,14 +128,17 @@ async function handleApi(req, res, url) {
 
 function serveStatic(req, res, url) {
   const requested = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname);
-  const filePath = path.normalize(path.join(PUBLIC_ROOT, requested));
+  let filePath = path.normalize(path.join(PUBLIC_ROOT, requested));
   if (!filePath.startsWith(PUBLIC_ROOT)) {
     res.writeHead(403); return res.end('Forbidden');
+  }
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
+    filePath = path.join(filePath, 'index.html');
   }
   fs.readFile(filePath, (error, data) => {
     if (error) { res.writeHead(404); return res.end('Not found'); }
     const ext = path.extname(filePath);
-    const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json' };
+    const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.json': 'application/json' };
     res.writeHead(200, { 'content-type': types[ext] || 'application/octet-stream' });
     res.end(data);
   });
