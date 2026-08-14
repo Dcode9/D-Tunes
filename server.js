@@ -15,6 +15,12 @@ function sendJson(res, status, body) {
 }
 
 function parseBody(req) {
+  if (req.body !== undefined && req.body !== null) {
+    if (typeof req.body === 'object') return Promise.resolve(req.body);
+    if (typeof req.body === 'string') {
+      try { return Promise.resolve(req.body ? JSON.parse(req.body) : {}); } catch (error) { return Promise.reject(error); }
+    }
+  }
   return new Promise((resolve, reject) => {
     let raw = '';
     req.on('data', (chunk) => { raw += chunk; });
@@ -22,6 +28,7 @@ function parseBody(req) {
       if (!raw) return resolve({});
       try { resolve(JSON.parse(raw)); } catch (error) { reject(error); }
     });
+    req.on('error', (err) => reject(err));
   });
 }
 
@@ -176,14 +183,27 @@ function serveStatic(req, res, url) {
   });
 }
 
-http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+if (require.main === module) {
+  http.createServer(async (req, res) => {
+    const url = new URL(req.url, `http://${req.headers.host}`);
+    try {
+      if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
+      return serveStatic(req, res, url);
+    } catch (error) {
+      return sendJson(res, 500, { error: error.message });
+    }
+  }).listen(PORT, '0.0.0.0', () => {
+    console.log(`D'Tunes listening on http://0.0.0.0:${PORT}`);
+  });
+}
+
+module.exports = async (req, res) => {
   try {
-    if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
-    return serveStatic(req, res, url);
+    const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+    const protocol = req.headers['x-forwarded-proto'] || 'https';
+    const url = new URL(req.url, `${protocol}://${host}`);
+    return await handleApi(req, res, url);
   } catch (error) {
     return sendJson(res, 500, { error: error.message });
   }
-}).listen(PORT, '0.0.0.0', () => {
-  console.log(`D'Tunes listening on http://0.0.0.0:${PORT}`);
-});
+};
