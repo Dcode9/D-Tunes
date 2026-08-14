@@ -1,0 +1,6 @@
+{
+  "name": "D'Tunes",
+  "description": "Premium web music streaming app featuring studio 10-band equalizer with dynamic anti-clipping Bass Guard, intelligent discovery recommendations, and customizable graphic playlists.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

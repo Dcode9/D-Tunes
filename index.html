@@ -93,6 +93,55 @@
         </div>
     </div>
 
+    <!-- EQUALIZER MODAL -->
+    <div id="equalizer-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 backdrop-blur-md hidden" onclick="if(event.target === this) ui.toggleEqualizerModal(false)">
+        <div class="glass-panel p-6 rounded-3xl w-full max-w-2xl shadow-2xl border border-white/10 transform transition-all flex flex-col max-h-[92vh] overflow-hidden mx-4">
+            <div class="flex items-center justify-between gap-3 mb-4 flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-[var(--accent-color)]/15 border border-[var(--accent-color)]/30 flex items-center justify-center text-[var(--accent-color)] shadow-lg shadow-cyan-500/20">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-xl font-black text-white">Equalizer</h3>
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
+                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                Bass Guard Active
+                            </span>
+                        </div>
+                        <p class="text-xs text-gray-400">Studio 10-band processor with anti-clipping headroom limiter</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="ui.resetEqualizer()" class="text-xs font-bold px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition">Reset</button>
+                    <button onclick="ui.toggleEqualizerModal(false)" class="text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition" aria-label="Close Equalizer">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <div class="overflow-y-auto custom-scrollbar flex flex-col gap-4 flex-1 pr-1">
+                <!-- Presets -->
+                <div>
+                    <div class="text-[11px] font-extrabold tracking-wider uppercase text-gray-400 mb-2">Sound Presets</div>
+                    <div id="eq-modal-presets" class="flex flex-wrap gap-1.5"></div>
+                </div>
+
+                <!-- Live Monitoring -->
+                <div class="flex items-center justify-between px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs">
+                    <div class="flex items-center gap-2 min-w-0">
+                        <svg class="w-4 h-4 text-[var(--accent-color)] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                        <span class="text-gray-300 font-medium truncate" id="eq-modal-preset-desc">True studio master reproduction</span>
+                    </div>
+                    <span id="eq-modal-headroom-badge" class="text-[11px] font-mono font-bold text-gray-400 flex-shrink-0 ml-2">Headroom: 0.0 dB</span>
+                </div>
+
+                <!-- Sliders Deck -->
+                <div id="eq-modal-bands" class="eq-bands" aria-label="10-band equalizer sliders"></div>
+            </div>
+        </div>
+    </div>
+
     <!-- SPOTIFY IMPORT MODAL -->
     <div id="spotify-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
         <div class="glass-panel p-6 rounded-2xl w-full max-w-lg shadow-2xl border border-white/10 transform transition-transform flex flex-col max-h-[90vh]">
@@ -145,7 +194,7 @@
 
     <!-- TOP HEADER -->
     <header class="fixed top-0 left-0 right-0 z-40 glass-panel md:rounded-2xl md:top-4 md:left-6 md:right-6 px-4 md:px-6 py-2 md:py-3 flex items-center justify-between gap-4 shadow-xl border-t-0 md:border-t">
-        <div id="app-logo" class="flex items-center gap-2 text-xl md:text-2xl font-bold text-white cursor-pointer w-auto md:w-32 flex-shrink-0" onclick="ui.switchView('home'); ui.closeMobileSearch();">
+        <div id="app-logo" class="flex items-center gap-2 text-xl md:text-2xl font-bold text-white cursor-pointer w-auto md:w-32 flex-shrink-0 relative z-50 pointer-events-auto" onclick="ui.goHome();">
             <img src="https://raw.githubusercontent.com/Datamaverik/D-Tunes/main/assets/DTunes2.svg" alt="D'Tunes logo" class="w-7 h-7 md:w-9 md:h-9 rounded-xl shadow-lg shadow-cyan-500/20">
             <span>D'Tunes</span>
             <span class="beta-label" aria-label="D'Tunes beta">Beta</span>
@@ -236,34 +285,6 @@
                 </div>
             </section>
 
-            <section id="section-generated-playlists" class="mb-12 relative">
-                <div class="flex items-center justify-between px-4 md:px-8 mb-6 relative z-20">
-                    <div>
-                        <h2 class="text-xl md:text-2xl font-bold text-white">Generate Playlist</h2>
-                        <p class="text-xs text-gray-400 mt-1">For You, Late Night, Discovery, Language Mix, and Recently Obsessed.</p>
-                    </div>
-                </div>
-                <div class="px-4 md:px-8 mb-3 relative z-20">
-                    <label class="text-xs text-gray-400 mr-2" for="preferred-language-select">Preferred language</label>
-                    <select id="preferred-language-select" onchange="localStorage.setItem('preferredLanguage', this.value)" class="bg-white/10 border border-white/10 rounded-full px-3 py-2 text-xs text-white focus:outline-none">
-                        <option value="">Auto from history</option>
-                        <option value="hindi">Hindi</option>
-                        <option value="english">English</option>
-                        <option value="tamil">Tamil</option>
-                        <option value="telugu">Telugu</option>
-                        <option value="punjabi">Punjabi</option>
-                    </select>
-                </div>
-                <div class="px-4 md:px-8 flex flex-wrap gap-2 relative z-20">
-                    <button onclick="homeView.loadGeneratedPlaylist('for-you')" class="px-4 py-2 rounded-full bg-[var(--accent-color)] text-black font-bold hover:scale-105 transition">For You</button>
-                    <button onclick="homeView.loadGeneratedPlaylist('late-night')" class="px-4 py-2 rounded-full bg-white/10 text-white font-bold hover:bg-white/20 transition">Late Night</button>
-                    <button onclick="homeView.loadGeneratedPlaylist('discovery')" class="px-4 py-2 rounded-full bg-white/10 text-white font-bold hover:bg-white/20 transition">Discovery</button>
-                    <button onclick="homeView.loadGeneratedPlaylist('language-mix')" class="px-4 py-2 rounded-full bg-white/10 text-white font-bold hover:bg-white/20 transition">Language Mix</button>
-                    <button onclick="homeView.loadGeneratedPlaylist('recently-obsessed')" class="px-4 py-2 rounded-full bg-white/10 text-white font-bold hover:bg-white/20 transition">Recently Obsessed</button>
-                </div>
-                <div id="generated-playlist-status" class="px-4 md:px-8 mt-3 text-xs text-gray-400"></div>
-            </section>
-
             <section id="section-trending" class="mb-12 hidden relative">
                 <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8 relative z-20">Trending Right Now</h2>
                 <div class="row-blur-left"></div><div id="trending-grid" class="horizontal-scroll"></div><div class="row-blur-right"></div>
@@ -272,6 +293,33 @@
             <section id="section-quick-picks" class="mb-12 hidden relative">
                 <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8 relative z-20">Quick Picks For You</h2>
                 <div class="row-blur-left"></div><div id="quick-picks-grid" class="horizontal-scroll"></div><div class="row-blur-right"></div>
+            </section>
+
+            <section id="section-discover" class="mb-12 relative">
+                <div class="flex items-center justify-between px-4 md:px-8 mb-6 relative z-20">
+                    <div>
+                        <h2 class="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+                            <svg class="w-6 h-6 text-[var(--accent-color)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                            Discover Mixes
+                        </h2>
+                        <p class="text-xs text-gray-400 mt-1">Made for you • Updated daily based on your listening habits & preferences</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <select id="preferred-language-select" onchange="localStorage.setItem('preferredLanguage', this.value); homeView.renderDiscoverSection();" class="bg-white/10 border border-white/10 rounded-full px-3 py-1.5 text-xs text-white focus:outline-none hidden sm:block">
+                            <option value="">Auto Language</option>
+                            <option value="hindi">Hindi</option>
+                            <option value="english">English</option>
+                            <option value="tamil">Tamil</option>
+                            <option value="telugu">Telugu</option>
+                            <option value="punjabi">Punjabi</option>
+                        </select>
+                        <button onclick="homeView.renderDiscoverSection(true)" class="text-xs font-bold px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 transition flex items-center gap-1.5 text-white">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="row-blur-left"></div><div id="discover-grid" class="horizontal-scroll"></div><div class="row-blur-right"></div>
             </section>
 
             <section id="section-recent" class="mb-12 hidden relative">
@@ -399,11 +447,33 @@
                     <div class="border-t border-white/10 pt-6">
                         <div class="flex items-center justify-between gap-3 mb-4">
                             <div>
-                                <h3 class="text-lg font-bold text-white mb-1">Equalizer</h3>
-                                <p class="text-sm text-gray-400">Shape playback with a working 10-band EQ for this device.</p>
+                                <div class="flex items-center gap-2">
+                                    <h3 class="text-lg font-bold text-white">Equalizer & Audio Processor</h3>
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-500/15 border border-emerald-500/30 text-emerald-400">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                        Bass Guard Active
+                                    </span>
+                                </div>
+                                <p class="text-sm text-gray-400">10-band studio EQ with anti-clipping headroom limiter and tuned sound presets.</p>
                             </div>
-                            <button onclick="ui.resetEqualizer()" class="text-xs font-bold px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 transition">Reset EQ</button>
+                            <button onclick="ui.resetEqualizer()" class="text-xs font-bold px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition">Reset EQ</button>
                         </div>
+
+                        <!-- Presets in Settings View -->
+                        <div class="mb-4">
+                            <div class="text-[11px] font-extrabold tracking-wider uppercase text-gray-400 mb-2">Sound Presets</div>
+                            <div id="eq-settings-presets" class="flex flex-wrap gap-1.5"></div>
+                        </div>
+
+                        <!-- Live Monitoring Strip in Settings -->
+                        <div class="flex items-center justify-between px-3.5 py-2.5 mb-3 rounded-xl bg-white/5 border border-white/10 text-xs">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <svg class="w-4 h-4 text-[var(--accent-color)] flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                                <span class="text-gray-300 font-medium truncate" id="eq-settings-preset-desc">True studio master reproduction</span>
+                            </div>
+                            <span id="eq-settings-headroom-badge" class="text-[11px] font-mono font-bold text-gray-400 flex-shrink-0 ml-2">Headroom: 0.0 dB</span>
+                        </div>
+
                         <div id="eq-bands" class="eq-bands" aria-label="10-band equalizer"></div>
                     </div>
 
@@ -426,9 +496,15 @@
     <!-- PLAYER FOOTER STACK -->
     <div id="player-footer" class="fixed bottom-6 left-6 right-6 z-50 flex flex-col items-end pointer-events-none gap-2 translate-y-[150%] opacity-0 transition-transform duration-700 ease-out">
         
-        <button class="mobile-collapse-btn hidden" onclick="ui.toggleMobilePlayer(false)">
-            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
-        </button>
+        <div class="mobile-player-header hidden w-full flex items-center justify-between pt-1 pb-1 px-2">
+            <button class="mobile-collapse-btn text-gray-300 hover:text-white transition p-2 rounded-full bg-white/10 active:scale-95" onclick="ui.toggleMobilePlayer(false)" aria-label="Collapse player">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg>
+            </button>
+            <div class="text-[11px] font-bold uppercase tracking-widest text-gray-400">Now Playing</div>
+            <button class="text-gray-300 hover:text-white transition p-2 rounded-full bg-white/10 active:scale-95 flex items-center justify-center" onclick="ui.toggleEqualizerModal(true)" aria-label="Open Equalizer">
+                <svg class="w-5 h-5 text-[var(--accent-color)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+            </button>
+        </div>
 
         <!-- Queue Anchor -->
         <div id="queue-anchor" class="relative w-full md:w-80 flex-shrink-0 pointer-events-none h-0 z-[40]">
@@ -512,16 +588,25 @@
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
                 </button>
             </div>
-            <div class="flex-1 h-full relative flex items-center group px-4 border-l border-white/10 ml-2">
+            <div class="flex-1 h-full relative flex flex-col justify-center group px-4 border-l border-white/10 ml-2">
                 <div id="seek-bar-container" class="w-full h-[60px] disabled relative">
                     <div id="seek-tooltip">0:00</div>
                     <div id="seek-bar-track"></div>
                     <canvas id="visualizer-canvas"></canvas>
                     <input type="range" id="seek-bar" value="0" step="0.1" disabled>
                 </div>
+                <div id="seek-time-row" class="hidden flex justify-between w-full text-[11px] text-gray-400 font-mono -mt-1 px-1">
+                    <span id="seek-current-time">0:00</span>
+                    <span id="seek-duration-time">0:00</span>
+                </div>
             </div>
-            <div class="w-24 hidden md:block border-l border-white/10 pl-4 flex-shrink-0">
-                <input type="range" min="0" max="1" step="0.05" oninput="player.setVolume(this.value)" class="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer">
+            <div class="flex items-center gap-2 border-l border-white/10 pl-3 flex-shrink-0">
+                <button onclick="ui.toggleEqualizerModal(true)" class="text-gray-400 hover:text-white p-2 transition rounded-full hover:bg-white/10" title="Studio Equalizer & Bass Control" aria-label="Equalizer">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+                </button>
+                <div class="w-20 hidden md:block">
+                    <input type="range" min="0" max="1" step="0.05" oninput="player.setVolume(this.value)" class="w-full h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer">
+                </div>
             </div>
         </div>
 

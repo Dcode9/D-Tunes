@@ -28,9 +28,24 @@ test('scoreCandidate favors matching artists and languages while penalizing skip
 });
 
 test('diversify limits repeated artists', () => {
-  const songs = Array.from({ length: 6 }, (_, index) => ({ id: `a${index}`, primary_artists: 'Same Artist', recommendationScore: 10 - index }));
+  const songs = Array.from({ length: 6 }, (_, index) => ({ id: `a${index}`, title: `Track ${index}`, primary_artists: 'Same Artist', recommendationScore: 10 - index }));
   const result = diversify(songs, 25);
   assert.equal(result.length, 3);
+});
+
+test('diversify removes duplicate songs from different albums or with different IDs', () => {
+  const songs = [
+    { id: '101', title: 'Tum Hi Ho', album: 'Aashiqui 2', primary_artists: 'Arijit Singh', duration_seconds: 262, recommendationScore: 99 },
+    { id: '202', title: 'Tum Hi Ho (Aashiqui 2)', album: 'Arijit Hits', primary_artists: 'Arijit Singh', duration_seconds: 262, recommendationScore: 95 },
+    { id: '303', title: 'Kesariya (From "Brahmastra")', album: 'Brahmastra', primary_artists: 'Pritam, Arijit Singh', duration_seconds: 268, recommendationScore: 90 },
+    { id: '404', title: 'Kesariya', album: 'Pritam Best', primary_artists: 'Arijit Singh, Pritam', duration_seconds: 268, recommendationScore: 88 },
+    { id: '505', title: 'Apna Bana Le', album: 'Bhediya', primary_artists: 'Arijit Singh, Sachin-Jigar', duration_seconds: 240, recommendationScore: 80 },
+  ];
+  const result = diversify(songs, 10);
+  assert.equal(result.length, 3);
+  assert.equal(result[0].id, '101');
+  assert.equal(result[1].id, '303');
+  assert.equal(result[2].id, '505');
 });
 
 test('rebuildTasteProfile aggregates taste dimensions from events', () => {

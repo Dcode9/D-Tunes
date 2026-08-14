@@ -26,6 +26,93 @@
                 } catch (e) {
                     return 'Earlier';
                 }
+            },
+            formatTime: (secs) => {
+                if (isNaN(secs) || secs < 0) return '0:00';
+                const m = Math.floor(secs / 60);
+                const s = Math.floor(secs % 60);
+                return `${m}:${s.toString().padStart(2, '0')}`;
+            },
+            cleanTitle: (rawTitle = '', album = '') => {
+                let t = utils.decodeHtml(rawTitle || '').toLowerCase();
+                if (album) {
+                    const albClean = utils.decodeHtml(album).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').trim();
+                    if (albClean.length > 2) {
+                        const escaped = albClean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        t = t.replace(new RegExp(`[\\(\\[\\{]\\s*(?:from\\s+)?["']?${escaped}["']?\\s*[\\)\\]\\}]`, 'gi'), ' ');
+                        t = t.replace(new RegExp(`\\s*-\\s*(?:from\\s+)?["']?${escaped}["']?.*$`, 'gi'), ' ');
+                    }
+                }
+                t = t.replace(/\s*[\(\[\{]\s*(?:from\s+["']?[^()\[\]]+["']?|original\s+motion\s+picture\s+soundtrack|original\s+soundtrack|soundtrack\s+version|ost\s+version|ost|(?:official\s+)?(?:music\s+)?video|(?:official\s+)?(?:music\s+)?audio|video\s+song|audio\s+song|full\s+song|lyric\s+video|lyrics|official|clean|explicit|deluxe(?:\s+edition)?|bonus\s+track|single\s+version|album\s+version|remaster(?:ed)?(?:\s+\d+)?)\s*[\)\]\}]/gi, ' ');
+                t = t.replace(/\s*-\s*(?:from\s+["']?[^-\n]+["']?|soundtrack(?:\s+version)?|single\s+version|album\s+version|(?:official\s+)?(?:music\s+)?(?:audio|video)|remaster(?:ed)?(?:\s+\d+)?).*$/i, ' ');
+                t = t.replace(/\s*[\(\[\{]?(?:feat\.?|ft\.?|featuring|with)\s+[^()\[\]]+[\)\]\}]?/gi, ' ');
+                return t.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+            },
+            getTitleRoot: (rawTitle = '') => {
+                let t = utils.decodeHtml(rawTitle || '').toLowerCase();
+                const idx = t.search(/[\(\[\{\-]/);
+                if (idx > 0) t = t.slice(0, idx);
+                return t.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+            },
+            getArtistTokens: (rawArtist = '') => {
+                let a = utils.decodeHtml(rawArtist || '').toLowerCase();
+                return a.split(/[,&/|]/)
+                    .map((p) => p.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim())
+                    .filter((p) => p.length > 1);
+            },
+            areDuplicateTracks: (songA, songB) => {
+                if (!songA || !songB) return false;
+                const idA = String(songA.id || songA.saavn_id || '');
+                const idB = String(songB.id || songB.saavn_id || '');
+                if (idA && idB && idA === idB) return true;
+
+                const rawTitleA = songA.name || songA.title || '';
+                const rawTitleB = songB.name || songB.title || '';
+                if (!rawTitleA || !rawTitleB) return false;
+
+                const altRegex = /remix|acoustic|lofi|lo-fi|live|slowed|sped up|orchestral|piano|instrumental|karaoke|club mix/i;
+                const isAltA = altRegex.test(rawTitleA);
+                const isAltB = altRegex.test(rawTitleB);
+                if (isAltA !== isAltB) return false;
+
+                const durA = Number(songA.duration || songA.duration_seconds || 0);
+                const durB = Number(songB.duration || songB.duration_seconds || 0);
+                const durationMatches = durA === 0 || durB === 0 || Math.abs(durA - durB) <= 8;
+
+                const titleA = utils.cleanTitle(rawTitleA, songA.album);
+                const titleB = utils.cleanTitle(rawTitleB, songB.album);
+                const rootA = utils.getTitleRoot(rawTitleA);
+                const rootB = utils.getTitleRoot(rawTitleB);
+
+                const isExactTitle = titleA && titleB && titleA === titleB;
+                const isRootMatch = durationMatches && rootA && rootB && rootA.length >= 3 && rootB.length >= 3 && (rootA === rootB || titleA.startsWith(rootB) || titleB.startsWith(rootA));
+
+                if (!isExactTitle && !isRootMatch) return false;
+
+                const artistsA = utils.getArtistTokens(songA.artist || songA.primary_artists || songA.primaryArtists || '');
+                const artistsB = utils.getArtistTokens(songB.artist || songB.primary_artists || songB.primaryArtists || '');
+
+                if (!artistsA.length || !artistsB.length) return durationMatches;
+
+                const sharedArtist = artistsA.some((a) => artistsB.some((b) => a === b || a.includes(b) || b.includes(a)));
+                return sharedArtist && durationMatches;
+            },
+            deduplicateSongs: (songs = []) => {
+                if (!Array.isArray(songs)) return [];
+                const result = [];
+                for (const song of songs) {
+                    if (!song) continue;
+                    const existingIndex = result.findIndex((existing) => utils.areDuplicateTracks(existing, song));
+                    if (existingIndex === -1) {
+                        result.push(song);
+                    } else {
+                        const existing = result[existingIndex];
+                        if (!existing.url && song.url) {
+                            result[existingIndex] = { ...existing, ...song };
+                        }
+                    }
+                }
+                return result;
             }
         };
 
@@ -76,23 +163,38 @@
         const updateMarquees = () => {
             if (typeof window.__stripTouchHoverClasses === 'function') window.__stripTouchHoverClasses();
             document.querySelectorAll('.marquee-container').forEach(container => {
-                if(container.offsetParent === null) return;
+                if (container.offsetParent === null) return;
                 const text = container.querySelector('.marquee-text');
-                if(!text) return;
-                
-                if(text.classList.contains('is-overflowing') && text.dataset.scrollWidth === String(text.scrollWidth)) return;
+                if (!text) return;
 
-                text.style.animation = 'none'; text.classList.remove('is-overflowing'); container.classList.remove('is-overflowing');
-                
-                if (Math.ceil(text.scrollWidth) > Math.ceil(container.clientWidth) + 4) {
-                    const dist = text.scrollWidth - container.clientWidth;
-                    const dur = Math.max(3, dist / 15);
+                const scrollW = text.scrollWidth;
+                const clientW = container.clientWidth;
+
+                if (text.classList.contains('is-overflowing') && 
+                    text.dataset.scrollWidth === String(scrollW) && 
+                    container.dataset.clientWidth === String(clientW)) {
+                    return;
+                }
+
+                text.style.animation = 'none';
+                text.classList.remove('is-overflowing');
+                container.classList.remove('is-overflowing');
+
+                if (Math.ceil(scrollW) > Math.ceil(clientW) + 2) {
+                    const dist = Math.ceil(scrollW - clientW + 8);
+                    const dur = Math.max(3.5, dist / 18);
                     text.style.setProperty('--scroll-dist', `-${dist}px`);
                     text.style.setProperty('--scroll-dur', `${dur}s`);
-                    text.dataset.scrollWidth = text.scrollWidth;
-                    
-                    void text.offsetWidth; 
-                    text.style.animation = ''; text.classList.add('is-overflowing'); container.classList.add('is-overflowing');
+                    text.dataset.scrollWidth = String(scrollW);
+                    container.dataset.clientWidth = String(clientW);
+
+                    void text.offsetWidth;
+                    text.style.animation = '';
+                    text.classList.add('is-overflowing');
+                    container.classList.add('is-overflowing');
+                } else {
+                    text.dataset.scrollWidth = String(scrollW);
+                    container.dataset.clientWidth = String(clientW);
                 }
             });
         };
@@ -126,8 +228,10 @@
             },
             searchSongs: async (query, limit = 20) => {
                 try {
-                    const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/search/songs?query=${encodeURIComponent(query)}&limit=${limit}`);
-                    return (data.data?.results || []).map(jiosaavnAPI.normalizeSong).filter(Boolean);
+                    const fetchCount = Math.max(limit * 2, 20);
+                    const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/search/songs?query=${encodeURIComponent(query)}&limit=${fetchCount}`);
+                    const songs = (data.data?.results || []).map(jiosaavnAPI.normalizeSong).filter(Boolean);
+                    return utils.deduplicateSongs(songs).slice(0, limit);
                 } catch (e) { return []; }
             },
             searchAlbums: async (query) => {
@@ -150,16 +254,46 @@
             },
             searchAll: async (query) => {
                 try {
-                    const [songs, albums, artists] = await Promise.all([ jiosaavnAPI.searchSongs(query, 6), jiosaavnAPI.searchAlbums(query), jiosaavnAPI.searchArtists(query) ]);
-                    if(songs.length === 0) return { top: null, songs: [], albums: [], artists: [] };
-                    return { top: songs[0], songs: songs.slice(1, 6), albums, artists };
+                    const [songsRaw, albums, artists] = await Promise.all([
+                        jiosaavnAPI.searchSongs(query, 12),
+                        jiosaavnAPI.searchAlbums(query),
+                        jiosaavnAPI.searchArtists(query)
+                    ]);
+                    const songs = utils.deduplicateSongs(songsRaw);
+                    if (songs.length === 0) return { top: null, songs: [], albums: [], artists: [] };
+                    const top = songs[0];
+                    const remainingSongs = songs.slice(1).filter(s => !utils.areDuplicateTracks(s, top)).slice(0, 6);
+                    return { top, songs: remainingSongs, albums, artists };
                 } catch(e) { return { top: null, songs: [], albums: [], artists: [] }; }
             },
-            getTrending: async () => {
+            getTrending: async (limit = 25) => {
+                const trendingPlaylists = ['47599074', '1297282877', '1261305331', '158221835'];
+                const allSongs = [];
+                for (const plId of trendingPlaylists) {
+                    try {
+                        const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/playlists?id=${plId}`);
+                        if (data.data?.songs) {
+                            const songs = data.data.songs.map(jiosaavnAPI.normalizeSong).filter(Boolean);
+                            allSongs.push(...songs);
+                        }
+                        if (allSongs.length >= limit * 2) break;
+                    } catch (e) {}
+                }
+                if (allSongs.length < limit) {
+                    try {
+                        const fallback = await jiosaavnAPI.searchSongs('Top Bollywood Hits 2026', limit);
+                        allSongs.push(...fallback);
+                    } catch (e) {}
+                }
+                return utils.deduplicateSongs(allSongs).slice(0, limit);
+            },
+            getSongSuggestions: async (id, limit = 20) => {
                 try {
-                    const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/playlists?id=110858205`);
-                    if (data.data?.songs) return data.data.songs.map(jiosaavnAPI.normalizeSong); return [];
-                } catch (e) { return jiosaavnAPI.searchSongs('trending hindi', 16); }
+                    const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/songs/${encodeURIComponent(id)}/suggestions`);
+                    const list = Array.isArray(data.data) ? data.data : (data.data?.results || []);
+                    const songs = list.map(jiosaavnAPI.normalizeSong).filter(s => s && String(s.id) !== String(id));
+                    return utils.deduplicateSongs(songs).slice(0, limit);
+                } catch (e) { return []; }
             },
             getSong: async (id) => {
                 try {
@@ -301,18 +435,97 @@
         // STATE & PERSISTENCE
         // ============================================
         const EQ_BANDS = [
-            { key: 'eq32', label: '32', frequency: 32, type: 'lowshelf' },
-            { key: 'eq64', label: '64', frequency: 64, type: 'peaking' },
-            { key: 'eq125', label: '125', frequency: 125, type: 'peaking' },
-            { key: 'eq250', label: '250', frequency: 250, type: 'peaking' },
-            { key: 'eq500', label: '500', frequency: 500, type: 'peaking' },
-            { key: 'eq1k', label: '1k', frequency: 1000, type: 'peaking' },
-            { key: 'eq2k', label: '2k', frequency: 2000, type: 'peaking' },
-            { key: 'eq4k', label: '4k', frequency: 4000, type: 'peaking' },
-            { key: 'eq8k', label: '8k', frequency: 8000, type: 'peaking' },
-            { key: 'eq16k', label: '16k', frequency: 16000, type: 'highshelf' }
+            { key: 'eq32', label: '32Hz', subLabel: 'Sub-Bass', frequency: 32, type: 'lowshelf', q: 0.707 },
+            { key: 'eq64', label: '64Hz', subLabel: 'Punch', frequency: 64, type: 'peaking', q: 1.414 },
+            { key: 'eq125', label: '125Hz', subLabel: 'Warmth', frequency: 125, type: 'peaking', q: 1.414 },
+            { key: 'eq250', label: '250Hz', subLabel: 'Body', frequency: 250, type: 'peaking', q: 1.414 },
+            { key: 'eq500', label: '500Hz', subLabel: 'Mid', frequency: 500, type: 'peaking', q: 1.414 },
+            { key: 'eq1k', label: '1kHz', subLabel: 'Vocal', frequency: 1000, type: 'peaking', q: 1.414 },
+            { key: 'eq2k', label: '2kHz', subLabel: 'Presence', frequency: 2000, type: 'peaking', q: 1.414 },
+            { key: 'eq4k', label: '4kHz', subLabel: 'Detail', frequency: 4000, type: 'peaking', q: 1.414 },
+            { key: 'eq8k', label: '8kHz', subLabel: 'Brilliance', frequency: 8000, type: 'peaking', q: 1.414 },
+            { key: 'eq16k', label: '16kHz', subLabel: 'Air', frequency: 16000, type: 'highshelf', q: 0.707 }
         ];
+        const EQ_PRESETS = {
+            flat: {
+                id: 'flat',
+                name: 'Flat',
+                icon: '⚖️',
+                desc: 'True studio master reproduction',
+                values: { eq32: 0, eq64: 0, eq125: 0, eq250: 0, eq500: 0, eq1k: 0, eq2k: 0, eq4k: 0, eq8k: 0, eq16k: 0 }
+            },
+            bass_boost: {
+                id: 'bass_boost',
+                name: 'Bass Boost',
+                icon: '🔊',
+                desc: 'Deep sub-bass & punchy kick with zero crackle',
+                values: { eq32: 6, eq64: 5, eq125: 3, eq250: 1, eq500: 0, eq1k: 0, eq2k: 1, eq4k: 2, eq8k: 2, eq16k: 1 }
+            },
+            sub_heavy: {
+                id: 'sub_heavy',
+                name: 'Sub-Bass Max',
+                icon: '💥',
+                desc: 'Massive low-end rumble for heavy 808s and EDM',
+                values: { eq32: 8, eq64: 7, eq125: 4, eq250: 1, eq500: -1, eq1k: 0, eq2k: 1, eq4k: 2, eq8k: 3, eq16k: 2 }
+            },
+            vocal: {
+                id: 'vocal',
+                name: 'Vocal Clarity',
+                icon: '🎙️',
+                desc: 'Crisp upfront voices and reduced low-end muddiness',
+                values: { eq32: -3, eq64: -2, eq125: 0, eq250: 2, eq500: 4, eq1k: 5, eq2k: 4, eq4k: 3, eq8k: 2, eq16k: 1 }
+            },
+            hiphop: {
+                id: 'hiphop',
+                name: 'Hip-Hop / R&B',
+                icon: '🎧',
+                desc: 'Deep 808 weight with snappy punch and crisp hi-hats',
+                values: { eq32: 7, eq64: 6, eq125: 3, eq250: 0, eq500: -1, eq1k: 1, eq2k: 2, eq4k: 3, eq8k: 4, eq16k: 3 }
+            },
+            electronic: {
+                id: 'electronic',
+                name: 'Electronic / EDM',
+                icon: '⚡',
+                desc: 'Driving bass foundation with wide, energized synth presence',
+                values: { eq32: 6, eq64: 5, eq125: 2, eq250: -1, eq500: 0, eq1k: 1, eq2k: 3, eq4k: 4, eq8k: 5, eq16k: 4 }
+            },
+            rock: {
+                id: 'rock',
+                name: 'Rock & Metal',
+                icon: '🎸',
+                desc: 'Punchy kick, scooped boxiness, and roaring guitars',
+                values: { eq32: 5, eq64: 4, eq125: 2, eq250: -1, eq500: -2, eq1k: 1, eq2k: 3, eq4k: 5, eq8k: 5, eq16k: 4 }
+            },
+            pop: {
+                id: 'pop',
+                name: 'Pop / Modern',
+                icon: '✨',
+                desc: 'Radio-ready balance with tight bass and shimmering highs',
+                values: { eq32: 4, eq64: 3, eq125: 2, eq250: 0, eq500: 1, eq1k: 2, eq2k: 3, eq4k: 4, eq8k: 4, eq16k: 3 }
+            },
+            late_night: {
+                id: 'late_night',
+                name: 'Late Night',
+                icon: '🌙',
+                desc: 'Warm, fatigue-free audio for smooth evening listening',
+                values: { eq32: 3, eq64: 3, eq125: 2, eq250: 1, eq500: 0, eq1k: -1, eq2k: -2, eq4k: -3, eq8k: -4, eq16k: -5 }
+            },
+            treble: {
+                id: 'treble',
+                name: 'Treble & Air',
+                icon: '🪶',
+                desc: 'Enhanced brilliance, acoustic strings, and sparkle',
+                values: { eq32: -2, eq64: -1, eq125: 0, eq250: 0, eq500: 1, eq1k: 2, eq2k: 4, eq4k: 6, eq8k: 7, eq16k: 8 }
+            }
+        };
         const FLAT_EQUALIZER = Object.fromEntries(EQ_BANDS.map((band) => [band.key, 0]));
+        const getCurrentPresetId = (eqMap = state.equalizer) => {
+            for (const [key, preset] of Object.entries(EQ_PRESETS)) {
+                const matches = EQ_BANDS.every(band => Number(eqMap[band.key] || 0) === Number(preset.values[band.key] || 0));
+                if (matches) return key;
+            }
+            return 'custom';
+        };
         const normalizeEqualizerSettings = (stored = {}) => {
             const normalized = { ...FLAT_EQUALIZER };
             EQ_BANDS.forEach((band) => {
@@ -954,6 +1167,7 @@
         preloadAudio.crossOrigin = 'anonymous';
         let isPlaybackPending = false;
         let isAudioRecoveryPending = false;
+        let playRequestId = 0;
 
 
         const getUpcomingTrack = () => {
@@ -993,50 +1207,55 @@
         };
 
         const requestPlay = async () => {
-            if (!state.loaded) return;
+            if (!state.loaded && !state.currentTrack) return;
             state.userPaused = false;
             try {
+                if (!isAudioContextInitialized) setupAudioContext();
                 if (audioContext && audioContext.state === 'suspended') {
-                    try {
-                        await audioContext.resume();
-                    } catch (acErr) {
-                        console.warn('[DTunes] Could not resume audioContext in background:', acErr);
-                    }
+                    try { await audioContext.resume(); } catch (acErr) {}
                 }
                 await audio.play();
+                state.playing = true;
+                ui.updatePlayBtn();
             } catch (e) {
-                console.error('[DTunes] Playback failed:', e);
+                console.warn('[DTunes] Playback failed, resetting state:', e);
                 state.playing = false;
+                state.loading = false;
+                ui.setPlayerLoading(false);
                 ui.updatePlayBtn();
             }
         };
 
         const requestPause = () => {
-            if (!state.loaded) return;
             state.userPaused = true;
             audio.pause();
+            state.playing = false;
+            ui.updatePlayBtn();
         };
 
         const recoverFromAudioError = async () => {
             if (!state.currentTrack || isAudioRecoveryPending) return;
             isAudioRecoveryPending = true;
+            state.loading = true;
+            ui.setPlayerLoading(true);
 
             try {
                 const refreshed = await jiosaavnAPI.getSong(state.currentTrack.id);
                 if (refreshed?.url && refreshed.url !== state.currentTrack.url) {
                     state.currentTrack.url = refreshed.url;
                     audio.src = refreshed.url;
-                    if (state.playing) await audio.play();
+                    audio.load();
+                    if (state.playing || !state.userPaused) await audio.play();
                     return;
                 }
 
-                // Rotate API endpoint once and retry before skipping to next track.
                 if (switchToNextApi()) {
                     const retried = await jiosaavnAPI.getSong(state.currentTrack.id);
                     if (retried?.url) {
                         state.currentTrack.url = retried.url;
                         audio.src = retried.url;
-                        if (state.playing) await audio.play();
+                        audio.load();
+                        if (state.playing || !state.userPaused) await audio.play();
                         return;
                     }
                 }
@@ -1046,6 +1265,8 @@
                 player.next();
             } finally {
                 isAudioRecoveryPending = false;
+                state.loading = false;
+                ui.setPlayerLoading(false);
             }
         };
 
@@ -1096,7 +1317,8 @@
 
         const player = {
             playDirect: async (track) => {
-                if (!track || isPlaybackPending) return;
+                if (!track) return;
+                const currentRequestId = ++playRequestId;
                 recommendationEvents.maybeRecordSkip();
                 isPlaybackPending = true;
                 
@@ -1104,33 +1326,48 @@
                 state.loading = true;
                 state.loaded = false;
                 state.currentTrack = { ...track };
-                document.getElementById('queue-wrapper').classList.remove('preview-expanded', 'track-swap-out');
-                document.getElementById('player-footer').classList.remove('translate-y-[150%]', 'opacity-0');
+                document.body.classList.add('has-active-track');
+                document.getElementById('queue-wrapper')?.classList.remove('preview-expanded', 'track-swap-out');
+                document.getElementById('player-footer')?.classList.remove('translate-y-[150%]', 'opacity-0');
                 ui.updateMetadata(state.currentTrack, { loading: true });
+                ui.setPlayerLoading(true);
                 ui.updatePlayBtn();
                 ui.renderQueue();
                 persist.save();
                 
+                const safetyTimer = setTimeout(() => {
+                    if (currentRequestId === playRequestId && isPlaybackPending) {
+                        isPlaybackPending = false;
+                        state.loading = false;
+                        ui.setPlayerLoading(false);
+                    }
+                }, 8000);
+
                 try {
                     const freshDetails = await jiosaavnAPI.getSong(track.id);
+                    if (currentRequestId !== playRequestId) return;
+
                     const playUrl = freshDetails?.url || track.url;
-                    
-                    if (!playUrl) throw new Error('No URL');
+                    if (!playUrl) throw new Error('No audio URL found');
                     
                     track = { ...track, ...freshDetails, url: playUrl };
                     audio.preload = 'auto';
                     audio.src = playUrl;
                     audio.load();
+
                     state.currentTrack = track;
                     state.loaded = true;
-                    state.loading = true;
-                    ui.updateMetadata(track, { loading: true });
-                    
                     ui.enableControls();
                     audio.loop = (state.repeat === 2);
+
                     await audio.play();
+                    if (currentRequestId !== playRequestId) return;
+
+                    state.playing = true;
                     state.loading = false;
                     ui.setPlayerLoading(false);
+                    ui.updatePlayBtn();
+
                     const isRepeatStart = recommendationEvents.lastStartedSongId === track.id && Date.now() - recommendationEvents.currentPlayStartAt < 15 * 60 * 1000;
                     recommendationEvents.currentPlayStartAt = Date.now();
                     recommendationEvents.lastStartedSongId = track.id;
@@ -1140,12 +1377,15 @@
                         context: recommendationEvents.contextForTrack(track),
                     });
                     
+                    if (!isAudioContextInitialized) setupAudioContext();
                     if (audioContext && audioContext.state === 'suspended') {
                         audioContext.resume().catch(err => console.warn('[DTunes] Could not resume audioContext in playDirect:', err));
                     }
-                    if (Object.values(state.equalizer).some(value => Number(value) !== 0) && !isAudioContextInitialized) setupAudioContext();
+                    applyEqualizer();
                     
-                    ui.updateMetadata(track); ui.renderQueue(); primeNextTrack(); 
+                    ui.updateMetadata(track);
+                    ui.renderQueue();
+                    primeNextTrack(); 
                     
                     const trackWithTime = { ...track, playedAt: new Date().toISOString() };
                     state.playHistory = state.playHistory.filter(t => t.id !== track.id);
@@ -1153,19 +1393,24 @@
                     if(state.playHistory.length > 100) state.playHistory.pop();
                     localStorage.setItem('playHistory', JSON.stringify(state.playHistory));
                     
-                    listeningSession.start(track);
-                    
+                    if (window.listeningSession) listeningSession.start(track);
                     ui.renderHistory();
                     if(!document.getElementById('view-home').classList.contains('hidden')) homeView.renderRecentlyPlayed();
-                    
                     persist.save();
                 } catch (error) {
-                    state.playing = false;
-                    state.loading = false;
-                    ui.setPlayerLoading(false);
-                    ui.updatePlayBtn();
-                } 
-                finally { isPlaybackPending = false; }
+                    if (currentRequestId === playRequestId) {
+                        console.error('[DTunes] Error playing track:', error);
+                        state.playing = false;
+                        state.loading = false;
+                        ui.setPlayerLoading(false);
+                        ui.updatePlayBtn();
+                    }
+                } finally {
+                    clearTimeout(safetyTimer);
+                    if (currentRequestId === playRequestId) {
+                        isPlaybackPending = false;
+                    }
+                }
             },
             togglePlay: () => {
                 if(!state.loaded) return;
@@ -1179,13 +1424,20 @@
                         if (state.repeat === 1 || force) {
                             nextIdx = 0;
                         } else {
-                            audio.pause();
-                            audio.currentTime = 0;
-                            state.playing = false;
-                            state.loading = false;
-                            ui.setPlayerLoading(false);
-                            ui.updatePlayBtn();
-                            persist.save();
+                            homeView.autoplayNextIntelligentTracks().then(success => {
+                                if (success && state.idx + 1 < state.queue.length) {
+                                    state.idx = state.idx + 1;
+                                    player.playDirect(state.queue[state.idx]);
+                                } else {
+                                    audio.pause();
+                                    audio.currentTime = 0;
+                                    state.playing = false;
+                                    state.loading = false;
+                                    ui.setPlayerLoading(false);
+                                    ui.updatePlayBtn();
+                                    persist.save();
+                                }
+                            });
                             return;
                         }
                     }
@@ -1351,13 +1603,6 @@
 
         audio.addEventListener('error', recoverFromAudioError);
 
-        setInterval(() => {
-            if (!state.playing || state.repeat === 2 || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
-            if (audio.ended || audio.duration - audio.currentTime <= 0.35) {
-                player.next();
-            }
-        }, 1000);
-
         // Periodic state reconciliation: catches any desync between audio
         // element and UI state (especially on mobile expanded player).
         setInterval(() => {
@@ -1366,17 +1611,14 @@
             const stateDesync = (audioActuallyPlaying !== state.playing) && document.visibilityState !== 'hidden' && !state.wasPlayingBeforeHidden;
             if (stateDesync) {
                 state.playing = audioActuallyPlaying;
+                state.loading = false;
+                ui.setPlayerLoading(false);
                 ui.updatePlayBtn();
             }
         }, 2000);
 
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
-                // Remember whether we were playing before the tab goes hidden.
-                // The browser may fire a 'pause' event on the audio element
-                // while the page is hidden, which our pause handler now guards
-                // against clobbering state.playing — but we still want a
-                // separate flag for maximum reliability.
                 state.wasPlayingBeforeHidden = state.playing || !audio.paused;
                 const preservedVolume = audio.volume;
                 audio.muted = false;
@@ -1384,7 +1626,10 @@
                 cloudLibrary.flushPlaybackState(true);
                 setTimeout(() => { audio.volume = preservedVolume; audio.muted = false; }, 0);
             } else {
-                // Page became visible. Check if playback was interrupted.
+                isPlaybackPending = false;
+                state.loading = false;
+                ui.setPlayerLoading(false);
+
                 const shouldResume = state.wasPlayingBeforeHidden || state.playing;
                 if (shouldResume) {
                     audio.muted = false;
@@ -1397,13 +1642,15 @@
                             ui.updatePlayBtn();
                         }).catch(err => {
                             console.warn('[DTunes] Could not resume audio on focus:', err);
-                            // If autoplay is blocked, reconcile state
-                            state.playing = false;
-                            state.wasPlayingBeforeHidden = false;
-                            ui.updatePlayBtn();
+                            if (audio.error) {
+                                recoverFromAudioError();
+                            } else {
+                                state.playing = false;
+                                state.wasPlayingBeforeHidden = false;
+                                ui.updatePlayBtn();
+                            }
                         });
                     } else {
-                        // Audio is already playing, just make sure state is correct
                         state.playing = true;
                         ui.updatePlayBtn();
                     }
@@ -1425,37 +1672,106 @@
         });
 
         // ============================================
-        // VISUALIZER
+        // VISUALIZER & AUDIO ENGINE
         // ============================================
-        let audioContext, analyser, source, eqFilters = {}, isAudioContextInitialized = false;
+        let audioContext, analyser, source, preAmpGain, masterLimiter, eqFilters = {}, isAudioContextInitialized = false;
         let analyserData = null;
         let smoothedLow = 0, smoothedMid = 0, currentProgress = 0, time = 0, hoverIntensity = 0; let visualizerCtx;
         let vizCanvas = null, vizSeekTrack = null, lastClipProgress = -1;
         let resizeCanvas = () => {};
+
         const applyEqualizer = () => {
+            if (!isAudioContextInitialized || !audioContext) return;
+            const now = audioContext.currentTime;
+
+            let maxPositiveGain = 0;
+            let positiveGainSum = 0;
+
             EQ_BANDS.forEach((band) => {
-                if (eqFilters[band.key]) eqFilters[band.key].gain.value = Number(state.equalizer[band.key] || 0);
+                const val = Number(state.equalizer[band.key] || 0);
+                if (val > 0) {
+                    if (val > maxPositiveGain) maxPositiveGain = val;
+                    positiveGainSum += val;
+                }
+                if (eqFilters[band.key]) {
+                    // Smooth exponential transition prevents zipper noise and pops
+                    eqFilters[band.key].gain.setTargetAtTime(val, now, 0.02);
+                }
             });
+
+            // Dynamic Headroom Staging:
+            // When boosting bass (e.g. +6dB to +12dB), automatically trim pre-amp gain
+            // so signal peaks never exceed 0dBFS before hitting the limiter.
+            let targetPreAmpDb = 0;
+            if (maxPositiveGain > 0) {
+                targetPreAmpDb = -(maxPositiveGain * 0.7 + (positiveGainSum - maxPositiveGain) * 0.12);
+                targetPreAmpDb = Math.max(-12, Math.min(0, targetPreAmpDb));
+            }
+
+            if (preAmpGain) {
+                const linearPreAmp = Math.pow(10, targetPreAmpDb / 20);
+                preAmpGain.gain.setTargetAtTime(linearPreAmp, now, 0.02);
+            }
+
+            if (ui && typeof ui.updateEqualizerMonitoring === 'function') {
+                ui.updateEqualizerMonitoring(targetPreAmpDb);
+            }
         };
+
         function setupAudioContext() {
+            if (isAudioContextInitialized) return;
             try {
-                audioContext = new (window.AudioContext || window.webkitAudioContext)(); analyser = audioContext.createAnalyser(); source = audioContext.createMediaElementSource(audio);
-                eqFilters = {};
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                audioContext = new AudioCtx();
+                
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 256;
+                analyser.smoothingTimeConstant = 0.8;
+                
+                source = audioContext.createMediaElementSource(audio);
+                
+                // 1. Dynamic Headroom Pre-Amp Stage
+                preAmpGain = audioContext.createGain();
+                preAmpGain.gain.setValueAtTime(1.0, audioContext.currentTime);
+                
                 let previousNode = source;
+                previousNode.connect(preAmpGain);
+                previousNode = preAmpGain;
+                
+                // 2. 10-Band Studio Equalizer Chain with musical Q
+                eqFilters = {};
                 EQ_BANDS.forEach((band) => {
                     const filter = audioContext.createBiquadFilter();
                     filter.type = band.type;
-                    filter.frequency.value = band.frequency;
-                    filter.Q.value = 1.1;
+                    filter.frequency.setValueAtTime(band.frequency, audioContext.currentTime);
+                    filter.Q.setValueAtTime(band.q || (band.type === 'peaking' ? 1.414 : 0.707), audioContext.currentTime);
+                    filter.gain.setValueAtTime(Number(state.equalizer[band.key] || 0), audioContext.currentTime);
+                    
                     eqFilters[band.key] = filter;
                     previousNode.connect(filter);
                     previousNode = filter;
                 });
-                previousNode.connect(analyser); analyser.connect(audioContext.destination); analyser.fftSize = 256;
-                applyEqualizer();
+                
+                // 3. Studio Mastering Peak Limiter & Anti-Clipping Dynamics Compressor
+                masterLimiter = audioContext.createDynamicsCompressor();
+                masterLimiter.threshold.setValueAtTime(-0.8, audioContext.currentTime);
+                masterLimiter.knee.setValueAtTime(3.0, audioContext.currentTime);
+                masterLimiter.ratio.setValueAtTime(20.0, audioContext.currentTime);
+                masterLimiter.attack.setValueAtTime(0.002, audioContext.currentTime);
+                masterLimiter.release.setValueAtTime(0.050, audioContext.currentTime);
+                
+                previousNode.connect(masterLimiter);
+                masterLimiter.connect(analyser);
+                analyser.connect(audioContext.destination);
+                
                 analyserData = new Uint8Array(analyser.frequencyBinCount);
                 isAudioContextInitialized = true;
-            } catch(e) {}
+                
+                applyEqualizer();
+            } catch(e) {
+                console.warn('[DTunes] AudioContext setup notice:', e);
+            }
         }
         // Visualizer frequency bin ranges: bins 0-4 = bass/low, bins 10-39 = mid frequencies.
         const VIZ_LOW_BINS_END = 5, VIZ_MID_BINS_START = 10, VIZ_MID_BINS_END = 40;
@@ -1563,18 +1879,54 @@
                     resetKeyboardVars();
                     return;
                 }
+
+                const isAndroid = /Android/i.test(navigator.userAgent);
+                const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+                // Android Chrome VirtualKeyboard API
+                if ('virtualKeyboard' in navigator && isAndroid) {
+                    try {
+                        navigator.virtualKeyboard.overlaysContent = true;
+                        const vk = navigator.virtualKeyboard.boundingRect;
+                        if (vk && vk.height > 0) {
+                            const vkHeight = Math.round(vk.height);
+                            document.documentElement.style.setProperty('--mobile-keyboard-offset', `${vkHeight}px`);
+                            document.documentElement.style.setProperty('--mobile-keyboard-lift', `${vkHeight}px`);
+                            document.body.classList.toggle('mobile-keyboard-open', document.body.classList.contains('mobile-search-open'));
+                            return;
+                        }
+                    } catch (e) {}
+                }
+
+                // iOS Safari & Fallback via VisualViewport
                 if (!window.visualViewport) {
                     resetKeyboardVars();
                     return;
                 }
+
                 const vv = window.visualViewport;
                 const offset = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
-                const lift = Math.min(offset, 120);
+                const lift = isIOS ? Math.min(offset, Math.round(window.innerHeight * 0.48)) : Math.min(offset, 280);
+
                 document.documentElement.style.setProperty('--mobile-keyboard-offset', `${offset}px`);
                 document.documentElement.style.setProperty('--mobile-keyboard-lift', `${lift}px`);
                 const keyboardOpen = offset > 12 && document.body.classList.contains('mobile-search-open');
                 document.body.classList.toggle('mobile-keyboard-open', keyboardOpen);
-                if (keyboardOpen) window.scrollTo(0, 0);
+                if (keyboardOpen && isIOS) {
+                    window.scrollTo({ top: 0, behavior: 'instant' });
+                }
+            },
+
+            goHome: () => {
+                const searchInput = document.getElementById('search-input');
+                if (searchInput) searchInput.value = '';
+                ui.closeMobileSearch({ clearQuickState: true, restoreOrigin: true });
+                document.getElementById('search-dropdown')?.classList.remove('active');
+                ui.switchView('home');
+                if (typeof homeView !== 'undefined' && homeView.init) {
+                    homeView.init();
+                }
+                document.getElementById('main-container')?.scrollTo({ top: 0, behavior: 'smooth' });
             },
 
             switchView: (view) => {
@@ -1615,7 +1967,7 @@
                     if (!state.mobileQueueAutoOpened) {
                         state.mobileQueueAutoOpened = true;
                         state.queueExpanded = true;
-                        document.getElementById('queue-wrapper').classList.add('queue-expanded');
+                        document.getElementById('queue-wrapper')?.classList.add('queue-expanded');
                         ui.switchQueueTab('upnext');
                     }
                     requestAnimationFrame(resizeCanvas);
@@ -1625,6 +1977,8 @@
                     document.body.classList.remove('mobile-player-open');
                 }
                 updateMarquees();
+                setTimeout(updateMarquees, 120);
+                setTimeout(updateMarquees, 420);
             },
 
             openMobileSearch: () => {
@@ -1861,32 +2215,88 @@
                 }
             },
             renderEqualizerSettings: () => {
-                const container = document.getElementById('eq-bands');
-                if (!container) return;
-                if (!container.dataset.rendered) {
-                    container.innerHTML = EQ_BANDS.map((band) => `
-                        <label class="eq-band" title="${band.frequency} Hz">
-                            <span id="${band.key}-value" class="eq-value">0 dB</span>
-                            <input id="${band.key}" type="range" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="${band.label} Hz" oninput="ui.updateEqualizer('${band.key}', this.value)">
-                            <span class="eq-label">${band.label}</span>
-                        </label>
-                    `).join('');
-                    container.dataset.rendered = 'true';
-                }
-                EQ_BANDS.forEach((band) => {
-                    const value = Number(state.equalizer[band.key] || 0);
-                    const input = document.getElementById(band.key);
-                    const label = document.getElementById(`${band.key}-value`);
-                    if (input) input.value = value;
-                    if (label) label.textContent = `${value > 0 ? '+' : ''}${value} dB`;
+                const containers = [
+                    { bandsId: 'eq-bands', presetsId: 'eq-settings-presets', descId: 'eq-settings-preset-desc', headroomId: 'eq-settings-headroom-badge', prefix: 'set' },
+                    { bandsId: 'eq-modal-bands', presetsId: 'eq-modal-presets', descId: 'eq-modal-preset-desc', headroomId: 'eq-modal-headroom-badge', prefix: 'mod' }
+                ];
+
+                const currentPreset = getCurrentPresetId();
+                const activePresetObj = EQ_PRESETS[currentPreset];
+                const descText = activePresetObj ? activePresetObj.desc : 'Custom studio equalizer profile';
+
+                containers.forEach(({ bandsId, presetsId, descId, prefix }) => {
+                    const bandsContainer = document.getElementById(bandsId);
+                    const presetsContainer = document.getElementById(presetsId);
+                    const descEl = document.getElementById(descId);
+
+                    if (descEl) descEl.textContent = descText;
+
+                    if (presetsContainer) {
+                        presetsContainer.innerHTML = Object.entries(EQ_PRESETS).map(([key, preset]) => `
+                            <button onclick="ui.setEqualizerPreset('${key}')" class="eq-preset-chip ${key === currentPreset ? 'active' : ''}" title="${preset.desc}">
+                                <span>${preset.icon}</span>
+                                <span>${preset.name}</span>
+                            </button>
+                        `).join('') + `
+                            <button class="eq-preset-chip ${currentPreset === 'custom' ? 'active' : ''}" style="pointer-events:none;">
+                                <span>🎛️</span>
+                                <span>Custom</span>
+                            </button>
+                        `;
+                    }
+
+                    if (bandsContainer) {
+                        if (!bandsContainer.dataset.rendered) {
+                            bandsContainer.innerHTML = EQ_BANDS.map((band) => `
+                                <div class="eq-band" title="${band.frequency} Hz (${band.subLabel})">
+                                    <span id="${prefix}-${band.key}-value" class="eq-value">0 dB</span>
+                                    <div class="eq-slider-container">
+                                        <div class="eq-zero-line"></div>
+                                        <input id="${prefix}-${band.key}" type="range" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="${band.label} (${band.subLabel})" oninput="ui.updateEqualizer('${band.key}', this.value)" class="eq-slider">
+                                    </div>
+                                    <div class="flex flex-col items-center leading-none">
+                                        <span class="eq-label">${band.label}</span>
+                                        <span class="eq-sublabel">${band.subLabel}</span>
+                                    </div>
+                                </div>
+                            `).join('');
+                            bandsContainer.dataset.rendered = 'true';
+                        }
+
+                        EQ_BANDS.forEach((band) => {
+                            const val = Number(state.equalizer[band.key] || 0);
+                            const input = document.getElementById(`${prefix}-${band.key}`);
+                            const label = document.getElementById(`${prefix}-${band.key}-value`);
+                            if (input) input.value = val;
+                            if (label) label.textContent = `${val > 0 ? '+' : ''}${val} dB`;
+                        });
+                    }
                 });
+            },
+            updateEqualizerMonitoring: (preampDb = 0) => {
+                const headroomText = `Headroom: ${preampDb < 0 ? preampDb.toFixed(1) : '0.0'} dB`;
+                const setBadge = document.getElementById('eq-settings-headroom-badge');
+                const modBadge = document.getElementById('eq-modal-headroom-badge');
+                if (setBadge) setBadge.textContent = headroomText;
+                if (modBadge) modBadge.textContent = headroomText;
+            },
+            setEqualizerPreset: (presetId) => {
+                const preset = EQ_PRESETS[presetId];
+                if (!preset) return;
+                EQ_BANDS.forEach((band) => {
+                    state.equalizer[band.key] = preset.values[band.key] !== undefined ? preset.values[band.key] : 0;
+                });
+                localStorage.setItem('equalizerSettings', JSON.stringify(state.equalizer));
+                if (!isAudioContextInitialized && state.currentTrack) setupAudioContext();
+                ui.renderEqualizerSettings();
+                applyEqualizer();
             },
             updateEqualizer: (band, value) => {
                 if (!Object.prototype.hasOwnProperty.call(FLAT_EQUALIZER, band)) return;
                 state.equalizer[band] = Number(value);
                 localStorage.setItem('equalizerSettings', JSON.stringify(state.equalizer));
                 ui.renderEqualizerSettings();
-                if (!isAudioContextInitialized && state.currentTrack && Object.values(state.equalizer).some(value => Number(value) !== 0)) setupAudioContext();
+                if (!isAudioContextInitialized && state.currentTrack && Object.values(state.equalizer).some(v => Number(v) !== 0)) setupAudioContext();
                 applyEqualizer();
             },
             resetEqualizer: () => {
@@ -1894,6 +2304,16 @@
                 localStorage.setItem('equalizerSettings', JSON.stringify(state.equalizer));
                 ui.renderEqualizerSettings();
                 applyEqualizer();
+            },
+            toggleEqualizerModal: (show) => {
+                const modal = document.getElementById('equalizer-modal');
+                if (!modal) return;
+                if (show) {
+                    ui.renderEqualizerSettings();
+                    modal.classList.remove('hidden');
+                } else {
+                    modal.classList.add('hidden');
+                }
             },
             clearAllData: () => {
                 const confirmed = window.confirm("Clear all D'Tunes data saved in this browser? This cannot be undone.");
@@ -2300,11 +2720,88 @@
                     </div>
                 </div>`;
             },
-            openGeneratedPlaylist: (title, songs) => {
+            createDiscoverCard: (mix) => {
+                const songs = mix.songs || [];
+                const imgs = songs.map(s => s.img).filter(Boolean).slice(0, 3);
+                
+                let collageHtml = '';
+                if (imgs.length >= 3) {
+                    collageHtml = `
+                    <div class="absolute top-4 right-4 w-28 h-28 pointer-events-none">
+                        <img src="${imgs[0]}" class="absolute top-0 right-0 w-16 h-16 rounded-xl object-cover shadow-2xl border border-white/20 transform rotate-6 z-10">
+                        <img src="${imgs[1]}" class="absolute top-3 right-5 w-14 h-14 rounded-xl object-cover shadow-2xl border border-white/20 transform -rotate-12 z-20">
+                        <img src="${imgs[2]}" class="absolute top-7 right-2 w-14 h-14 rounded-xl object-cover shadow-2xl border border-white/20 transform rotate-3 z-30">
+                    </div>`;
+                } else if (imgs.length > 0) {
+                    collageHtml = `
+                    <div class="absolute top-4 right-4 w-24 h-24 pointer-events-none">
+                        <img src="${imgs[0]}" class="w-full h-full rounded-2xl object-cover shadow-2xl border border-white/20 transform rotate-3">
+                    </div>`;
+                } else {
+                    collageHtml = `
+                    <div class="absolute top-5 right-5 w-20 h-20 rounded-2xl bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/10 pointer-events-none">
+                        <svg class="w-10 h-10 text-white/70" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg>
+                    </div>`;
+                }
+
+                return `
+                <div class="discover-card glass-panel rounded-3xl overflow-hidden relative flex-shrink-0 w-64 h-80 group cursor-pointer hover-pause ${mix.gradientBg || 'bg-gradient-to-br from-cyan-600 to-indigo-900'}" onclick="homeView.openDiscoverMix('${mix.key}')">
+                    <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.2),transparent_70%)] pointer-events-none"></div>
+                    <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent pointer-events-none"></div>
+                    
+                    ${collageHtml}
+                    
+                    <button class="absolute bottom-5 right-5 w-12 h-12 rounded-full bg-[var(--accent-color)] text-black flex items-center justify-center shadow-2xl opacity-90 group-hover:scale-110 transition z-30" onclick="event.stopPropagation(); homeView.playDiscoverMix('${mix.key}')">
+                        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                    </button>
+                    
+                    <div class="absolute bottom-0 left-0 right-16 p-5 z-20 pointer-events-none">
+                        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-[10px] font-extrabold tracking-wider uppercase text-[var(--accent-color)] mb-2 shadow-lg">
+                            <span class="w-1.5 h-1.5 rounded-full bg-[var(--accent-color)] animate-pulse"></span>
+                            ${utils.escapeHtml(mix.badgeText || 'MADE FOR YOU')}
+                        </div>
+                        <div class="marquee-container"><h3 class="text-xl font-black text-white marquee-text tracking-tight drop-shadow-md">${utils.escapeHtml(mix.title)}</h3></div>
+                        <p class="text-xs text-gray-300 mt-1 line-clamp-2 drop-shadow-sm font-medium">${utils.escapeHtml(mix.subtitle)}</p>
+                    </div>
+                </div>`;
+            },
+            generateAbstractCoverMarkup: (mix, songs = []) => {
+                const imgs = songs.map(s => s.img).filter(Boolean).slice(0, 4);
+                let inner = '';
+                if (imgs.length >= 4) {
+                    inner = `<div class="grid grid-cols-2 gap-1 w-full h-full p-1.5">
+                        <img src="${imgs[0]}" class="w-full h-full object-cover rounded">
+                        <img src="${imgs[1]}" class="w-full h-full object-cover rounded">
+                        <img src="${imgs[2]}" class="w-full h-full object-cover rounded">
+                        <img src="${imgs[3]}" class="w-full h-full object-cover rounded">
+                    </div>`;
+                } else if (imgs.length > 0) {
+                    inner = `<img src="${imgs[0]}" class="w-full h-full object-cover">`;
+                } else {
+                    inner = `<div class="w-full h-full flex items-center justify-center text-white/80"><svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg></div>`;
+                }
+                return `<div class="w-full h-full ${mix.gradientBg || 'bg-gradient-to-br from-cyan-600 to-indigo-950'} relative flex items-center justify-center overflow-hidden">
+                    <div class="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.25),transparent_75%)] pointer-events-none"></div>
+                    <div class="absolute inset-0 bg-black/30 backdrop-blur-[2px]"></div>
+                    <div class="relative z-10 w-full h-full p-4 flex flex-col justify-between">
+                        <div class="text-[10px] font-extrabold uppercase tracking-widest text-[var(--accent-color)] bg-black/50 backdrop-blur-md px-2.5 py-1 rounded-full w-max border border-white/10 shadow-lg">${utils.escapeHtml(mix.badgeText || 'D\'TUNES MIX')}</div>
+                        <div class="w-28 h-28 mx-auto rounded-2xl overflow-hidden shadow-2xl border border-white/20">${inner}</div>
+                        <div class="text-center font-black text-white text-base tracking-tight truncate drop-shadow-md">${utils.escapeHtml(mix.title)}</div>
+                    </div>
+                </div>`;
+            },
+            openGeneratedPlaylist: (title, songs, coverHtml = null) => {
                 ui.switchView('playlist');
                 document.getElementById('playlist-view-title').textContent = title;
                 document.getElementById('playlist-view-count').textContent = `${songs.length} tracks`;
-                document.getElementById('pl-view-art').innerHTML = '<div class="w-full h-full bg-gradient-to-br from-[var(--accent-color)] to-cyan-950 flex items-center justify-center"><svg class="w-20 h-20 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>';
+                const artEl = document.getElementById('pl-view-art');
+                if (coverHtml) {
+                    artEl.className = 'w-48 h-48 md:w-full md:aspect-square rounded-2xl shadow-2xl overflow-hidden shadow-black/50';
+                    artEl.innerHTML = coverHtml;
+                } else {
+                    artEl.className = 'w-48 h-48 md:w-full md:aspect-square rounded-2xl shadow-2xl flex items-center justify-center text-5xl md:text-6xl font-bold text-white shadow-black/50 overflow-hidden';
+                    artEl.innerHTML = '<div class="w-full h-full bg-gradient-to-br from-[var(--accent-color)] to-cyan-950 flex items-center justify-center"><svg class="w-20 h-20 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>';
+                }
                 document.getElementById('playlist-songs-list').innerHTML = songs.map(song => ui.createListRow(song)).join('');
                 document.getElementById('playlist-play-all').onclick = () => {
                     if(songs.length > 0) { state.queue = [...songs]; state.userQueue = []; state.idx = 0; player.playDirect(songs[0]); }
@@ -2831,6 +3328,7 @@
                 ui.renderEqualizerSettings();
                 
                 ui.renderPlaylists(); ui.renderLibraryLists(); 
+                homeView.renderDiscoverSection();
                 const isNewUser = state.playHistory.length === 0;
                 if (isNewUser) {
                     document.getElementById('section-trending').classList.remove('hidden');
@@ -2845,21 +3343,156 @@
                 }
                 updateMarquees();
             },
+            renderDiscoverSection: async (forceRefresh = false) => {
+                const grid = document.getElementById('discover-grid');
+                if (!grid) return;
+                
+                if (!state.discoverMixes) state.discoverMixes = {};
+                
+                const DISCOVER_MIX_DEFINITIONS = [
+                    {
+                        key: 'discover-weekly',
+                        title: 'Discover Weekly',
+                        subtitle: 'Fresh recommendations tuned to your taste every week',
+                        badgeText: 'DISCOVER',
+                        gradientBg: 'bg-gradient-to-br from-cyan-600 via-emerald-800 to-indigo-950',
+                        accentColor: '#38bdf8'
+                    },
+                    {
+                        key: 'daily-mix-1',
+                        title: 'Daily Mix 1',
+                        subtitle: 'A custom blend of your favorite artists and hits',
+                        badgeText: 'DAILY MIX',
+                        gradientBg: 'bg-gradient-to-br from-purple-700 via-indigo-800 to-slate-950',
+                        accentColor: '#a855f7'
+                    },
+                    {
+                        key: 'daily-mix-2',
+                        title: 'Daily Mix 2',
+                        subtitle: 'Vibrant tracks matching your favorite genres',
+                        badgeText: 'DAILY MIX',
+                        gradientBg: 'bg-gradient-to-br from-rose-600 via-amber-700 to-zinc-950',
+                        accentColor: '#f43f5e'
+                    },
+                    {
+                        key: 'release-radar',
+                        title: 'Release Radar',
+                        subtitle: 'Catch brand new singles & albums from top artists',
+                        badgeText: 'NEW RELEASES',
+                        gradientBg: 'bg-gradient-to-br from-blue-600 via-sky-800 to-gray-950',
+                        accentColor: '#60a5fa'
+                    },
+                    {
+                        key: 'chill-vibes',
+                        title: 'Chill Vibes',
+                        subtitle: 'Soft acoustic, lo-fi, and relaxing melodies for your mind',
+                        badgeText: 'MOOD & VIBE',
+                        gradientBg: 'bg-gradient-to-br from-teal-600 via-cyan-900 to-black',
+                        accentColor: '#2dd4bf'
+                    },
+                    {
+                        key: 'recently-obsessed',
+                        title: 'Recently Obsessed',
+                        subtitle: 'Your heavy rotation favorites on repeat',
+                        badgeText: 'ON REPEAT',
+                        gradientBg: 'bg-gradient-to-br from-fuchsia-600 via-pink-800 to-stone-950',
+                        accentColor: '#e879f9'
+                    }
+                ];
+
+                grid.innerHTML = DISCOVER_MIX_DEFINITIONS.map(() => 
+                    '<div class="scroll-card h-80 w-64 rounded-3xl glass-panel animate-pulse flex-shrink-0"></div>'
+                ).join('');
+
+                const preferredLanguage = document.getElementById('preferred-language-select')?.value || localStorage.getItem('preferredLanguage') || '';
+
+                const renderedCards = await Promise.all(DISCOVER_MIX_DEFINITIONS.map(async (def) => {
+                    let songs = state.discoverMixes[def.key];
+                    if (!songs || forceRefresh || songs.length === 0) {
+                        songs = window.recommendationClient ? await window.recommendationClient.fetchPlaylist(def.key, { limit: 20, language: preferredLanguage }) : [];
+                        state.discoverMixes[def.key] = songs;
+                    }
+                    const fullMix = { ...def, songs };
+                    return ui.createDiscoverCard(fullMix);
+                }));
+
+                grid.innerHTML = renderedCards.join('');
+                stripTouchHoverClasses();
+                updateMarquees();
+            },
+            openDiscoverMix: async (key) => {
+                const DISCOVER_MIX_DEFINITIONS = {
+                    'discover-weekly': { title: 'Discover Weekly', badgeText: 'DISCOVER', gradientBg: 'bg-gradient-to-br from-cyan-600 via-emerald-800 to-indigo-950' },
+                    'daily-mix-1': { title: 'Daily Mix 1', badgeText: 'DAILY MIX', gradientBg: 'bg-gradient-to-br from-purple-700 via-indigo-800 to-slate-950' },
+                    'daily-mix-2': { title: 'Daily Mix 2', badgeText: 'DAILY MIX', gradientBg: 'bg-gradient-to-br from-rose-600 via-amber-700 to-zinc-950' },
+                    'release-radar': { title: 'Release Radar', badgeText: 'NEW RELEASES', gradientBg: 'bg-gradient-to-br from-blue-600 via-sky-800 to-gray-950' },
+                    'chill-vibes': { title: 'Chill Vibes', badgeText: 'MOOD & VIBE', gradientBg: 'bg-gradient-to-br from-teal-600 via-cyan-900 to-black' },
+                    'recently-obsessed': { title: 'Recently Obsessed', badgeText: 'ON REPEAT', gradientBg: 'bg-gradient-to-br from-fuchsia-600 via-pink-800 to-stone-950' }
+                };
+                const meta = DISCOVER_MIX_DEFINITIONS[key] || { title: 'Discover Mix', badgeText: 'MADE FOR YOU', gradientBg: 'bg-gradient-to-br from-cyan-600 to-indigo-950' };
+                let songs = state.discoverMixes?.[key];
+                if (!songs || songs.length === 0) {
+                    const preferredLanguage = document.getElementById('preferred-language-select')?.value || localStorage.getItem('preferredLanguage') || '';
+                    songs = window.recommendationClient ? await window.recommendationClient.fetchPlaylist(key, { limit: 25, language: preferredLanguage }) : [];
+                    if (!state.discoverMixes) state.discoverMixes = {};
+                    state.discoverMixes[key] = songs;
+                }
+                const coverMarkup = ui.generateAbstractCoverMarkup({ ...meta, key }, songs);
+                ui.openGeneratedPlaylist(meta.title, songs, coverMarkup);
+            },
+            playDiscoverMix: async (key) => {
+                let songs = state.discoverMixes?.[key];
+                if (!songs || songs.length === 0) {
+                    const preferredLanguage = document.getElementById('preferred-language-select')?.value || localStorage.getItem('preferredLanguage') || '';
+                    songs = window.recommendationClient ? await window.recommendationClient.fetchPlaylist(key, { limit: 25, language: preferredLanguage }) : [];
+                }
+                if (!songs || songs.length === 0) return;
+                state.queue = [...songs]; state.userQueue = []; state.idx = 0; ui.renderQueue();
+                player.playDirect(songs[0]);
+                if (deviceMode.isMobileUI()) ui.toggleMobilePlayer(true);
+                else if (!state.queueExpanded) ui.toggleQueue();
+            },
+            autoplayNextIntelligentTracks: async () => {
+                try {
+                    const currentSong = state.currentTrack;
+                    const seedId = currentSong?.id;
+                    const preferredLanguage = document.getElementById('preferred-language-select')?.value || localStorage.getItem('preferredLanguage') || '';
+                    const newSongs = window.recommendationClient 
+                        ? await window.recommendationClient.fetchPlaylist('similar', { seedSongId: seedId, limit: 10, language: preferredLanguage })
+                        : [];
+                    if (newSongs && newSongs.length > 0) {
+                        const filtered = newSongs.filter(s => {
+                            if (!s || !s.id) return false;
+                            if (currentSong && utils.areDuplicateTracks(s, currentSong)) return false;
+                            return !state.queue.some(existing => utils.areDuplicateTracks(existing, s));
+                        });
+                        if (filtered.length > 0) {
+                            state.queue.push(...utils.deduplicateSongs(filtered));
+                            ui.renderQueue();
+                            primeNextTrack();
+                            return true;
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[Autoplay] Could not fetch intelligent continuation tracks:', e);
+                }
+                return false;
+            },
             renderRecentlyPlayed: () => {
                 const grid = document.getElementById('recent-grid'); if(!grid) return;
                 if(state.playHistory.length === 0) { grid.innerHTML = '<p class="text-gray-500 pl-8">Play some songs to see them here.</p>'; return; }
-                grid.innerHTML = state.playHistory.slice(0, 8).map(song => ui.createCard(song)).join('');
+                const dedupedHistory = utils.deduplicateSongs(state.playHistory);
+                grid.innerHTML = dedupedHistory.slice(0, 8).map(song => ui.createCard(song)).join('');
                 updateMarquees();
             },
             generateQuickPicks: async () => {
                 const grid = document.getElementById('quick-picks-grid');
                 grid.innerHTML = Array(16).fill('<div class="scroll-card h-[200px] rounded-xl glass-panel animate-pulse w-40 flex-shrink-0"></div>').join('');
                 try {
-                    const trending = await jiosaavnAPI.getTrending(); let picks = [...trending.slice(0, 6)]; 
-                    const artists = Object.keys(state.artistPlayCounts).sort((a,b) => state.artistPlayCounts[b] - state.artistPlayCounts[a]).slice(0, 2);
-                    for(const artist of artists) { const artistSongs = await jiosaavnAPI.searchSongs(artist, 5); picks = [...picks, ...artistSongs]; }
-                    const uniquePicks = []; const seenIds = new Set();
-                    for(const song of picks) { if(song && !seenIds.has(song.id)) { uniquePicks.push(song); seenIds.add(song.id); } }
+                    const trending = await jiosaavnAPI.getTrending(); let picks = [...trending.slice(0, 8)]; 
+                    const artists = Object.keys(state.artistPlayCounts || {}).sort((a,b) => state.artistPlayCounts[b] - state.artistPlayCounts[a]).slice(0, 3);
+                    for(const artist of artists) { const artistSongs = await jiosaavnAPI.searchSongs(artist, 6); picks.push(...artistSongs); }
+                    const uniquePicks = utils.deduplicateSongs(picks);
                     uniquePicks.sort(() => Math.random() - 0.5); const finalPicks = uniquePicks.slice(0, 16);
                     grid.innerHTML = finalPicks.map(song => ui.createCard(song)).join('');
                     updateMarquees();
@@ -2927,6 +3560,13 @@
 
                 haptics.trigger('selection');
             }, { passive: true });
+
+            if ('virtualKeyboard' in navigator) {
+                try {
+                    navigator.virtualKeyboard.overlaysContent = true;
+                    navigator.virtualKeyboard.addEventListener('geometrychange', () => ui.updateMobileSearchPosition());
+                } catch (e) {}
+            }
 
             if (window.visualViewport) {
                 const onViewportChange = () => ui.updateMobileSearchPosition();
@@ -3210,12 +3850,64 @@
                 }
             }, { passive: false });
 
+            // Touch swiping / dragging for overflowing marquee text
+            let marqueeTouchStart = null;
+            document.addEventListener('touchstart', (e) => {
+                const container = e.target.closest('.marquee-container.is-overflowing');
+                if (!container) return;
+                const text = container.querySelector('.marquee-text');
+                if (!text) return;
+
+                const touch = e.changedTouches[0];
+                const computed = window.getComputedStyle(text);
+                const matrix = new DOMMatrixReadOnly(computed.transform);
+                marqueeTouchStart = {
+                    container,
+                    text,
+                    startX: touch.clientX,
+                    startMatrixX: matrix.m41 || 0,
+                    scrollDist: parseFloat(text.style.getPropertyValue('--scroll-dist')) || 0,
+                    moved: false
+                };
+            }, { passive: true });
+
+            document.addEventListener('touchmove', (e) => {
+                if (!marqueeTouchStart) return;
+                const touch = e.changedTouches[0];
+                const dx = touch.clientX - marqueeTouchStart.startX;
+                if (Math.abs(dx) > 4) {
+                    marqueeTouchStart.moved = true;
+                    marqueeTouchStart.text.style.animationPlayState = 'paused';
+                    const maxScroll = marqueeTouchStart.scrollDist; // negative e.g. -120px
+                    const clampedX = Math.max(maxScroll - 12, Math.min(12, marqueeTouchStart.startMatrixX + dx));
+                    marqueeTouchStart.text.style.transform = `translateX(${clampedX}px)`;
+                }
+            }, { passive: true });
+
+            document.addEventListener('touchend', () => {
+                if (!marqueeTouchStart) return;
+                const { text, moved } = marqueeTouchStart;
+                marqueeTouchStart = null;
+                if (moved) {
+                    setTimeout(() => {
+                        text.style.transform = '';
+                        text.style.animationPlayState = 'running';
+                    }, 1200);
+                }
+            }, { passive: true });
+
             let lastPersistSecond = -1;
             audio.addEventListener('timeupdate', () => {
                 if (window.listeningSession) listeningSession.update();
                 if (Number.isFinite(audio.duration) && audio.duration > 0 && !state.isDragging) {
                     seekBar.max = audio.duration; seekBar.value = audio.currentTime;
                     currentProgress = audio.currentTime / audio.duration;
+
+                    const currTimeEl = document.getElementById('seek-current-time');
+                    const durTimeEl = document.getElementById('seek-duration-time');
+                    if (currTimeEl) currTimeEl.textContent = utils.formatTime(audio.currentTime || 0);
+                    if (durTimeEl) durTimeEl.textContent = utils.formatTime(audio.duration || 0);
+
                     if ('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function' && state.currentTrack) {
                         updateMediaPosition();
                     }
@@ -3331,7 +4023,7 @@
 
             ctxMenu.init(); searchManager.init(); persist.load(); ui.updateRepeatBtn(); ui.updateShuffleBtn(); homeView.init(); cloudLibrary.init(); requestAnimationFrame(viz.render);
             deviceMode.apply();
-            
+
             window.addEventListener('resize', () => { deviceMode.apply(); ui.updateMobileSearchPosition(); updateMarquees(); });
         }
 

@@ -2,6 +2,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const { getRecommendations, PLAYLIST_TYPES } = require('./lib/recommendationEngine');
+const { deduplicateSongs } = require('./lib/deduplication');
 const store = require('./lib/jsonStore');
 const saavn = require('./lib/saavnClient');
 
@@ -34,27 +35,58 @@ async function externalCandidates({ playlistType, profile, options, limit }) {
   const languages = topKeys(profile.language_scores_json, 2);
 
   if (options.seedSongId) {
+    // 1. First get direct recommendation suggestions for this exact track from recommendation backend
+    const suggestions = await saavn.getSongSuggestions(options.seedSongId, limit).catch(() => []);
+    candidates.push(...suggestions);
+
     const seed = await saavn.getSong(options.seedSongId).catch(() => null);
     if (seed) {
       options.seedSong = seed;
+      if (seed.primary_artists) {
+        candidates.push(...await saavn.getArtistTopSongs(seed.primary_artists, Math.ceil(limit / 2)).catch(() => []));
+      }
       candidates.push(...await saavn.searchSongs(`${seed.primary_artists} ${seed.title}`, limit).catch(() => []));
       if (seed.album) candidates.push(...await saavn.searchSongs(`${seed.album} ${seed.primary_artists}`, limit).catch(() => []));
     }
   }
 
-  if (options.seedArtist) candidates.push(...await saavn.searchSongs(options.seedArtist, limit).catch(() => []));
-  if (options.language) candidates.push(...await saavn.searchSongs(`${options.language} songs`, limit).catch(() => []));
-
-  if (playlistType === PLAYLIST_TYPES.LATE_NIGHT) {
-    candidates.push(...await saavn.searchSongs('soft acoustic romantic songs', limit).catch(() => []));
-  } else if (playlistType === PLAYLIST_TYPES.DISCOVERY) {
-    candidates.push(...await saavn.searchSongs(`${languages[0] || ''} new indie songs`.trim(), limit).catch(() => []));
+  if (options.seedArtist) {
+    candidates.push(...await saavn.getArtistTopSongs(options.seedArtist, limit).catch(() => []));
+    candidates.push(...await saavn.searchSongs(`${options.seedArtist} top songs`, limit).catch(() => []));
   }
 
-  for (const artist of artists) candidates.push(...await saavn.searchSongs(artist, Math.ceil(limit / 2)).catch(() => []));
-  for (const language of languages) candidates.push(...await saavn.searchSongs(`${language} songs`, Math.ceil(limit / 2)).catch(() => []));
+  if (options.language) {
+    candidates.push(...await saavn.searchSongs(`top ${options.language} hits 2026`, limit).catch(() => []));
+  }
+
+  if (playlistType === PLAYLIST_TYPES.LATE_NIGHT || playlistType === PLAYLIST_TYPES.CHILL_VIBES) {
+    candidates.push(...await saavn.searchSongs('soft acoustic lofi romantic songs', limit).catch(() => []));
+    candidates.push(...await saavn.searchSongs('midnight chill unplugged melodies', limit).catch(() => []));
+  } else if (playlistType === PLAYLIST_TYPES.DISCOVERY || playlistType === PLAYLIST_TYPES.DISCOVER_WEEKLY) {
+    candidates.push(...await saavn.searchSongs(`${languages[0] || ''} new indie trending songs`.trim(), limit).catch(() => []));
+    candidates.push(...await saavn.searchSongs('fresh breakthrough indie pop 2026', limit).catch(() => []));
+  } else if (playlistType === PLAYLIST_TYPES.DAILY_MIX_1) {
+    if (artists[0]) candidates.push(...await saavn.getArtistTopSongs(artists[0], limit).catch(() => []));
+    candidates.push(...await saavn.searchSongs(`${languages[0] || ''} top hits`, limit).catch(() => []));
+  } else if (playlistType === PLAYLIST_TYPES.DAILY_MIX_2) {
+    if (artists[1] || artists[0]) candidates.push(...await saavn.getArtistTopSongs(artists[1] || artists[0], limit).catch(() => []));
+    candidates.push(...await saavn.searchSongs(`${languages[1] || languages[0] || ''} viral songs`, limit).catch(() => []));
+  } else if (playlistType === PLAYLIST_TYPES.RELEASE_RADAR) {
+    candidates.push(...await saavn.searchSongs(`${languages[0] || ''} new releases 2026`, limit).catch(() => []));
+    candidates.push(...await saavn.searchSongs('latest new songs 2026', limit).catch(() => []));
+  }
+
+  for (const artist of artists) {
+    candidates.push(...await saavn.getArtistTopSongs(artist, Math.ceil(limit / 2)).catch(() => []));
+  }
+  for (const language of languages) {
+    candidates.push(...await saavn.searchSongs(`${language} top hits`, Math.ceil(limit / 2)).catch(() => []));
+  }
+
+  // Always bring in rich trending data
   candidates.push(...await saavn.getTrending(limit).catch(() => []));
-  return candidates;
+
+  return deduplicateSongs(candidates);
 }
 
 async function recommendationDeps(options = {}) {
@@ -94,7 +126,7 @@ async function handleApi(req, res, url) {
     const limit = Number(url.searchParams.get('limit') || 25);
     const deps = await recommendationDeps({ language: url.searchParams.get('language') });
     const songs = await getRecommendations(userId, { limit, playlistType: type, language: url.searchParams.get('language') }, deps);
-    return sendJson(res, 200, { songs });
+    return sendJson(res, 200, { songs: deduplicateSongs(songs) });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/music/similar') {
@@ -102,7 +134,7 @@ async function handleApi(req, res, url) {
     const limit = Number(url.searchParams.get('limit') || 25);
     const deps = await recommendationDeps({ seedSongId });
     const songs = await getRecommendations('anonymous', { limit, playlistType: PLAYLIST_TYPES.SIMILAR, seedSongId }, deps);
-    return sendJson(res, 200, { songs });
+    return sendJson(res, 200, { songs: deduplicateSongs(songs) });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/music/artist-radio') {
@@ -111,7 +143,7 @@ async function handleApi(req, res, url) {
     const limit = Number(url.searchParams.get('limit') || 25);
     const deps = await recommendationDeps({ seedArtist });
     const songs = await getRecommendations(userId, { limit, playlistType: PLAYLIST_TYPES.ARTIST_RADIO, seedArtist }, deps);
-    return sendJson(res, 200, { songs });
+    return sendJson(res, 200, { songs: deduplicateSongs(songs) });
   }
 
   if (req.method === 'GET' && url.pathname === '/api/music/playlist') {
@@ -120,7 +152,7 @@ async function handleApi(req, res, url) {
     const limit = Number(url.searchParams.get('limit') || 25);
     const deps = await recommendationDeps({ language: url.searchParams.get('language') });
     const songs = await getRecommendations(userId, { limit, playlistType: type, language: url.searchParams.get('language') }, deps);
-    return sendJson(res, 200, { songs });
+    return sendJson(res, 200, { songs: deduplicateSongs(songs) });
   }
 
   return sendJson(res, 404, { error: 'Not found' });
@@ -152,6 +184,6 @@ http.createServer(async (req, res) => {
   } catch (error) {
     return sendJson(res, 500, { error: error.message });
   }
-}).listen(PORT, () => {
-  console.log(`D'Tunes listening on http://localhost:${PORT}`);
+}).listen(PORT, '0.0.0.0', () => {
+  console.log(`D'Tunes listening on http://0.0.0.0:${PORT}`);
 });

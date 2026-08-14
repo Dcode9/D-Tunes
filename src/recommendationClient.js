@@ -79,12 +79,14 @@
   }
 
   async function fetchPlaylist(type, options = {}) {
+    const seedSongId = options.songId || options.seedSongId;
+    const seedArtist = options.artist || options.seedArtist;
     const params = new URLSearchParams({ userId: options.userId || getUserId(), type, limit: options.limit || 25 });
     if (options.language) params.set('language', options.language);
     const endpoint = type === 'similar'
-      ? `/api/music/similar?songId=${encodeURIComponent(options.songId)}&limit=${options.limit || 25}`
+      ? `/api/music/similar?songId=${encodeURIComponent(seedSongId || '')}&limit=${options.limit || 25}`
       : type === 'artist-radio'
-        ? `/api/music/artist-radio?artist=${encodeURIComponent(options.artist)}&userId=${encodeURIComponent(params.get('userId'))}&limit=${options.limit || 25}`
+        ? `/api/music/artist-radio?artist=${encodeURIComponent(seedArtist || '')}&userId=${encodeURIComponent(params.get('userId'))}&limit=${options.limit || 25}`
         : `/api/music/playlist?${params.toString()}`;
     try {
       const response = await fetch(endpoint);
