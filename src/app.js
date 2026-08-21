@@ -3319,77 +3319,6 @@
                 state.queue = [...songs]; state.userQueue = []; state.idx = state.currentTrack ? -1 : 0; ui.renderQueue(); persist.save();
                 if (!state.queueExpanded) ui.toggleQueue();
             },
-            ensureIndependenceDayPlaylist: async () => {
-                const playlistName = 'Independence Day Special 🇮🇳';
-                if (!state.playlists[playlistName] || state.playlists[playlistName].length === 0) {
-                    const searchTerms = [
-                        'Maa Tujhe Salaam AR Rahman',
-                        'Teri Mitti Kesari',
-                        'Ae Watan Raazi Arijit',
-                        'Chak De India Sukhwinder',
-                        'Bharat Humko Jaan Se Pyara Hai',
-                        'Lehra Do 83 Arijit Singh',
-                        'Sandese Aate Hai Border',
-                        'Jai Ho AR Rahman',
-                        'Des Rangila Fanaa',
-                        'Kandhon Se Milte Hain Kandhe',
-                        'Aisa Des Hai Mera Veer Zaara',
-                        'Vande Mataram Revival AR Rahman'
-                    ];
-                    let songs = [];
-                    for (const q of searchTerms) {
-                        try {
-                            const res = await jiosaavnAPI.searchSongs(q, 1);
-                            if (res && res[0] && !songs.some(s => s.id === res[0].id)) {
-                                songs.push(res[0]);
-                            }
-                        } catch (e) {}
-                    }
-                    if (songs.length > 0) {
-                        state.playlists[playlistName] = songs;
-                        state.playlistStyles[playlistName] = {
-                            color: '#f97316',
-                            icon: 'flag',
-                            shape: 'rounded',
-                            shapeParams: { cornerRadius: 20 }
-                        };
-                        localStorage.setItem('playlists', JSON.stringify(state.playlists));
-                        localStorage.setItem('playlistStyles', JSON.stringify(state.playlistStyles));
-                        ui.renderPlaylists();
-                    }
-                }
-            },
-            playIndependencePlaylist: async () => {
-                const playlistName = 'Independence Day Special 🇮🇳';
-                if (!state.playlists[playlistName] || state.playlists[playlistName].length === 0) {
-                    await homeView.ensureIndependenceDayPlaylist();
-                }
-                const songs = state.playlists[playlistName] || [];
-                if (songs.length > 0) {
-                    state.queue = [...songs];
-                    state.userQueue = [];
-                    state.idx = 0;
-                    ui.renderQueue();
-                    player.playDirect(songs[0]);
-                    if (deviceMode.isMobileUI()) ui.toggleMobilePlayer(true);
-                    else if (!state.queueExpanded) ui.toggleQueue();
-                }
-            },
-            queueIndependencePlaylist: async () => {
-                const playlistName = 'Independence Day Special 🇮🇳';
-                if (!state.playlists[playlistName] || state.playlists[playlistName].length === 0) {
-                    await homeView.ensureIndependenceDayPlaylist();
-                }
-                const songs = state.playlists[playlistName] || [];
-                if (songs.length > 0) {
-                    state.queue = [...songs];
-                    state.userQueue = [];
-                    state.idx = state.currentTrack ? -1 : 0;
-                    ui.renderQueue();
-                    persist.save();
-                    if (!state.queueExpanded) ui.toggleQueue();
-                }
-            },
             init: async () => {
                 stripTouchHoverClasses();
                 ui.updateProfileUI();
@@ -3400,7 +3329,6 @@
                 
                 ui.renderPlaylists(); ui.renderLibraryLists(); 
                 homeView.renderDiscoverSection();
-                homeView.ensureIndependenceDayPlaylist();
                 const isNewUser = state.playHistory.length === 0;
                 if (isNewUser) {
                     document.getElementById('section-trending').classList.remove('hidden');
