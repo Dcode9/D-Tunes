@@ -553,21 +553,46 @@
             return normalized;
         };
 
+        const safeStorage = {
+            get: (key, fallback = null) => {
+                try {
+                    const v = localStorage.getItem(key);
+                    return v !== null && v !== undefined ? v : fallback;
+                } catch (_) {
+                    return fallback;
+                }
+            },
+            getJSON: (key, fallback = null) => {
+                try {
+                    const v = localStorage.getItem(key);
+                    return v ? JSON.parse(v) : fallback;
+                } catch (_) {
+                    return fallback;
+                }
+            },
+            set: (key, val) => {
+                try { localStorage.setItem(key, typeof val === 'string' ? val : JSON.stringify(val)); } catch (_) {}
+            },
+            remove: (key) => {
+                try { localStorage.removeItem(key); } catch (_) {}
+            }
+        };
+
         const state = { 
             queue: [], userQueue: [], idx: -1, playing: false, loading: false, loaded: false,
-            shuffle: localStorage.getItem('playShuffle') === 'true',
-            repeat: parseInt(localStorage.getItem('playRepeat') || '0', 10),
+            shuffle: safeStorage.get('playShuffle') === 'true',
+            repeat: parseInt(safeStorage.get('playRepeat', '0'), 10) || 0,
             currentTrack: null,
-            likedIds: JSON.parse(localStorage.getItem('likedIds') || '[]'),
-            libraryIds: JSON.parse(localStorage.getItem('libraryIds') || '[]'),
-            likedArtists: JSON.parse(localStorage.getItem('likedArtists') || '[]'),
-            playHistory: JSON.parse(localStorage.getItem('playHistory') || '[]'),
-            artistPlayCounts: JSON.parse(localStorage.getItem('artistPlayCounts') || '{}'),
-            playlists: JSON.parse(localStorage.getItem('playlists') || '{}'),
-            playlistStyles: JSON.parse(localStorage.getItem('playlistStyles') || '{}'),
-            username: localStorage.getItem('username') || 'Guest User',
-            quality: localStorage.getItem('audioQuality') || 'high',
-            equalizer: normalizeEqualizerSettings(JSON.parse(localStorage.getItem('equalizerSettings') || '{}')),
+            likedIds: safeStorage.getJSON('likedIds', []),
+            libraryIds: safeStorage.getJSON('libraryIds', []),
+            likedArtists: safeStorage.getJSON('likedArtists', []),
+            playHistory: safeStorage.getJSON('playHistory', []),
+            artistPlayCounts: safeStorage.getJSON('artistPlayCounts', {}),
+            playlists: safeStorage.getJSON('playlists', {}),
+            playlistStyles: safeStorage.getJSON('playlistStyles', {}),
+            username: safeStorage.get('username', 'Guest User'),
+            quality: safeStorage.get('audioQuality', 'high'),
+            equalizer: normalizeEqualizerSettings(safeStorage.getJSON('equalizerSettings', {})),
             forYouSongs: [],
             searchDebounce: null, hoverProgress: -1, lastHoverProgress: 0.5, isDragging: false, 
             upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false, nextTrackPreloadId: null,

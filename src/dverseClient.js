@@ -2,8 +2,78 @@
   const SUPABASE_URL = window.DVERSE_SUPABASE_URL || 'https://gmwieijbrrztukqpfwkg.supabase.co';
   const SUPABASE_ANON_KEY = window.DVERSE_SUPABASE_ANON_KEY || 'sb_publishable_KX3MYtV84QJJdy9bPDuMEA_V99sLKSE';
 
+  // Resilient multi-storage adapter (localStorage + sessionStorage + cookies + in-memory fallback for iOS WebKit/PWA)
+  const memoryStorage = new Map();
+
+  function getCookie(name) {
+    if (typeof document === 'undefined') return null;
+    const match = document.cookie.match(new RegExp('(?:^|;\\s*)' + encodeURIComponent(name) + '=([^;]*)'));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  function setCookie(name, value, days = 365) {
+    if (typeof document === 'undefined') return;
+    const expires = new Date(Date.now() + days * 864e5).toUTCString();
+    document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax; Secure`;
+  }
+
+  function deleteCookie(name) {
+    if (typeof document === 'undefined') return;
+    document.cookie = `${encodeURIComponent(name)}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax; Secure`;
+  }
+
+  const universalStorage = {
+    getItem: (key) => {
+      if (memoryStorage.has(key)) return memoryStorage.get(key);
+      try {
+        const val = localStorage.getItem(key);
+        if (val !== null && val !== undefined) {
+          memoryStorage.set(key, val);
+          return val;
+        }
+      } catch (_) {}
+      try {
+        const val = sessionStorage.getItem(key);
+        if (val !== null && val !== undefined) {
+          memoryStorage.set(key, val);
+          return val;
+        }
+      } catch (_) {}
+      try {
+        const val = getCookie(key);
+        if (val !== null && val !== undefined) {
+          memoryStorage.set(key, val);
+          return val;
+        }
+      } catch (_) {}
+      return null;
+    },
+    setItem: (key, value) => {
+      memoryStorage.set(key, value);
+      try { localStorage.setItem(key, value); } catch (_) {}
+      try { sessionStorage.setItem(key, value); } catch (_) {}
+      try { setCookie(key, value); } catch (_) {}
+    },
+    removeItem: (key) => {
+      memoryStorage.delete(key);
+      try { localStorage.removeItem(key); } catch (_) {}
+      try { sessionStorage.removeItem(key); } catch (_) {}
+      try { deleteCookie(key); } catch (_) {}
+    }
+  };
+
   const ready = Boolean(window.supabase && SUPABASE_ANON_KEY);
-  const client = ready ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+  const client = ready ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      storage: universalStorage,
+      storageKey: 'dverse_supabase_auth_token',
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: 'pkce'
+    }
+  }) : null;
+
   const PORTAL_ORIGIN = (window.DVERSE_PORTAL_ORIGIN || 'https://dverse.fun').replace(/\/$/, '');
   const AUTH_BRIDGE_URL = `${PORTAL_ORIGIN}/auth-bridge.html`;
   const authRedirectUrl = () => `${window.location.origin}/`;
@@ -30,7 +100,7 @@
       searchParams.delete('dverse_session');
       const cleanSearch = searchParams.toString();
       const cleanUrl = `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`;
-      window.history.replaceState({}, document.title, cleanUrl);
+      try { window.history.replaceState({}, document.title, cleanUrl); } catch (_) {}
       try {
         return base64UrlDecode(encodedSession);
       } catch (err) {
@@ -47,7 +117,7 @@
 
       const cleanHash = params.toString();
       const cleanUrl = `${window.location.pathname}${window.location.search}${cleanHash ? `#${cleanHash}` : ''}`;
-      window.history.replaceState({}, document.title, cleanUrl);
+      try { window.history.replaceState({}, document.title, cleanUrl); } catch (_) {}
 
       if (encodedSession) {
         try {
@@ -64,7 +134,6 @@
       const accessToken = hashParams.get('access_token');
       const refreshToken = hashParams.get('refresh_token');
       if (accessToken && refreshToken) {
-        window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
         return {
           access_token: accessToken,
           refresh_token: refreshToken
@@ -89,10 +158,15 @@
         if (!error && data?.session) {
           currentSession = data.session;
           try {
-            localStorage.setItem('dverse_session_cache', JSON.stringify({
+            universalStorage.setItem('dverse_session_cache', JSON.stringify({
               access_token: data.session.access_token,
               refresh_token: data.session.refresh_token
             }));
+          } catch (_) {}
+          try {
+            if (window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('dverse_session='))) {
+              window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
+            }
           } catch (_) {}
           syncSessionToPortal(currentSession);
           return currentSession;
@@ -108,13 +182,13 @@
     if (code && typeof client.auth.exchangeCodeForSession === 'function') {
       searchParams.delete('code');
       const cleanSearch = searchParams.toString();
-      window.history.replaceState({}, document.title, `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`);
+      try { window.history.replaceState({}, document.title, `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`); } catch (_) {}
       try {
         const { data, error } = await client.auth.exchangeCodeForSession(code);
         if (!error && data?.session) {
           currentSession = data.session;
           try {
-            localStorage.setItem('dverse_session_cache', JSON.stringify({
+            universalStorage.setItem('dverse_session_cache', JSON.stringify({
               access_token: data.session.access_token,
               refresh_token: data.session.refresh_token
             }));
