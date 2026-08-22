@@ -3742,42 +3742,32 @@
             }, { passive: true });
             albumArtSwipeTarget?.addEventListener('touchcancel', resetAlbumSwipe, { passive: true });
 
-            // Expanded mobile player: let the sheet scroll to the queue, but collapse
-            // when the user returns to the top or pulls down from the top.
+            // Expanded mobile player: pull down on header to collapse
             const playerFooter = document.getElementById('player-footer');
-            let expandedPlayerLastScrollTop = 0;
+            const mobileHeader = document.querySelector('.mobile-player-header');
             let expandedPlayerTouchStartY = 0;
-            let expandedPlayerStartedAtTop = false;
 
             const resetExpandedPlayerScroll = () => {
-                expandedPlayerLastScrollTop = 0;
                 if (playerFooter) playerFooter.scrollTop = 0;
             };
 
-            playerFooter?.addEventListener('scroll', () => {
-                if (!deviceMode.isMobileUI() || !document.body.classList.contains('mobile-player-open')) return;
-                const currentTop = playerFooter.scrollTop;
-                if (expandedPlayerLastScrollTop > 72 && currentTop <= 2) {
-                    ui.toggleMobilePlayer(false);
-                    return;
-                }
-                expandedPlayerLastScrollTop = currentTop;
-            }, {passive: true});
-
-            playerFooter?.addEventListener('touchstart', e => {
+            mobileHeader?.addEventListener('touchstart', e => {
                 if (!deviceMode.isMobileUI() || !document.body.classList.contains('mobile-player-open')) return;
                 expandedPlayerTouchStartY = e.changedTouches[0].clientY;
-                expandedPlayerStartedAtTop = playerFooter.scrollTop <= 2;
             }, {passive: true});
 
-            playerFooter?.addEventListener('touchmove', e => {
-                if (!deviceMode.isMobileUI() || !document.body.classList.contains('mobile-player-open') || !expandedPlayerStartedAtTop) return;
+            mobileHeader?.addEventListener('touchmove', e => {
+                if (!deviceMode.isMobileUI() || !document.body.classList.contains('mobile-player-open') || !expandedPlayerTouchStartY) return;
                 const pullDistance = e.changedTouches[0].clientY - expandedPlayerTouchStartY;
-                if (pullDistance > 58) {
-                    expandedPlayerStartedAtTop = false;
+                if (pullDistance > 55) {
+                    expandedPlayerTouchStartY = 0;
                     haptics.pulse('soft');
                     ui.toggleMobilePlayer(false);
                 }
+            }, {passive: true});
+
+            mobileHeader?.addEventListener('touchend', () => {
+                expandedPlayerTouchStartY = 0;
             }, {passive: true});
 
             document.addEventListener('mobile-player-opened', resetExpandedPlayerScroll);

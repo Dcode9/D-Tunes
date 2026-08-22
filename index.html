@@ -5,8 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
     <title>D'Tunes</title>
     <link rel="icon" type="image/svg+xml" href="DTunes.svg">
-    <link rel="icon" type="image/png" href="assets/DTunes_logo.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="assets/DTunes_logo.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/DTunes_logo.png">
     <link rel="apple-touch-icon" href="assets/DTunes_logo.png">
+    <link rel="apple-touch-icon-precomposed" href="assets/DTunes_logo.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="D'Tunes">
+    <meta name="application-name" content="D'Tunes">
+    <meta name="theme-color" content="#050505">
+    <link rel="manifest" href="manifest.json">
     
     <!-- Libraries -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -14,7 +23,6 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
     <script src="src/preload.js"></script>
-
 
     <link rel="stylesheet" href="src/styles.css">
 
@@ -271,34 +279,46 @@
         
         <!-- ================= HOME VIEW ================= -->
         <div id="view-home">
-            <section id="section-for-you" class="mb-12 hidden relative">
-                <div class="flex items-center justify-between px-4 md:px-8 mb-6 relative z-20">
+            <section id="section-for-you" class="mb-12 hidden">
+                <div class="flex items-center justify-between px-4 md:px-8 mb-6">
                     <div>
                         <h2 class="text-xl md:text-2xl font-bold text-white">For You</h2>
                         <p class="text-xs text-gray-400 mt-1">Rule-based picks from your listening history.</p>
                     </div>
                     <button onclick="homeView.loadGeneratedPlaylist('for-you')" class="text-xs font-bold px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 transition">Refresh</button>
                 </div>
-                <div class="row-blur-left"></div><div id="for-you-grid" class="horizontal-scroll"></div><div class="row-blur-right"></div>
-                <div id="for-you-actions" class="hidden px-4 md:px-8 mt-5 flex flex-wrap items-center gap-3 relative z-20">
+                <div class="relative group/track">
+                    <div class="row-blur-left"></div>
+                    <div id="for-you-grid" class="horizontal-scroll"></div>
+                    <div class="row-blur-right"></div>
+                </div>
+                <div id="for-you-actions" class="hidden px-4 md:px-8 mt-5 flex flex-wrap items-center gap-3">
                     <button onclick="homeView.playForYou()" class="px-5 py-2.5 rounded-full bg-[var(--accent-color)] text-black font-bold hover:scale-105 transition shadow-lg shadow-cyan-500/20">Autoplay For You</button>
                     <button onclick="homeView.queueForYou()" class="px-5 py-2.5 rounded-full bg-white/10 text-white font-bold hover:bg-white/20 transition">Add to Queue</button>
                     <span id="for-you-count" class="text-xs text-gray-400"></span>
                 </div>
             </section>
 
-            <section id="section-trending" class="mb-12 hidden relative">
-                <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8 relative z-20">Trending Right Now</h2>
-                <div class="row-blur-left"></div><div id="trending-grid" class="horizontal-scroll"></div><div class="row-blur-right"></div>
+            <section id="section-trending" class="mb-12 hidden">
+                <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8">Trending Right Now</h2>
+                <div class="relative group/track">
+                    <div class="row-blur-left"></div>
+                    <div id="trending-grid" class="horizontal-scroll"></div>
+                    <div class="row-blur-right"></div>
+                </div>
             </section>
 
-            <section id="section-quick-picks" class="mb-12 hidden relative">
-                <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8 relative z-20">Quick Picks For You</h2>
-                <div class="row-blur-left"></div><div id="quick-picks-grid" class="horizontal-scroll"></div><div class="row-blur-right"></div>
+            <section id="section-quick-picks" class="mb-12 hidden">
+                <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8">Quick Picks For You</h2>
+                <div class="relative group/track">
+                    <div class="row-blur-left"></div>
+                    <div id="quick-picks-grid" class="horizontal-scroll"></div>
+                    <div class="row-blur-right"></div>
+                </div>
             </section>
 
-            <section id="section-discover" class="mb-12 relative">
-                <div class="flex items-center justify-between px-4 md:px-8 mb-6 relative z-20">
+            <section id="section-discover" class="mb-12">
+                <div class="flex items-center justify-between px-4 md:px-8 mb-6">
                     <div>
                         <h2 class="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
                             <svg class="w-6 h-6 text-[var(--accent-color)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
@@ -321,12 +341,20 @@
                         </button>
                     </div>
                 </div>
-                <div class="row-blur-left"></div><div id="discover-grid" class="horizontal-scroll"></div><div class="row-blur-right"></div>
+                <div class="relative group/track">
+                    <div class="row-blur-left"></div>
+                    <div id="discover-grid" class="horizontal-scroll"></div>
+                    <div class="row-blur-right"></div>
+                </div>
             </section>
 
-            <section id="section-recent" class="mb-12 hidden relative">
-                <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8 relative z-20">Recently Played</h2>
-                <div class="row-blur-left"></div><div id="recent-grid" class="horizontal-scroll"></div><div class="row-blur-right"></div>
+            <section id="section-recent" class="mb-12 hidden">
+                <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8">Recently Played</h2>
+                <div class="relative group/track">
+                    <div class="row-blur-left"></div>
+                    <div id="recent-grid" class="horizontal-scroll"></div>
+                    <div class="row-blur-right"></div>
+                </div>
             </section>
 
         </div>
@@ -378,13 +406,21 @@
                     </div>
                 </div>
 
-                <div class="mb-12 relative">
-                    <h3 class="text-lg md:text-xl font-bold text-gray-300 mb-4 px-4 md:px-8 relative z-20">Albums</h3>
-                    <div class="row-blur-left" style="top: 48px"></div><div id="search-albums-grid" class="horizontal-scroll"></div><div class="row-blur-right" style="top: 48px"></div>
+                <div class="mb-12">
+                    <h3 class="text-lg md:text-xl font-bold text-gray-300 mb-4 px-4 md:px-8">Albums</h3>
+                    <div class="relative group/track">
+                        <div class="row-blur-left"></div>
+                        <div id="search-albums-grid" class="horizontal-scroll"></div>
+                        <div class="row-blur-right"></div>
+                    </div>
                 </div>
-                <div class="mb-12 relative">
-                    <h3 class="text-lg md:text-xl font-bold text-gray-300 mb-4 px-4 md:px-8 relative z-20">Artists</h3>
-                    <div class="row-blur-left" style="top: 48px"></div><div id="search-artists-grid" class="horizontal-scroll"></div><div class="row-blur-right" style="top: 48px"></div>
+                <div class="mb-12">
+                    <h3 class="text-lg md:text-xl font-bold text-gray-300 mb-4 px-4 md:px-8">Artists</h3>
+                    <div class="relative group/track">
+                        <div class="row-blur-left"></div>
+                        <div id="search-artists-grid" class="horizontal-scroll"></div>
+                        <div class="row-blur-right"></div>
+                    </div>
                 </div>
             </div>
         </div>
