@@ -4047,7 +4047,11 @@
 
             const mainContainer = document.getElementById('main-container');
             mainContainer?.addEventListener('scroll', onScrollActivity, { passive: true });
-            window.addEventListener('scroll', onScrollActivity, { passive: true, capture: true });
+            window.addEventListener('scroll', (e) => {
+                if (e.target === document || e.target === document.documentElement || e.target === document.body || e.target === window) {
+                    onScrollActivity();
+                }
+            }, { passive: true });
 
             window.addEventListener('resize', () => { deviceMode.apply(); ui.updateMobileSearchPosition(); updateMarquees(); });
         }

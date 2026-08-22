@@ -137,6 +137,8 @@
         /* --- Universal Glass & Blur System --- */
         .glass-panel {
             background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 255, 255, 0.08);
             transform: translateZ(0);
             backface-visibility: hidden;
@@ -198,6 +200,8 @@
         .song-pill {
             display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem; padding-right: 1rem;
             background: rgba(18, 18, 22, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 1rem; cursor: pointer;
             transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s ease, background-color 0.2s ease;
             user-select: none;
@@ -228,6 +232,13 @@
 
         body.is-scrolling .marquee-text {
             animation-play-state: paused !important;
+        }
+        body.is-scrolling .row-blur-left,
+        body.is-scrolling .row-blur-right {
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            opacity: 0;
+            pointer-events: none !important;
         }
         body.is-scrolling * {
             pointer-events: none !important;
@@ -272,16 +283,22 @@
             transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
         }
 
-        /* --- Horizontal Scrolling Edge Fades --- */
+        /* --- Horizontal Scrolling Edge Blurs --- */
         .row-blur-left {
             position: absolute; left: 0; top: 48px; bottom: 16px; width: 48px; z-index: 10; pointer-events: none;
-            background: linear-gradient(to right, #050505 0%, transparent 100%);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            mask-image: linear-gradient(to right, black 25%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to right, black 25%, transparent 100%);
             transform: translateZ(0);
+            transition: opacity 0.15s ease;
         }
         .row-blur-right {
             position: absolute; right: 0; top: 48px; bottom: 16px; width: 48px; z-index: 10; pointer-events: none;
-            background: linear-gradient(to left, #050505 0%, transparent 100%);
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+            mask-image: linear-gradient(to left, black 25%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to left, black 25%, transparent 100%);
             transform: translateZ(0);
+            transition: opacity 0.15s ease;
         }
 
         /* --- Search Bar & Smooth Dropdown --- */
