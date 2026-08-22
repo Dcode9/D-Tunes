@@ -160,41 +160,51 @@
             }, true);
         };
 
+        let marqueeUpdateScheduled = false;
         const updateMarquees = () => {
-            if (typeof window.__stripTouchHoverClasses === 'function') window.__stripTouchHoverClasses();
-            document.querySelectorAll('.marquee-container').forEach(container => {
-                if (container.offsetParent === null) return;
-                const text = container.querySelector('.marquee-text');
-                if (!text) return;
+            if (marqueeUpdateScheduled) return;
+            marqueeUpdateScheduled = true;
+            requestAnimationFrame(() => {
+                marqueeUpdateScheduled = false;
+                if (typeof window.__stripTouchHoverClasses === 'function') window.__stripTouchHoverClasses();
+                const containers = document.querySelectorAll('.marquee-container');
+                const updates = [];
 
-                const scrollW = text.scrollWidth;
-                const clientW = container.clientWidth;
+                for (let i = 0; i < containers.length; i++) {
+                    const container = containers[i];
+                    if (container.offsetParent === null) continue;
+                    const text = container.querySelector('.marquee-text');
+                    if (!text) continue;
 
-                if (text.classList.contains('is-overflowing') && 
-                    text.dataset.scrollWidth === String(scrollW) && 
-                    container.dataset.clientWidth === String(clientW)) {
-                    return;
+                    const scrollW = text.scrollWidth;
+                    const clientW = container.clientWidth;
+
+                    if (text.classList.contains('is-overflowing') && 
+                        text.dataset.scrollWidth === String(scrollW) && 
+                        container.dataset.clientWidth === String(clientW)) {
+                        continue;
+                    }
+
+                    updates.push({ container, text, scrollW, clientW });
                 }
 
-                text.style.animation = 'none';
-                text.classList.remove('is-overflowing');
-                container.classList.remove('is-overflowing');
-
-                if (Math.ceil(scrollW) > Math.ceil(clientW) + 2) {
-                    const dist = Math.ceil(scrollW - clientW + 8);
-                    const dur = Math.max(3.5, dist / 18);
-                    text.style.setProperty('--scroll-dist', `-${dist}px`);
-                    text.style.setProperty('--scroll-dur', `${dur}s`);
-                    text.dataset.scrollWidth = String(scrollW);
-                    container.dataset.clientWidth = String(clientW);
-
-                    void text.offsetWidth;
-                    text.style.animation = '';
-                    text.classList.add('is-overflowing');
-                    container.classList.add('is-overflowing');
-                } else {
-                    text.dataset.scrollWidth = String(scrollW);
-                    container.dataset.clientWidth = String(clientW);
+                for (let i = 0; i < updates.length; i++) {
+                    const { container, text, scrollW, clientW } = updates[i];
+                    if (Math.ceil(scrollW) > Math.ceil(clientW) + 2) {
+                        const dist = Math.ceil(scrollW - clientW + 8);
+                        const dur = Math.max(3.5, dist / 18);
+                        text.style.setProperty('--scroll-dist', `-${dist}px`);
+                        text.style.setProperty('--scroll-dur', `${dur}s`);
+                        text.dataset.scrollWidth = String(scrollW);
+                        container.dataset.clientWidth = String(clientW);
+                        text.classList.add('is-overflowing');
+                        container.classList.add('is-overflowing');
+                    } else {
+                        text.classList.remove('is-overflowing');
+                        container.classList.remove('is-overflowing');
+                        text.dataset.scrollWidth = String(scrollW);
+                        container.dataset.clientWidth = String(clientW);
+                    }
                 }
             });
         };
@@ -4023,6 +4033,21 @@
 
             ctxMenu.init(); searchManager.init(); persist.load(); ui.updateRepeatBtn(); ui.updateShuffleBtn(); homeView.init(); cloudLibrary.init(); requestAnimationFrame(viz.render);
             deviceMode.apply();
+
+            let scrollDebounceTimer = null;
+            const onScrollActivity = () => {
+                if (!document.body.classList.contains('is-scrolling')) {
+                    document.body.classList.add('is-scrolling');
+                }
+                clearTimeout(scrollDebounceTimer);
+                scrollDebounceTimer = setTimeout(() => {
+                    document.body.classList.remove('is-scrolling');
+                }, 120);
+            };
+
+            const mainContainer = document.getElementById('main-container');
+            mainContainer?.addEventListener('scroll', onScrollActivity, { passive: true });
+            window.addEventListener('scroll', onScrollActivity, { passive: true, capture: true });
 
             window.addEventListener('resize', () => { deviceMode.apply(); ui.updateMobileSearchPosition(); updateMarquees(); });
         }

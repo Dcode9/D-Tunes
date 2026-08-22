@@ -137,8 +137,6 @@
         /* --- Universal Glass & Blur System --- */
         .glass-panel {
             background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 255, 255, 0.08);
             transform: translateZ(0);
             backface-visibility: hidden;
@@ -187,7 +185,7 @@
             mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
             -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
         }
-        .marquee-text { display: inline-block; white-space: nowrap; will-change: transform; transform: translateZ(0); }
+        .marquee-text { display: inline-block; white-space: nowrap; transform: translateZ(0); }
         .marquee-text.is-overflowing { animation: js-slide-text var(--scroll-dur, 5s) linear infinite alternate; }
         .hover-pause:hover .marquee-text { animation-play-state: paused !important; }
         
@@ -200,25 +198,53 @@
         .song-pill {
             display: flex; align-items: center; gap: 0.75rem; padding: 0.5rem; padding-right: 1rem;
             background: rgba(18, 18, 22, 0.85);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 1rem; cursor: pointer;
             transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s ease, background-color 0.2s ease;
             user-select: none;
             box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2), 0 2px 4px -1px rgba(0,0,0,0.1);
             transform: translateZ(0);
             backface-visibility: hidden;
+            contain: layout style;
         }
         .song-pill:hover { border-color: rgba(255, 255, 255, 0.3); background: rgba(26, 26, 32, 0.9); }
         .song-pill img { width: 3rem; height: 3rem; border-radius: 0.75rem; object-fit: cover; flex-shrink: 0; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); }
         .song-pill-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
 
-        /* --- Horizontal Scroll Logic --- */
+        /* --- Main & Horizontal Scroll Performance Logic --- */
+        #main-container {
+            height: 100dvh;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-y: contain;
+            contain: layout paint;
+            transform: translateZ(0);
+        }
+
+        #view-home > section,
+        #view-library > section {
+            content-visibility: auto;
+            contain-intrinsic-size: auto 280px;
+        }
+
+        body.is-scrolling .marquee-text {
+            animation-play-state: paused !important;
+        }
+        body.is-scrolling * {
+            pointer-events: none !important;
+        }
+        body.is-scrolling #main-container,
+        body.is-scrolling .horizontal-scroll,
+        body.is-scrolling #player-footer {
+            pointer-events: auto !important;
+        }
+
         .horizontal-scroll {
             display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 1rem;
             scroll-behavior: smooth; scrollbar-width: none; -ms-overflow-style: none; padding-left: 2rem; padding-right: 2rem;
             -webkit-overflow-scrolling: touch;
             overscroll-behavior-x: contain;
+            contain: layout paint;
+            transform: translateZ(0);
         }
         .horizontal-scroll::-webkit-scrollbar { display: none; }
         .scroll-card {
@@ -228,7 +254,7 @@
             user-select: none;
             transform: translateZ(0);
             backface-visibility: hidden;
-            will-change: transform;
+            contain: layout style;
             transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.22s ease;
         }
         @media (min-width: 768px) { .scroll-card { flex-basis: calc((100% - (4 * 1rem)) / 4.5); } }
@@ -246,19 +272,15 @@
             transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
         }
 
-        /* --- Horizontal Scrolling Edge Blurs --- */
+        /* --- Horizontal Scrolling Edge Fades --- */
         .row-blur-left {
             position: absolute; left: 0; top: 48px; bottom: 16px; width: 48px; z-index: 10; pointer-events: none;
-            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-            mask-image: linear-gradient(to right, black 25%, transparent 100%);
-            -webkit-mask-image: linear-gradient(to right, black 25%, transparent 100%);
+            background: linear-gradient(to right, #050505 0%, transparent 100%);
             transform: translateZ(0);
         }
         .row-blur-right {
             position: absolute; right: 0; top: 48px; bottom: 16px; width: 48px; z-index: 10; pointer-events: none;
-            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
-            mask-image: linear-gradient(to left, black 25%, transparent 100%);
-            -webkit-mask-image: linear-gradient(to left, black 25%, transparent 100%);
+            background: linear-gradient(to left, #050505 0%, transparent 100%);
             transform: translateZ(0);
         }
 
