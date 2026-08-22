@@ -305,147 +305,202 @@
   }
 
   function normalizeTrack(song) {
+    const id = String(typeof song === 'object' ? (song?.id || '') : (song || ''));
     return {
-      id: String(song.id),
-      title: song.name || song.title || 'Unknown',
-      artist: song.artist || null,
-      album: song.album || null,
-      duration_ms: song.duration ? Number(song.duration) * 1000 : null,
-      artwork_url: song.img || song.artwork_url || null,
-      source: song.source || 'jiosaavn',
-      metadata: song
+      id,
+      title: song?.name || song?.title || 'Unknown Track',
+      artist: song?.artist || null,
+      album: song?.album || null,
+      duration_ms: song?.duration ? Number(song.duration) * 1000 : null,
+      artwork_url: song?.img || song?.artwork_url || null,
+      source: song?.source || 'jiosaavn',
+      metadata: typeof song === 'object' ? song : {}
     };
   }
 
-  function songFromTrack(track) {
-    if (!track) return null;
+  function songFromTrack(track, fallbackId = null) {
+    const t = Array.isArray(track) ? track[0] : track;
+    const effectiveId = String(t?.id || fallbackId || '');
+    if (!effectiveId) return null;
+    if (!t) {
+      return {
+        id: effectiveId,
+        name: 'Track ' + effectiveId,
+        title: 'Track ' + effectiveId,
+        artist: '',
+        album: '',
+        img: '',
+        source: 'jiosaavn'
+      };
+    }
     return {
-      id: track.id,
-      name: track.metadata?.name || track.metadata?.title || track.title || 'Unknown',
-      title: track.metadata?.title || track.title || 'Unknown',
-      artist: track.metadata?.artist || track.artist || '',
-      album: track.metadata?.album || track.album || '',
-      duration: track.metadata?.duration || (track.duration_ms ? Math.round(track.duration_ms / 1000) : undefined),
-      img: track.metadata?.img || track.artwork_url || '',
-      source: track.source || track.metadata?.source || 'jiosaavn',
-      ...track.metadata
+      id: effectiveId,
+      name: t.metadata?.name || t.metadata?.title || t.title || 'Unknown Track',
+      title: t.metadata?.title || t.title || 'Unknown Track',
+      artist: t.metadata?.artist || t.artist || '',
+      album: t.metadata?.album || t.album || '',
+      duration: t.metadata?.duration || (t.duration_ms ? Math.round(t.duration_ms / 1000) : undefined),
+      img: t.metadata?.img || t.artwork_url || '',
+      source: t.source || t.metadata?.source || 'jiosaavn',
+      ...(t.metadata || {})
     };
   }
 
   async function upsertTrack(song) {
-    if (!client || !song || !song.id) return null;
+    if (!client || !song) return null;
     const track = normalizeTrack(song);
-    const { error } = await client
-      .from('dtunes_tracks')
-      .upsert(track, { onConflict: 'id', ignoreDuplicates: true });
-    if (error) throw error;
+    if (!track.id) return null;
+    try {
+      const { error } = await client
+        .from('dtunes_tracks')
+        .upsert(track, { onConflict: 'id', ignoreDuplicates: true });
+      if (error) console.warn('[DVerse] Track upsert warning:', error.message);
+    } catch (_) {}
     return track;
   }
 
   async function recordPlay(song, context = {}) {
-    if (!client || !song || !song.id) return;
-    const session = await getSession();
-    if (!session) return;
+    if (!client || !song) return;
+    const session = currentSession || await getSession();
+    if (!session?.user?.id) return;
     const track = await upsertTrack(song);
     const endedAt = context.ended_at || context.played_at || new Date().toISOString();
     const durationMs = context.duration_ms ?? context.durationMs ?? null;
     const startedAt = context.started_at || (durationMs
       ? new Date(new Date(endedAt).getTime() - durationMs).toISOString()
       : null);
-    const { error } = await client.from('dtunes_history').insert({
-      user_id: session.user.id,
-      track_id: track.id,
-      played_at: endedAt,
-      duration_ms: durationMs,
-      started_at: startedAt,
-      ended_at: endedAt,
-      client: 'dtunes-web',
-      context: { source: 'dtunes-web', ...context }
-    });
-    if (error) throw error;
+    try {
+      const { error } = await client.from('dtunes_history').insert({
+        user_id: session.user.id,
+        track_id: track?.id || String(song.id || song),
+        played_at: endedAt,
+        duration_ms: durationMs,
+        started_at: startedAt,
+        ended_at: endedAt,
+        client: 'dtunes-web',
+        context: { source: 'dtunes-web', ...context }
+      });
+      if (error) console.warn('[DVerse] recordPlay error:', error.message);
+    } catch (err) {
+      console.warn('[DVerse] recordPlay failed:', err);
+    }
   }
 
   async function listHistory(limit = 100) {
     if (!client) return [];
-    const session = await getSession();
-    if (!session) return [];
-    const { data, error } = await client
-      .from('dtunes_history')
-      .select('played_at, context, dtunes_tracks(*)')
-      .eq('user_id', session.user.id)
-      .order('played_at', { ascending: false })
-      .limit(limit);
-    if (error) throw error;
-    return (data || []).map((row) => songFromTrack(row.dtunes_tracks)).filter(Boolean);
+    const session = currentSession || await getSession();
+    if (!session?.user?.id) return [];
+    try {
+      const { data, error } = await client
+        .from('dtunes_history')
+        .select('played_at, track_id, context, dtunes_tracks(*)')
+        .eq('user_id', session.user.id)
+        .order('played_at', { ascending: false })
+        .limit(limit);
+      if (error) {
+        console.warn('[DVerse] listHistory select error:', error.message);
+        return [];
+      }
+      return (data || []).map((row) => songFromTrack(row.dtunes_tracks, row.track_id)).filter(Boolean);
+    } catch (err) {
+      console.warn('[DVerse] listHistory exception:', err);
+      return [];
+    }
   }
 
   async function setLiked(song, liked) {
-    if (!client || !song || !song.id) return;
-    const session = await getSession();
-    if (!session) return;
+    if (!client || !song) return;
+    const session = currentSession || await getSession();
+    if (!session?.user?.id) return;
     const track = await upsertTrack(song);
+    const trackId = track?.id || String(song.id || song);
     const query = client.from('dtunes_likes');
     const { error } = liked
-      ? await query.upsert({ user_id: session.user.id, track_id: track.id })
-      : await query.delete().eq('user_id', session.user.id).eq('track_id', track.id);
-    if (error) throw error;
+      ? await query.upsert({ user_id: session.user.id, track_id: trackId })
+      : await query.delete().eq('user_id', session.user.id).eq('track_id', trackId);
+    if (error) console.warn('[DVerse] setLiked error:', error.message);
   }
 
   async function listLikes() {
     if (!client) return [];
-    const session = await getSession();
-    if (!session) return [];
-    const { data, error } = await client
-      .from('dtunes_likes')
-      .select('created_at, dtunes_tracks(*)')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return (data || []).map((row) => songFromTrack(row.dtunes_tracks)).filter(Boolean);
+    const session = currentSession || await getSession();
+    if (!session?.user?.id) return [];
+    try {
+      const { data, error } = await client
+        .from('dtunes_likes')
+        .select('created_at, track_id, dtunes_tracks(*)')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false });
+      if (error) {
+        console.warn('[DVerse] listLikes select error:', error.message);
+        return [];
+      }
+      return (data || []).map((row) => songFromTrack(row.dtunes_tracks, row.track_id)).filter(Boolean);
+    } catch (err) {
+      console.warn('[DVerse] listLikes exception:', err);
+      return [];
+    }
   }
 
   async function setLibrary(song, inLibrary) {
-    if (!client || !song || !song.id) return;
-    const session = await getSession();
-    if (!session) return;
+    if (!client || !song) return;
+    const session = currentSession || await getSession();
+    if (!session?.user?.id) return;
     const track = await upsertTrack(song);
+    const trackId = track?.id || String(song.id || song);
     const query = client.from('dtunes_library');
     const { error } = inLibrary
-      ? await query.upsert({ user_id: session.user.id, track_id: track.id })
-      : await query.delete().eq('user_id', session.user.id).eq('track_id', track.id);
-    if (error) throw error;
+      ? await query.upsert({ user_id: session.user.id, track_id: trackId })
+      : await query.delete().eq('user_id', session.user.id).eq('track_id', trackId);
+    if (error) console.warn('[DVerse] setLibrary error:', error.message);
   }
 
   async function listLibrary() {
     if (!client) return [];
-    const session = await getSession();
-    if (!session) return [];
-    const { data, error } = await client
-      .from('dtunes_library')
-      .select('created_at, dtunes_tracks(*)')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false });
-    if (error) throw error;
-    return (data || []).map((row) => songFromTrack(row.dtunes_tracks)).filter(Boolean);
+    const session = currentSession || await getSession();
+    if (!session?.user?.id) return [];
+    try {
+      const { data, error } = await client
+        .from('dtunes_library')
+        .select('created_at, track_id, dtunes_tracks(*)')
+        .eq('user_id', session.user.id)
+        .order('created_at', { ascending: false });
+      if (error) {
+        console.warn('[DVerse] listLibrary select error:', error.message);
+        return [];
+      }
+      return (data || []).map((row) => songFromTrack(row.dtunes_tracks, row.track_id)).filter(Boolean);
+    } catch (err) {
+      console.warn('[DVerse] listLibrary exception:', err);
+      return [];
+    }
   }
 
   async function listPlaylists() {
     if (!client) return [];
-    const session = await getSession();
-    if (!session) return [];
-    const { data, error } = await client
-      .from('dtunes_playlists')
-      .select('*, dtunes_playlist_items(position, track_id, dtunes_tracks(*))')
-      .eq('user_id', session.user.id)
-      .order('updated_at', { ascending: false });
-    if (error) throw error;
-    return (data || []).map((playlist) => ({
-      ...playlist,
-      songs: (playlist.dtunes_playlist_items || [])
-        .sort((a, b) => a.position - b.position)
-        .map((item) => songFromTrack(item.dtunes_tracks))
-        .filter(Boolean)
-    }));
+    const session = currentSession || await getSession();
+    if (!session?.user?.id) return [];
+    try {
+      const { data, error } = await client
+        .from('dtunes_playlists')
+        .select('*, dtunes_playlist_items(position, track_id, dtunes_tracks(*))')
+        .eq('user_id', session.user.id)
+        .order('updated_at', { ascending: false });
+      if (error) {
+        console.warn('[DVerse] listPlaylists select error:', error.message);
+        return [];
+      }
+      return (data || []).map((playlist) => ({
+        ...playlist,
+        songs: (playlist.dtunes_playlist_items || [])
+          .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+          .map((item) => songFromTrack(item.dtunes_tracks, item.track_id))
+          .filter(Boolean)
+      }));
+    } catch (err) {
+      console.warn('[DVerse] listPlaylists exception:', err);
+      return [];
+    }
   }
 
   async function findPlaylistByName(name) {

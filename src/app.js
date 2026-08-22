@@ -895,27 +895,39 @@
                     cloudLibrary.setStatus('D\'Verse sync is not configured.');
                     return;
                 }
-                window.dverse.onAuthStateChange((_event, session) => {
+                window.dverse.onAuthStateChange(async (_event, session) => {
                     cloudLibrary.session = session;
                     cloudLibrary.updateUI();
-                    if (session) cloudLibrary.load();
+                    if (session) await cloudLibrary.load();
                 });
                 try {
-                    cloudLibrary.session = await window.dverse.getSession();
+                    const session = await window.dverse.getSession();
+                    cloudLibrary.session = session;
                     cloudLibrary.updateUI();
-                    if (cloudLibrary.session) await cloudLibrary.load();
+                    if (session) await cloudLibrary.load();
                 } catch (error) {
+                    console.warn('[DVerse] Initial session check warning:', error);
                     cloudLibrary.setStatus(error?.message || 'Could not check D\'Verse session.');
                 }
             },
             load: async () => {
-                if (!cloudLibrary.session || cloudLibrary.syncing) return;
+                if (!cloudLibrary.session) {
+                    cloudLibrary.session = await window.dverse.getSession();
+                }
+                if (!cloudLibrary.session) {
+                    cloudLibrary.updateUI();
+                    return;
+                }
+                if (cloudLibrary.syncing) {
+                    cloudLibrary.pendingSync = true;
+                    return;
+                }
                 cloudLibrary.syncing = true;
                 cloudLibrary.setStatus('Syncing your D\'Tunes library...');
                 try {
                     const localSnapshot = cloudLibrary.captureLocalSnapshot();
                     const shouldImportLocal = cloudLibrary.shouldPushLocalSnapshot(localSnapshot);
-                    const [history, likes, library, playlists, playbackState] = await Promise.all([
+                    const [historyRes, likesRes, libraryRes, playlistsRes, playbackRes] = await Promise.allSettled([
                         window.dverse.dtunes.listHistory(),
                         window.dverse.dtunes.listLikes(),
                         window.dverse.dtunes.listLibrary(),
@@ -923,9 +935,22 @@
                         window.dverse.dtunes.getPlaybackState()
                     ]);
 
-                    state.playHistory = cloudLibrary.compactSongs([...(history || []), ...state.playHistory]).slice(0, 100);
-                    state.likedIds = cloudLibrary.compactSongs([...(likes || []), ...state.likedIds]);
-                    state.libraryIds = cloudLibrary.compactSongs([...(library || []), ...state.libraryIds]);
+                    const history = historyRes.status === 'fulfilled' ? historyRes.value : [];
+                    const likes = likesRes.status === 'fulfilled' ? likesRes.value : [];
+                    const library = libraryRes.status === 'fulfilled' ? libraryRes.value : [];
+                    const playlists = playlistsRes.status === 'fulfilled' ? playlistsRes.value : [];
+                    const playbackState = playbackRes.status === 'fulfilled' ? playbackRes.value : null;
+
+                    if (history && history.length > 0) {
+                        state.playHistory = cloudLibrary.compactSongs([...(history || []), ...state.playHistory]).slice(0, 100);
+                    }
+                    if (likes && likes.length > 0) {
+                        state.likedIds = cloudLibrary.compactSongs([...(likes || []), ...state.likedIds]);
+                    }
+                    if (library && library.length > 0) {
+                        state.libraryIds = cloudLibrary.compactSongs([...(library || []), ...state.libraryIds]);
+                    }
+
                     const mergedPlaylists = { ...state.playlists };
                     const mergedStyles = { ...state.playlistStyles };
                     (playlists || []).forEach((playlist) => {
@@ -957,7 +982,7 @@
                     ui.renderLibraryLists();
                     ui.renderHistory();
                     homeView.renderRecentlyPlayed();
-                    if (document.getElementById('view-stats') && !document.getElementById('view-stats').classList.contains('hidden')) {
+                    if (typeof statsView !== 'undefined' && statsView.render && document.getElementById('view-stats') && !document.getElementById('view-stats').classList.contains('hidden')) {
                         statsView.render();
                     }
                     if (shouldImportLocal) {
@@ -973,6 +998,10 @@
                     cloudLibrary.setStatus(error?.message || 'Could not sync D\'Tunes library.');
                 } finally {
                     cloudLibrary.syncing = false;
+                    if (cloudLibrary.pendingSync) {
+                        cloudLibrary.pendingSync = false;
+                        cloudLibrary.load();
+                    }
                 }
             },
             pushLocalSnapshot: async (snapshot = cloudLibrary.captureLocalSnapshot(), remote = {}) => {
