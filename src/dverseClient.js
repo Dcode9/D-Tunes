@@ -23,39 +23,111 @@
     if (checkedUrlHandoff || typeof window === 'undefined') return null;
     checkedUrlHandoff = true;
 
-    const hashText = window.location.hash ? window.location.hash.slice(1) : '';
-    if (!hashText || !hashText.includes('dverse_session=')) return null;
-
-    const params = new URLSearchParams(hashText.startsWith('?') ? hashText.slice(1) : hashText);
-    const encodedSession = params.get('dverse_session');
-    params.delete('dverse_session');
-
-    const cleanHash = params.toString();
-    const cleanUrl = `${window.location.pathname}${window.location.search}${cleanHash ? `#${cleanHash}` : ''}`;
-    window.history.replaceState({}, document.title, cleanUrl);
-
-    if (!encodedSession) return null;
-    try {
-      return base64UrlDecode(encodedSession);
-    } catch (error) {
-      console.warn('[DVerse] Ignored invalid session handoff:', error);
-      return null;
+    // 1. Check for ?dverse_session=... in search query
+    const searchParams = new URLSearchParams(window.location.search);
+    let encodedSession = searchParams.get('dverse_session');
+    if (encodedSession) {
+      searchParams.delete('dverse_session');
+      const cleanSearch = searchParams.toString();
+      const cleanUrl = `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`;
+      window.history.replaceState({}, document.title, cleanUrl);
+      try {
+        return base64UrlDecode(encodedSession);
+      } catch (err) {
+        console.warn('[DVerse] Invalid dverse_session in search params:', err);
+      }
     }
+
+    // 2. Check for #dverse_session=... in hash
+    const hashText = window.location.hash ? window.location.hash.slice(1) : '';
+    if (hashText && hashText.includes('dverse_session=')) {
+      const params = new URLSearchParams(hashText.startsWith('?') ? hashText.slice(1) : hashText);
+      encodedSession = params.get('dverse_session');
+      params.delete('dverse_session');
+
+      const cleanHash = params.toString();
+      const cleanUrl = `${window.location.pathname}${window.location.search}${cleanHash ? `#${cleanHash}` : ''}`;
+      window.history.replaceState({}, document.title, cleanUrl);
+
+      if (encodedSession) {
+        try {
+          return base64UrlDecode(encodedSession);
+        } catch (error) {
+          console.warn('[DVerse] Ignored invalid session handoff:', error);
+        }
+      }
+    }
+
+    // 3. Check for standard Supabase OAuth hash: #access_token=...&refresh_token=...
+    if (hashText && (hashText.includes('access_token=') || hashText.includes('refresh_token='))) {
+      const hashParams = new URLSearchParams(hashText.startsWith('?') ? hashText.slice(1) : hashText);
+      const accessToken = hashParams.get('access_token');
+      const refreshToken = hashParams.get('refresh_token');
+      if (accessToken && refreshToken) {
+        window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
+        return {
+          access_token: accessToken,
+          refresh_token: refreshToken
+        };
+      }
+    }
+
+    return null;
   }
 
   async function restoreSessionFromHandoff() {
     if (!client) return null;
-    const session = takeSessionHandoffFromUrl();
-    if (!session?.access_token || !session?.refresh_token) return null;
 
-    const { data, error } = await client.auth.setSession({
-      access_token: session.access_token,
-      refresh_token: session.refresh_token
-    });
-    if (error) throw error;
-    currentSession = data.session || null;
-    if (currentSession) syncSessionToPortal(currentSession);
-    return currentSession;
+    // Check URL query / hash handoffs
+    const session = takeSessionHandoffFromUrl();
+    if (session?.access_token && session?.refresh_token) {
+      try {
+        const { data, error } = await client.auth.setSession({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token
+        });
+        if (!error && data?.session) {
+          currentSession = data.session;
+          try {
+            localStorage.setItem('dverse_session_cache', JSON.stringify({
+              access_token: data.session.access_token,
+              refresh_token: data.session.refresh_token
+            }));
+          } catch (_) {}
+          syncSessionToPortal(currentSession);
+          return currentSession;
+        }
+      } catch (err) {
+        console.warn('[DVerse] Failed to set session from handoff:', err);
+      }
+    }
+
+    // Check for PKCE authorization code exchange (?code=...)
+    const searchParams = new URLSearchParams(window.location.search);
+    const code = searchParams.get('code');
+    if (code && typeof client.auth.exchangeCodeForSession === 'function') {
+      searchParams.delete('code');
+      const cleanSearch = searchParams.toString();
+      window.history.replaceState({}, document.title, `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`);
+      try {
+        const { data, error } = await client.auth.exchangeCodeForSession(code);
+        if (!error && data?.session) {
+          currentSession = data.session;
+          try {
+            localStorage.setItem('dverse_session_cache', JSON.stringify({
+              access_token: data.session.access_token,
+              refresh_token: data.session.refresh_token
+            }));
+          } catch (_) {}
+          syncSessionToPortal(currentSession);
+          return currentSession;
+        }
+      } catch (err) {
+        console.warn('[DVerse] Failed to exchange code for session:', err);
+      }
+    }
+
+    return null;
   }
 
   function bridgeRequest(message, timeoutMs = 2500) {
@@ -77,7 +149,7 @@
       }
 
       function onMessage(event) {
-        if (event.origin !== PORTAL_ORIGIN) return;
+        if (event.origin !== PORTAL_ORIGIN && !event.origin.includes('d-verse.in') && !event.origin.includes('dverse.fun')) return;
         const data = event.data || {};
         if (data.source !== 'dverse-auth-bridge' || data.requestId !== requestId) return;
         cleanup(data);
@@ -87,11 +159,13 @@
       frame.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;border:0;';
       frame.setAttribute('aria-hidden', 'true');
       frame.addEventListener('load', () => {
-        frame.contentWindow?.postMessage({
-          source: 'dverse-app',
-          requestId,
-          ...message
-        }, PORTAL_ORIGIN);
+        try {
+          frame.contentWindow?.postMessage({
+            source: 'dverse-app',
+            requestId,
+            ...message
+          }, '*');
+        } catch (_) {}
       });
       window.addEventListener('message', onMessage);
       frame.src = AUTH_BRIDGE_URL;
@@ -105,11 +179,34 @@
     if (handedOffSession) return handedOffSession;
 
     const { data, error } = await client.auth.getSession();
-    if (error) throw error;
-    if (data.session) {
+    if (!error && data?.session) {
       currentSession = data.session;
+      try {
+        localStorage.setItem('dverse_session_cache', JSON.stringify({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token
+        }));
+      } catch (_) {}
       return data.session;
     }
+
+    // Check cached session
+    try {
+      const cached = localStorage.getItem('dverse_session_cache');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed?.access_token && parsed?.refresh_token) {
+          const { data: restored, error: restoreError } = await client.auth.setSession({
+            access_token: parsed.access_token,
+            refresh_token: parsed.refresh_token
+          });
+          if (!restoreError && restored?.session) {
+            currentSession = restored.session;
+            return currentSession;
+          }
+        }
+      }
+    } catch (_) {}
 
     if (!portalSessionPromise) {
       portalSessionPromise = (async () => {
@@ -122,6 +219,14 @@
         });
         if (restoreError) throw restoreError;
         currentSession = restored.session || null;
+        if (currentSession) {
+          try {
+            localStorage.setItem('dverse_session_cache', JSON.stringify({
+              access_token: currentSession.access_token,
+              refresh_token: currentSession.refresh_token
+            }));
+          } catch (_) {}
+        }
         return restored.session || null;
       })().finally(() => {
         portalSessionPromise = null;
@@ -132,6 +237,12 @@
 
   function syncSessionToPortal(session) {
     if (!session?.access_token || !session?.refresh_token) return;
+    try {
+      localStorage.setItem('dverse_session_cache', JSON.stringify({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token
+      }));
+    } catch (_) {}
     bridgeRequest({
       type: 'dverse-auth:set-session',
       session: {
@@ -153,6 +264,9 @@
       if (session && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
         syncSessionToPortal(session);
       }
+      if (event === 'SIGNED_OUT') {
+        try { localStorage.removeItem('dverse_session_cache'); } catch (_) {}
+      }
       callback(event, session);
     });
     return data.subscription;
@@ -160,11 +274,31 @@
 
   async function signInWithGoogle() {
     if (!client) throw new Error('D\'Verse Supabase client is not configured.');
-    window.location.href = `${PORTAL_ORIGIN}/?dverse_return_to=${encodeURIComponent(authRedirectUrl())}`;
+    
+    // Direct sign in with Supabase OAuth (Google)
+    try {
+      const redirectUrl = `${window.location.origin}${window.location.pathname}`;
+      const { data, error } = await client.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl
+        }
+      });
+      if (error) throw error;
+      if (data?.url) {
+        window.location.href = data.url;
+        return;
+      }
+    } catch (err) {
+      console.warn('[DVerse] Direct OAuth sign in error, falling back to portal:', err);
+      // Fallback: direct to D'Verse portal auth path
+      window.location.href = `${PORTAL_ORIGIN}/?dverse_return_to=${encodeURIComponent(window.location.href)}`;
+    }
   }
 
   async function signOut() {
     if (!client) return;
+    try { localStorage.removeItem('dverse_session_cache'); } catch (_) {}
     const { error } = await client.auth.signOut();
     if (error) throw error;
     await bridgeRequest({ type: 'dverse-auth:sign-out' }, 1500);
