@@ -1222,13 +1222,14 @@
         // PLAYER LOGIC & MEDIA SESSION
         // ============================================
         const audio = document.getElementById('audio-el');
-        const isIOSDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         audio.setAttribute('playsinline', '');
         audio.setAttribute('webkit-playsinline', '');
         audio.preload = 'auto';
-        const preloadAudio = new Audio();
-        preloadAudio.preload = 'auto';
-        preloadAudio.crossOrigin = 'anonymous';
+        const preloadAudio = isMobileDevice ? null : new Audio();
+        if (preloadAudio) {
+            preloadAudio.preload = 'auto';
+        }
         let isPlaybackPending = false;
         let isAudioRecoveryPending = false;
         let playRequestId = 0;
@@ -1256,8 +1257,10 @@
                 const playUrl = freshDetails?.url || nextTrack.url;
                 if (!playUrl || state.nextTrackPreloadId !== nextTrack.id) return;
                 Object.assign(nextTrack, freshDetails || {}, { url: playUrl });
-                preloadAudio.src = playUrl;
-                preloadAudio.load();
+                if (preloadAudio) {
+                    preloadAudio.src = playUrl;
+                    preloadAudio.load();
+                }
             } catch (e) {}
         };
 
@@ -1783,6 +1786,7 @@
         };
 
         function setupAudioContext() {
+            if (isMobileDevice) return; // Do not attach Web Audio API on mobile as it mutes audio in background and silent mode
             if (isAudioContextInitialized) return;
             try {
                 const AudioCtx = window.AudioContext || window.webkitAudioContext;
