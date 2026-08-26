@@ -74,7 +74,7 @@
     }
   }) : null;
 
-  const PORTAL_ORIGIN = (window.DVERSE_PORTAL_ORIGIN || 'https://dverse.fun').replace(/\/$/, '');
+  const PORTAL_ORIGIN = (window.DVERSE_PORTAL_ORIGIN || 'https://d-verse.in').replace(/\/$/, '');
   const AUTH_BRIDGE_URL = `${PORTAL_ORIGIN}/auth-bridge.html`;
   const authRedirectUrl = () => `${window.location.origin}/`;
   let portalSessionPromise = null;
@@ -223,7 +223,7 @@
       }
 
       function onMessage(event) {
-        if (event.origin !== PORTAL_ORIGIN && !event.origin.includes('d-verse.in') && !event.origin.includes('dverse.fun')) return;
+        if (event.origin !== PORTAL_ORIGIN && !event.origin.includes('d-verse.in') && !event.origin.includes('d-verse.in')) return;
         const data = event.data || {};
         if (data.source !== 'dverse-auth-bridge' || data.requestId !== requestId) return;
         cleanup(data);
