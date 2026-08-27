@@ -1324,10 +1324,63 @@
         // audio.play() — and re-checked whenever playback resumes or the
         // environment interrupts it (sleep/wake, audio device change, tab
         // discard/restore).
+        // WebAudio + cross-origin media: a MediaElementAudioSourceNode outputs
+        // SILENCE unless the element fetches the media in CORS mode
+        // (crossOrigin="anonymous") AND the server allows CORS. The JioSaavn
+        // CDN media is always cross-origin, so before the element is ever
+        // routed through the audio graph we probe the CDN once. If CORS is
+        // allowed we set crossOrigin and route (EQ/limiter/visualizer work).
+        // If not, we never route — the element then plays directly and stays
+        // audible; EQ/visualizer simply degrade. Routing without this check is
+        // what made desktop playback silent.
+        let webAudioCorsVerified = false;
+        let webAudioCorsBlocked = false;
+        let webAudioCorsProbe = null;
+
+        const probeWebAudioCors = async (url) => {
+            if (webAudioCorsVerified) return true;
+            if (webAudioCorsBlocked) return false;
+            if (!url || !/^https?:/i.test(url)) { webAudioCorsBlocked = true; return false; }
+            if (!webAudioCorsProbe) {
+                webAudioCorsProbe = (async () => {
+                    try {
+                        // mode:'cors' rejects outright when the response lacks
+                        // Access-Control-Allow-Origin — exactly the signal we
+                        // need. HEAD is a CORS-safelisted method: no preflight.
+                        await fetch(url, { method: 'HEAD', mode: 'cors' });
+                        return true;
+                    } catch (e) {
+                        return false;
+                    }
+                })();
+            }
+            const allowed = await webAudioCorsProbe;
+            webAudioCorsProbe = null;
+            if (allowed) {
+                // Must be set BEFORE assigning audio.src so the media request
+                // itself is made in CORS mode.
+                audio.crossOrigin = 'anonymous';
+                if (preloadAudio) preloadAudio.crossOrigin = 'anonymous';
+                webAudioCorsVerified = true;
+            } else {
+                webAudioCorsBlocked = true;
+                audio.removeAttribute('crossorigin');
+                if (preloadAudio) preloadAudio.removeAttribute('crossorigin');
+                console.info('[DTunes] Media CDN does not allow CORS; playing without WebAudio EQ/visualizer to keep audio audible.');
+            }
+            return allowed;
+        };
+
         const ensureAudioContextRunning = () => {
             if (isMobileDevice) return; // no WebAudio routing on mobile
             try {
-                if (!isAudioContextInitialized) setupAudioContext();
+                if (!isAudioContextInitialized) {
+                    // Never route the element until CORS is verified and the
+                    // crossOrigin attribute is in place — routing a tainted
+                    // element silences it permanently for this page load.
+                    if (!webAudioCorsVerified) return Promise.resolve();
+                    setupAudioContext();
+                }
                 if (audioContext && audioContext.state === 'suspended') {
                     const resumeAttempt = audioContext.resume();
                     if (resumeAttempt && typeof resumeAttempt.catch === 'function') {
@@ -1609,6 +1662,12 @@
                     const playUrl = freshDetails?.url || track.url;
                     if (!playUrl) throw new Error('No audio URL found');
                     
+                    // Verify CORS BEFORE assigning audio.src: crossOrigin must
+                    // be on the element before the media fetch happens. On the
+                    // first track this costs one HEAD request; afterwards the
+                    // result is cached for the session.
+                    if (!isMobileDevice) await probeWebAudioCors(playUrl);
+
                     track = { ...track, ...freshDetails, url: playUrl, urlFetchedAt: Date.now() };
                     audio.preload = 'auto';
                     audio.src = playUrl;
@@ -2020,6 +2079,10 @@
         function setupAudioContext() {
             if (isMobileDevice) return; // Do not attach Web Audio API on mobile as it mutes audio in background and silent mode
             if (isAudioContextInitialized) return;
+            // Refuse to route the element into the audio graph until the media
+            // CDN has been verified CORS-accessible and crossOrigin is set —
+            // a tainted (non-CORS) MediaElementSource outputs silence.
+            if (!webAudioCorsVerified) return;
             try {
                 const AudioCtx = window.AudioContext || window.webkitAudioContext;
                 if (!AudioCtx) return;
