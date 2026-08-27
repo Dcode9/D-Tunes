@@ -129,15 +129,9 @@
     const params = new URLSearchParams({ userId: options.userId || getUserId(), type, limit: options.limit || 25 });
     if (options.language) params.set('language', options.language);
     const endpoint = type === 'similar'
-<<<<<<< HEAD
       ? `/api/music/similar?songId=${encodeURIComponent(seedSongId || '')}&limit=${options.limit || 25}`
       : type === 'artist-radio'
         ? `/api/music/artist-radio?artist=${encodeURIComponent(seedArtist || '')}&userId=${encodeURIComponent(params.get('userId'))}&limit=${options.limit || 25}`
-=======
-      ? `/api/music/similar?songId=${encodeURIComponent(options.songId || '')}&limit=${options.limit || 25}`
-      : type === 'artist-radio'
-        ? `/api/music/artist-radio?artist=${encodeURIComponent(options.artist || '')}&userId=${encodeURIComponent(params.get('userId'))}&limit=${options.limit || 25}`
->>>>>>> 68be0e9 (Fix iOS background audio muting (Web Audio & Audio element constraints))
         : `/api/music/playlist?${params.toString()}`;
     try {
       const signal = typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(3000) : undefined;

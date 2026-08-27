@@ -441,6 +441,329 @@
             }
         };
 
+        const spotifyImporterWeb = {
+            matchedSongs: [],
+            playlistTitle: 'Imported Spotify Playlist',
+            pasteFromClipboard: async () => {
+                try {
+                    const text = await navigator.clipboard.readText();
+                    const input = document.getElementById('sp-link-input');
+                    if (input && text) input.value = text.trim();
+                } catch (e) {
+                    console.warn('Clipboard read failed', e);
+                }
+            },
+            extractTracksFromInput: async (input) => {
+                const trimmed = input.trim();
+                const spotifyUrlRegex = /(?:https?:\/\/)?(?:open\.spotify\.com\/(?:embed\/)?|spotify:)(playlist|album|track)[/:]([a-zA-Z0-9]+)/i;
+                const match = trimmed.match(spotifyUrlRegex);
+                let title = "Imported Spotify List";
+                let tracks = [];
+
+                if (match) {
+                    const type = match[1].toLowerCase();
+                    const id = match[2];
+                    try {
+                        const embedUrl = `https://open.spotify.com/embed/${type}/${id}`;
+                        const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(embedUrl)}`).catch(() => null);
+                        if (res && res.ok) {
+                            const html = await res.text();
+                            const scriptMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+                            if (scriptMatch && scriptMatch[1]) {
+                                const json = JSON.parse(scriptMatch[1]);
+                                const pageProps = json.props?.pageProps;
+                                const stateData = pageProps?.state?.data;
+                                const entity = stateData?.entity || pageProps?.entity || stateData?.[type];
+                                if (entity) {
+                                    title = entity.name || entity.title || `Spotify ${type}`;
+                                    const trackList = entity.trackList;
+                                    if (Array.isArray(trackList)) {
+                                        tracks = trackList.map(t => {
+                                            const songTitle = t.title || t.name || '';
+                                            const subtitle = t.subtitle || (Array.isArray(t.artists) ? t.artists.map(a => a.name).join(', ') : '');
+                                            return { title: songTitle, artist: subtitle };
+                                        }).filter(t => t.title);
+                                    } else if (type === 'track') {
+                                        tracks = [{
+                                            title: entity.name || entity.title || '',
+                                            artist: entity.subtitle || (Array.isArray(entity.artists) ? entity.artists.map(a => a.name).join(', ') : '')
+                                        }];
+                                    }
+                                }
+                            }
+                        }
+                    } catch (err) {
+                        console.warn('[SpotifyImporter] Embed parse fallback', err);
+                    }
+                }
+
+                if (tracks.length === 0) {
+                    const lines = trimmed.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+                    tracks = lines.map(line => {
+                        if (line.includes(' - ')) {
+                            const parts = line.split(' - ');
+                            return { title: parts[1].trim(), artist: parts[0].trim() };
+                        } else if (/ by /i.test(line)) {
+                            const parts = line.split(/ by /i);
+                            return { title: parts[0].trim(), artist: parts[1].trim() };
+                        }
+                        return { title: line, artist: '' };
+                    });
+                }
+
+                return { title, tracks };
+            },
+            startImport: async () => {
+                const inputEl = document.getElementById('sp-link-input');
+                const raw = inputEl ? inputEl.value.trim() : '';
+                if (!raw) return;
+
+                const btn = document.getElementById('btn-start-spotify-import');
+                if (btn) btn.disabled = true;
+
+                const matchSection = document.getElementById('sp-match-section');
+                const actionsBar = document.getElementById('sp-actions-bar');
+                const listEl = document.getElementById('sp-matched-tracks-list');
+                const titleEl = document.getElementById('sp-imported-title');
+                const counterEl = document.getElementById('sp-match-counter');
+                const spinner = document.getElementById('sp-match-spinner');
+
+                matchSection.classList.remove('hidden');
+                matchSection.classList.add('flex');
+                actionsBar.classList.add('hidden');
+                listEl.innerHTML = '';
+                if (spinner) spinner.classList.remove('hidden');
+
+                const extracted = await spotifyImporterWeb.extractTracksFromInput(raw);
+                spotifyImporterWeb.playlistTitle = extracted.title || 'Imported Playlist';
+                if (titleEl) titleEl.textContent = spotifyImporterWeb.playlistTitle;
+
+                const tracks = extracted.tracks;
+                if (tracks.length === 0) {
+                    listEl.innerHTML = '<div class="text-xs text-red-400 py-3 text-center">No tracks could be found. Please check your link or paste song titles.</div>';
+                    if (btn) btn.disabled = false;
+                    if (spinner) spinner.classList.add('hidden');
+                    return;
+                }
+
+                spotifyImporterWeb.matchedSongs = [];
+                listEl.innerHTML = tracks.map((t, idx) => `
+                    <div id="sp-item-${idx}" class="sp-track-item flex items-center justify-between p-2 rounded-xl bg-white/5 border border-white/5 text-xs">
+                        <div class="flex items-center gap-2.5 min-w-0">
+                            <span class="w-5 text-gray-500 font-mono text-[10px] text-center">${idx + 1}</span>
+                            <div class="min-w-0">
+                                <p class="font-bold text-white truncate">${utils.escapeHtml(t.title)}</p>
+                                <p class="text-[11px] text-gray-400 truncate">${utils.escapeHtml(t.artist || 'Searching...')}</p>
+                            </div>
+                        </div>
+                        <span id="sp-status-${idx}" class="sp-badge-searching px-2 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0">Searching</span>
+                    </div>
+                `).join('');
+
+                let matchedCount = 0;
+                for (let i = 0; i < tracks.length; i++) {
+                    const track = tracks[i];
+                    const statusEl = document.getElementById(`sp-status-${i}`);
+                    const query = track.artist ? `${track.title} ${track.artist}` : track.title;
+
+                    if (counterEl) counterEl.textContent = `Matching ${i + 1} / ${tracks.length} tracks...`;
+
+                    try {
+                        const results = await jiosaavnAPI.searchSongs(query, 5);
+                        const best = results && results.length > 0 ? results[0] : null;
+                        if (best) {
+                            spotifyImporterWeb.matchedSongs.push(best);
+                            songStore.add(best);
+                            matchedCount++;
+                            if (statusEl) {
+                                statusEl.className = 'sp-badge-matched px-2 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0 flex items-center gap-1';
+                                statusEl.innerHTML = `✓ Matched`;
+                            }
+                        } else {
+                            if (statusEl) {
+                                statusEl.className = 'sp-badge-error px-2 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0';
+                                statusEl.textContent = 'Not found';
+                            }
+                        }
+                    } catch (e) {
+                        if (statusEl) {
+                            statusEl.className = 'sp-badge-error px-2 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0';
+                            statusEl.textContent = 'Error';
+                        }
+                    }
+                }
+
+                if (counterEl) counterEl.textContent = `Matched ${matchedCount} of ${tracks.length} tracks`;
+                if (spinner) spinner.classList.add('hidden');
+                if (btn) btn.disabled = false;
+                actionsBar.classList.remove('hidden');
+                actionsBar.classList.add('flex');
+            },
+            playImported: () => {
+                if (spotifyImporterWeb.matchedSongs.length === 0) return;
+                state.queue = [...spotifyImporterWeb.matchedSongs];
+                state.userQueue = [];
+                state.idx = 0;
+                player.playDirect(state.queue[0]);
+                ui.toggleSpotifyModal(false);
+                ui.renderQueue();
+            },
+            saveAsPlaylist: async () => {
+                if (spotifyImporterWeb.matchedSongs.length === 0) return;
+                const name = spotifyImporterWeb.playlistTitle || 'Spotify Import';
+                state.playlists[name] = [...spotifyImporterWeb.matchedSongs];
+                localStorage.setItem('playlists', JSON.stringify(state.playlists));
+                if (window.cloudLibrary && cloudLibrary.savePlaylist) {
+                    cloudLibrary.savePlaylist(name);
+                }
+                ui.toggleSpotifyModal(false);
+                ui.renderPlaylists();
+                ui.openPlaylist(name);
+            }
+        };
+        window.spotifyImporterWeb = spotifyImporterWeb;
+
+        // ============================================
+        // SLEEP TIMER ENGINE
+        // ============================================
+        const sleepTimer = {
+            intervalId: null,
+            targetEndTime: 0,
+            durationMs: 0,
+            mode: 'off', // 'duration' | 'end-of-track' | 'off'
+            fadeDurationMs: 10000,
+            originalVolume: 1,
+            isFading: false,
+
+            start: (minutesOrMode) => {
+                sleepTimer.cancel();
+                if (!minutesOrMode) return;
+
+                if (minutesOrMode === 'end-of-track') {
+                    sleepTimer.mode = 'end-of-track';
+                    sleepTimer.updateUI();
+                    if (ui.showToast) ui.showToast('Sleep timer set: Pauses after current track', 'info');
+                    ui.toggleSleepTimerModal(false);
+                    return;
+                }
+
+                const mins = parseInt(minutesOrMode);
+                if (isNaN(mins) || mins <= 0) return;
+
+                sleepTimer.mode = 'duration';
+                sleepTimer.durationMs = mins * 60 * 1000;
+                sleepTimer.targetEndTime = Date.now() + sleepTimer.durationMs;
+                sleepTimer.originalVolume = (typeof audio !== 'undefined' && audio) ? (audio.volume || 1) : 1;
+                sleepTimer.isFading = false;
+
+                sleepTimer.intervalId = setInterval(sleepTimer.tick, 1000);
+                sleepTimer.updateUI();
+                if (ui.showToast) ui.showToast(`Sleep timer set for ${mins} minutes`, 'info');
+                ui.toggleSleepTimerModal(false);
+            },
+
+            cancel: () => {
+                if (sleepTimer.intervalId) clearInterval(sleepTimer.intervalId);
+                if (sleepTimer.isFading && typeof audio !== 'undefined' && audio) {
+                    audio.volume = sleepTimer.originalVolume;
+                }
+                sleepTimer.intervalId = null;
+                sleepTimer.targetEndTime = 0;
+                sleepTimer.durationMs = 0;
+                sleepTimer.mode = 'off';
+                sleepTimer.isFading = false;
+                sleepTimer.updateUI();
+            },
+
+            extend: (extraMinutes) => {
+                if (sleepTimer.mode !== 'duration' || !sleepTimer.targetEndTime) {
+                    sleepTimer.start(extraMinutes);
+                    return;
+                }
+                const extraMs = extraMinutes * 60 * 1000;
+                sleepTimer.targetEndTime += extraMs;
+                sleepTimer.durationMs += extraMs;
+                if (sleepTimer.isFading && typeof audio !== 'undefined' && audio) {
+                    sleepTimer.isFading = false;
+                    audio.volume = sleepTimer.originalVolume;
+                }
+                sleepTimer.updateUI();
+                if (ui.showToast) ui.showToast(`Sleep timer extended by ${extraMinutes} min`, 'info');
+            },
+
+            tick: () => {
+                if (sleepTimer.mode !== 'duration') return;
+                const now = Date.now();
+                const remainingMs = Math.max(0, sleepTimer.targetEndTime - now);
+
+                if (remainingMs <= 0) {
+                    sleepTimer.finish();
+                    return;
+                }
+
+                // 10-second volume fade-out before ending
+                if (remainingMs <= sleepTimer.fadeDurationMs && typeof audio !== 'undefined' && audio) {
+                    sleepTimer.isFading = true;
+                    const fraction = remainingMs / sleepTimer.fadeDurationMs;
+                    audio.volume = Math.max(0, Math.min(1, sleepTimer.originalVolume * fraction));
+                }
+
+                sleepTimer.updateUI(remainingMs);
+            },
+
+            finish: () => {
+                sleepTimer.cancel();
+                if (typeof player !== 'undefined' && player.pause) player.pause();
+                if (typeof audio !== 'undefined' && audio) audio.volume = sleepTimer.originalVolume;
+                if (ui.showToast) ui.showToast('Sleep timer finished: Playback paused', 'info');
+            },
+
+            onTrackEnded: () => {
+                if (sleepTimer.mode === 'end-of-track') {
+                    sleepTimer.cancel();
+                    if (typeof player !== 'undefined' && player.pause) player.pause();
+                    if (ui.showToast) ui.showToast('Sleep timer finished: End of track reached', 'info');
+                    return true;
+                }
+                return false;
+            },
+
+            updateUI: (remainingMs = null) => {
+                const badge = document.getElementById('sleep-timer-badge');
+                const badgeText = document.getElementById('sleep-timer-badge-text');
+                const statusBox = document.getElementById('sleep-timer-status-box');
+                const statusText = document.getElementById('sleep-timer-status-text');
+
+                if (sleepTimer.mode === 'off') {
+                    if (badge) { badge.classList.add('hidden'); badge.classList.remove('flex'); }
+                    if (statusBox) statusBox.classList.add('hidden');
+                    return;
+                }
+
+                let label = '';
+                if (sleepTimer.mode === 'end-of-track') {
+                    label = 'End of song';
+                } else {
+                    const ms = remainingMs !== null ? remainingMs : Math.max(0, sleepTimer.targetEndTime - Date.now());
+                    const totalSec = Math.ceil(ms / 1000);
+                    const m = Math.floor(totalSec / 60);
+                    const s = totalSec % 60;
+                    label = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                }
+
+                if (badge) {
+                    badge.classList.remove('hidden');
+                    badge.classList.add('flex');
+                    if (badgeText) badgeText.textContent = label;
+                }
+                if (statusBox) {
+                    statusBox.classList.remove('hidden');
+                    if (statusText) statusText.textContent = `${label} remaining`;
+                }
+            }
+        };
+        window.sleepTimer = sleepTimer;
+
         // ============================================
         // STATE & PERSISTENCE
         // ============================================
@@ -908,11 +1231,93 @@
             toggleAuth: async () => {
                 try {
                     if (!cloudLibrary.ready()) throw new Error('D\'Verse Supabase client is not available.');
-                    if (cloudLibrary.session) await window.dverse.signOut();
+                    if (cloudLibrary.session) await cloudLibrary.signOutAndPurgeAll();
                     else await window.dverse.signInWithGoogle();
                 } catch (error) {
                     cloudLibrary.setStatus(error?.message || 'D\'Verse sign-in failed.');
                 }
+            },
+            signOutAndPurgeAll: async () => {
+                try {
+                    if (window.dverse && typeof window.dverse.signOut === 'function') {
+                        await window.dverse.signOut();
+                    }
+                } catch (e) {
+                    console.warn('[DVerse] Sign-out error:', e);
+                }
+
+                // Halt playback and detach audio source
+                if (typeof audio !== 'undefined' && audio) {
+                    audio.pause();
+                    audio.removeAttribute('src');
+                    audio.load();
+                }
+
+                // Cancel sleep timer
+                if (typeof sleepTimer !== 'undefined' && sleepTimer.cancel) {
+                    sleepTimer.cancel();
+                }
+
+                // Completely purge all local storage keys
+                const targetKeys = [
+                    'likedIds', 'libraryIds', 'likedArtists', 'playlists', 'playlistStyles',
+                    'playHistory', 'artistPlayCounts', 'recentSearches', 'username',
+                    'songStore', 'dtunes_tester_streak', 'savedQueue', 'lastActiveTrack',
+                    'playbackState', 'equalizerSettings', 'audioQuality', 'preferredLanguage',
+                    'dverse_session_cache', 'dverse_supabase_auth_token', 'sb-supabase-auth-token',
+                    'sb-qvvnhvowffvbbhfgwypw-auth-token'
+                ];
+                targetKeys.forEach(k => localStorage.removeItem(k));
+                Object.keys(localStorage).forEach(k => {
+                    if (k.startsWith('sb-') || k.startsWith('dverse_') || k.startsWith('recommendation')) {
+                        localStorage.removeItem(k);
+                    }
+                });
+
+                // Clear memory state
+                state.queue = [];
+                state.userQueue = [];
+                state.idx = -1;
+                state.playing = false;
+                state.loading = false;
+                state.loaded = false;
+                state.currentTrack = null;
+                state.likedIds = [];
+                state.libraryIds = [];
+                state.likedArtists = [];
+                state.playHistory = [];
+                state.artistPlayCounts = {};
+                state.playlists = {};
+                state.playlistStyles = {};
+                state.username = 'Guest User';
+                state.forYouSongs = [];
+                state.queueExpanded = false;
+                if (typeof songStore !== 'undefined' && songStore.clear) songStore.clear();
+
+                cloudLibrary.session = null;
+                cloudLibrary.user = null;
+
+                // Reset UI elements
+                document.getElementById('queue-wrapper')?.classList.remove('queue-expanded', 'preview-expanded', 'track-swap-out');
+                document.getElementById('player-footer')?.classList.add('translate-y-[150%]', 'opacity-0');
+                document.body.classList.remove('mobile-player-open');
+                const title = document.getElementById('p-title');
+                const artist = document.getElementById('p-artist');
+                const art = document.getElementById('curr-art-img');
+                if (title) title.textContent = 'Not Playing';
+                if (artist) artist.textContent = 'Select song';
+                if (art) art.src = FALLBACK_ART;
+
+                ui.setPlayerLoading(false);
+                ui.updateProfileUI();
+                ui.renderPlaylists();
+                ui.renderLibraryLists();
+                ui.renderQueue();
+                ui.renderHistory();
+                ui.updatePlayBtn();
+                cloudLibrary.updateUI();
+                ui.switchView('home');
+                if (ui.showToast) ui.showToast('Account data cleared and signed out', 'info');
             },
             init: async () => {
                 if (!cloudLibrary.ready()) {
@@ -1187,6 +1592,12 @@
                 document.getElementById('cm-like-song').onclick = () => { const s = songStore.get(ctxMenu.activeStoreId); if(s) player.likeSong(s.id); menu.classList.add('hidden'); };
                 document.getElementById('cm-add-library').onclick = () => { const s = songStore.get(ctxMenu.activeStoreId); if(s) player.addToLibrary(s.id); menu.classList.add('hidden'); };
                 document.getElementById('cm-pl-play').onclick = () => { ui.playPlaylist(ctxMenu.activePlaylistName); };
+                const cmPlNext = document.getElementById('cm-pl-play-next');
+                if (cmPlNext) cmPlNext.onclick = () => { player.addPlaylistNext(ctxMenu.activePlaylistName); };
+                const cmPlQueue = document.getElementById('cm-pl-add-queue');
+                if (cmPlQueue) cmPlQueue.onclick = () => { player.addPlaylistToQueue(ctxMenu.activePlaylistName); };
+                const cmPlEdit = document.getElementById('cm-pl-edit');
+                if (cmPlEdit) cmPlEdit.onclick = () => { ui.openPlaylistEditor(ctxMenu.activePlaylistName); };
                 document.getElementById('cm-pl-delete').onclick = () => { ui.deletePlaylist(ctxMenu.activePlaylistName); };
             },
             showSong: (event, storeId) => {
@@ -1599,8 +2010,92 @@
                 cloudLibrary.setLibrary(songToAdd || { id: songId }, nextInLibrary);
                 ui.renderLibraryLists();
             },
-            addNext: (song) => { state.userQueue.unshift(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); primeNextTrack(); persist.save(); },
-            addToQueue: (song) => { state.userQueue.push(song); recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); ui.renderQueue(); primeNextTrack(); persist.save(); },
+            addNext: (song) => { 
+                state.userQueue.unshift(song); 
+                recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); 
+                ui.renderQueue(); 
+                primeNextTrack(); 
+                persist.save(); 
+                if (ui.showToast) ui.showToast(`Playing "${song.name || 'Song'}" next`);
+            },
+            addToQueue: (song) => { 
+                state.userQueue.push(song); 
+                recommendationEvents.record('queue_add', song, { context: { source: 'manual' } }); 
+                ui.renderQueue(); 
+                primeNextTrack(); 
+                persist.save(); 
+                if (ui.showToast) ui.showToast(`Added "${song.name || 'Song'}" to queue`);
+            },
+            addPlaylistNext: async (name) => {
+                let songs = [];
+                if (name === 'Liked Songs') {
+                    const loaded = [];
+                    for (let i = 0; i < state.likedIds.length; i++) {
+                        if (typeof state.likedIds[i] === 'string') {
+                            const fetched = await jiosaavnAPI.getSong(state.likedIds[i]);
+                            if (fetched) { loaded.push(fetched); state.likedIds[i] = fetched; }
+                        } else { loaded.push(state.likedIds[i]); }
+                    }
+                    songs = loaded;
+                } else {
+                    songs = state.playlists[name] || [];
+                }
+                if (songs.length === 0) { if (ui.showToast) ui.showToast('No tracks in playlist to add', 'error'); return; }
+                state.userQueue.unshift(...songs);
+                ui.renderQueue();
+                primeNextTrack();
+                persist.save();
+                if (ui.showToast) ui.showToast(`Added ${songs.length} tracks to play next`);
+            },
+            addPlaylistToQueue: async (name) => {
+                let songs = [];
+                if (name === 'Liked Songs') {
+                    const loaded = [];
+                    for (let i = 0; i < state.likedIds.length; i++) {
+                        if (typeof state.likedIds[i] === 'string') {
+                            const fetched = await jiosaavnAPI.getSong(state.likedIds[i]);
+                            if (fetched) { loaded.push(fetched); state.likedIds[i] = fetched; }
+                        } else { loaded.push(state.likedIds[i]); }
+                    }
+                    songs = loaded;
+                } else {
+                    songs = state.playlists[name] || [];
+                }
+                if (songs.length === 0) { if (ui.showToast) ui.showToast('No tracks in playlist to add', 'error'); return; }
+                state.userQueue.push(...songs);
+                ui.renderQueue();
+                primeNextTrack();
+                persist.save();
+                if (ui.showToast) ui.showToast(`Added ${songs.length} tracks to queue`);
+            },
+            addAlbumNext: async (albumId) => {
+                try {
+                    const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/albums?id=${albumId}`);
+                    const songs = (data.data?.songs || []).map(jiosaavnAPI.normalizeSong).filter(Boolean);
+                    if (songs.length === 0) { if (ui.showToast) ui.showToast('No album songs found', 'error'); return; }
+                    state.userQueue.unshift(...songs);
+                    ui.renderQueue();
+                    primeNextTrack();
+                    persist.save();
+                    if (ui.showToast) ui.showToast(`Added ${songs.length} album tracks to play next`);
+                } catch (e) {
+                    if (ui.showToast) ui.showToast('Failed to load album tracks', 'error');
+                }
+            },
+            addAlbumToQueue: async (albumId) => {
+                try {
+                    const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/albums?id=${albumId}`);
+                    const songs = (data.data?.songs || []).map(jiosaavnAPI.normalizeSong).filter(Boolean);
+                    if (songs.length === 0) { if (ui.showToast) ui.showToast('No album songs found', 'error'); return; }
+                    state.userQueue.push(...songs);
+                    ui.renderQueue();
+                    primeNextTrack();
+                    persist.save();
+                    if (ui.showToast) ui.showToast(`Added ${songs.length} album tracks to queue`);
+                } catch (e) {
+                    if (ui.showToast) ui.showToast('Failed to load album tracks', 'error');
+                }
+            },
             clearQueue: () => {
                 state.userQueue = [];
                 state.queue = state.currentTrack ? [state.currentTrack] : [];
@@ -2210,47 +2705,41 @@
                 preview.style.cssText = '';
                 preview.innerHTML = renderPlaylistCoverMarkup(playlistCoverDraft, 'w-14 h-14');
             },
-            toggleSpotifyModal: async (show) => {
+            formatRelativeTime: (dateInput) => {
+                if (!dateInput) return 'Just now';
+                const date = typeof dateInput === 'number' ? new Date(dateInput) : new Date(dateInput);
+                if (isNaN(date.getTime())) return 'Recently';
+                const now = new Date();
+                const diffSeconds = Math.max(0, Math.floor((now - date) / 1000));
+                if (diffSeconds < 60) return 'Just now';
+                const diffMins = Math.floor(diffSeconds / 60);
+                if (diffMins < 60) return `${diffMins}m ago`;
+                const diffHours = Math.floor(diffMins / 60);
+                if (diffHours < 24) return `${diffHours}h ago`;
+                const diffDays = Math.floor(diffHours / 24);
+                if (diffDays === 1) return 'Yesterday';
+                if (diffDays < 7) return `${diffDays}d ago`;
+                return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            },
+            toggleSpotifyModal: (show) => {
                 const modal = document.getElementById('spotify-modal');
-                if(show) {
+                if (show) {
                     modal.classList.remove('hidden');
-                    if (spotifyManager.token) {
-                        ui.setSpotifyState('list');
-                        const container = document.getElementById('sp-playlists-container');
-                        container.innerHTML = '<div class="text-center text-gray-400 py-4 text-sm">Fetching playlists...</div>';
-                        const playlists = await spotifyManager.getPlaylists();
-                        
-                        if(playlists.length === 0) {
-                            container.innerHTML = '<div class="text-center text-gray-500 py-4 text-sm">No playlists found.</div>';
-                        } else {
-                            container.innerHTML = playlists.map(pl => `
-                                <div class="flex items-center justify-between p-2 glass-panel rounded-lg hover:bg-white/10 transition group cursor-pointer" onclick="spotifyManager.importPlaylist('${pl.id}', '${utils.escapeJs(pl.name)}')">
-                                    <div class="flex items-center gap-3 min-w-0">
-                                        <img src="${pl.images?.[0]?.url || 'https://placehold.co/40'}" class="w-10 h-10 rounded-md object-cover">
-                                        <div class="min-w-0">
-                                            <p class="text-sm text-white font-bold truncate">${utils.escapeHtml(pl.name)}</p>
-                                            <p class="text-xs text-gray-400">${pl.tracks?.total || 0} tracks</p>
-                                        </div>
-                                    </div>
-                                    <svg class="w-5 h-5 text-gray-500 group-hover:text-[var(--accent-color)] transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
-                                </div>
-                            `).join('');
-                        }
-                    } else {
-                        ui.setSpotifyState('connect');
+                    const input = document.getElementById('sp-link-input');
+                    if (input) {
+                        input.value = '';
+                        setTimeout(() => input.focus(), 100);
                     }
+                    document.getElementById('sp-match-section')?.classList.add('hidden');
+                    document.getElementById('sp-actions-bar')?.classList.add('hidden');
                 } else {
                     modal.classList.add('hidden');
                 }
             },
-            setSpotifyState: (state) => {
-                document.getElementById('sp-state-connect').classList.add('hidden');
-                document.getElementById('sp-state-list').classList.add('hidden');
-                document.getElementById('sp-state-importing').classList.add('hidden');
-                
-                const activeEl = document.getElementById(`sp-state-${state}`);
-                activeEl.classList.remove('hidden');
-                if (state === 'list') activeEl.classList.add('flex');
+            toggleChangelogModal: (show) => {
+                const modal = document.getElementById('changelog-modal');
+                if (show) modal.classList.remove('hidden');
+                else modal.classList.add('hidden');
             },
             toggleProfileModal: (show) => {
                 const modal = document.getElementById('profile-modal');
@@ -2524,8 +3013,193 @@
                 const index = name.length % themes.length;
                 return { bg: themes[index], icon: `<span class="text-white drop-shadow-md uppercase">${name.substring(0, 2)}</span>`, customHtml: null };
             },
+            showToast: (message, type = 'info', duration = 3000) => {
+                const container = document.getElementById('toast-container');
+                if (!container) return;
+                const toast = document.createElement('div');
+                const borderClass = type === 'error' ? 'border-red-500/40 bg-red-950/90 text-red-200' : (type === 'success' ? 'border-emerald-500/40 bg-emerald-950/90 text-emerald-200' : 'border-white/15 bg-zinc-900/90 text-white');
+                const iconHtml = type === 'error' ? '⚠️' : (type === 'success' ? '✓' : '✨');
+
+                toast.className = `flex items-center gap-2 px-4 py-2.5 rounded-2xl glass-panel shadow-2xl border text-xs font-bold pointer-events-auto transform transition-all duration-300 translate-y-4 opacity-0 ${borderClass}`;
+                toast.innerHTML = `<span>${iconHtml}</span><span>${utils.escapeHtml(message)}</span>`;
+                container.appendChild(toast);
+
+                requestAnimationFrame(() => {
+                    toast.classList.remove('translate-y-4', 'opacity-0');
+                    toast.classList.add('translate-y-0', 'opacity-100');
+                });
+
+                setTimeout(() => {
+                    toast.classList.remove('translate-y-0', 'opacity-100');
+                    toast.classList.add('translate-y-2', 'opacity-0');
+                    setTimeout(() => toast.remove(), 300);
+                }, duration);
+            },
+            toggleSleepTimerModal: (show) => {
+                const modal = document.getElementById('sleep-timer-modal');
+                if (!modal) return;
+                if (show) {
+                    sleepTimer.updateUI();
+                    modal.classList.remove('hidden');
+                } else {
+                    modal.classList.add('hidden');
+                }
+            },
+            togglePlaylistEditorModal: (show) => {
+                const modal = document.getElementById('playlist-editor-modal');
+                if (!modal) return;
+                if (show) {
+                    modal.classList.remove('hidden');
+                } else {
+                    modal.classList.add('hidden');
+                }
+            },
+            openPlaylistEditor: (name) => {
+                const currentSongs = state.playlists[name] || [];
+                const currentStyle = state.playlistStyles[name] || {
+                    color: playlistCoverDraft.color,
+                    icon: playlistCoverDraft.icon,
+                    shape: playlistCoverDraft.shape,
+                    cornerRadius: 20
+                };
+
+                ui.currentEditingPlaylistName = name;
+                ui.editingPlaylistSongs = [...currentSongs];
+                ui.editingPlaylistStyle = { ...currentStyle };
+
+                const nameInput = document.getElementById('edit-pl-name-input');
+                if (nameInput) nameInput.value = name;
+
+                const countLabel = document.getElementById('edit-pl-song-count');
+                if (countLabel) countLabel.textContent = `${ui.editingPlaylistSongs.length} tracks`;
+
+                // Render Colors
+                const colorPicker = document.getElementById('edit-pl-color-picker');
+                if (colorPicker) {
+                    colorPicker.innerHTML = PLAYLIST_COVER_COLORS.map(c => `
+                        <button type="button" class="w-8 h-8 rounded-full border-2 transition ${ui.editingPlaylistStyle.color === c ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-75 hover:opacity-100'}" style="background-color: ${c};" onclick="ui.selectEditingColor('${c}')"></button>
+                    `).join('');
+                }
+
+                // Render Icons
+                const iconPicker = document.getElementById('edit-pl-icon-picker');
+                if (iconPicker) {
+                    iconPicker.innerHTML = Object.entries(PLAYLIST_COVER_ICONS).map(([key, svg]) => `
+                        <button type="button" class="p-2.5 rounded-xl border transition ${ui.editingPlaylistStyle.icon === key ? 'border-[var(--accent-color)] bg-white/15 text-white' : 'border-white/10 bg-white/5 text-gray-400 hover:text-white'}" onclick="ui.selectEditingIcon('${key}')">
+                            ${svg}
+                        </button>
+                    `).join('');
+                }
+
+                // Render Shapes
+                const shapePicker = document.getElementById('edit-pl-shape-picker');
+                if (shapePicker) {
+                    const shapes = ['SmoothRect', 'Circle', 'Star', 'Diamond', 'RotatedPill'];
+                    shapePicker.innerHTML = shapes.map(s => `
+                        <button type="button" class="px-3 py-1.5 rounded-xl text-xs font-bold border transition ${ui.editingPlaylistStyle.shape === s ? 'border-[var(--accent-color)] bg-white/15 text-white' : 'border-white/10 bg-white/5 text-gray-400 hover:text-white'}" onclick="ui.selectEditingShape('${s}')">
+                            ${s}
+                        </button>
+                    `).join('');
+                }
+
+                ui.renderEditingSongsList();
+                ui.togglePlaylistEditorModal(true);
+            },
+            selectEditingColor: (color) => {
+                ui.editingPlaylistStyle.color = color;
+                document.querySelectorAll('#edit-pl-color-picker button').forEach((btn, i) => {
+                    const c = PLAYLIST_COVER_COLORS[i];
+                    btn.className = `w-8 h-8 rounded-full border-2 transition ${color === c ? 'border-white scale-110 shadow-lg' : 'border-transparent opacity-75 hover:opacity-100'}`;
+                });
+            },
+            selectEditingIcon: (iconKey) => {
+                ui.editingPlaylistStyle.icon = iconKey;
+                document.querySelectorAll('#edit-pl-icon-picker button').forEach((btn, i) => {
+                    const k = Object.keys(PLAYLIST_COVER_ICONS)[i];
+                    btn.className = `p-2.5 rounded-xl border transition ${iconKey === k ? 'border-[var(--accent-color)] bg-white/15 text-white' : 'border-white/10 bg-white/5 text-gray-400 hover:text-white'}`;
+                });
+            },
+            selectEditingShape: (shape) => {
+                ui.editingPlaylistStyle.shape = shape;
+                const shapes = ['SmoothRect', 'Circle', 'Star', 'Diamond', 'RotatedPill'];
+                document.querySelectorAll('#edit-pl-shape-picker button').forEach((btn, i) => {
+                    const s = shapes[i];
+                    btn.className = `px-3 py-1.5 rounded-xl text-xs font-bold border transition ${shape === s ? 'border-[var(--accent-color)] bg-white/15 text-white' : 'border-white/10 bg-white/5 text-gray-400 hover:text-white'}`;
+                });
+            },
+            renderEditingSongsList: () => {
+                const listEl = document.getElementById('edit-pl-songs-list');
+                const countLabel = document.getElementById('edit-pl-song-count');
+                if (countLabel) countLabel.textContent = `${ui.editingPlaylistSongs.length} tracks`;
+                if (!listEl) return;
+
+                if (ui.editingPlaylistSongs.length === 0) {
+                    listEl.innerHTML = '<p class="text-xs text-gray-500 py-3 text-center">No songs in playlist.</p>';
+                    return;
+                }
+
+                listEl.innerHTML = ui.editingPlaylistSongs.map((song, index) => `
+                    <div class="flex items-center justify-between p-2 rounded-xl bg-white/5 border border-white/5 gap-2">
+                        <img src="${song.img}" class="w-8 h-8 rounded-lg object-cover flex-shrink-0">
+                        <div class="flex-1 min-w-0">
+                            <p class="text-xs font-bold text-white truncate">${utils.escapeHtml(song.name)}</p>
+                            <p class="text-[10px] text-gray-400 truncate">${utils.escapeHtml(song.artist)}</p>
+                        </div>
+                        <div class="flex items-center gap-1 flex-shrink-0">
+                            <button type="button" class="p-1 text-gray-400 hover:text-white rounded hover:bg-white/10 disabled:opacity-30" ${index === 0 ? 'disabled' : ''} onclick="ui.moveEditingSong(${index}, -1)" title="Move up">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                            </button>
+                            <button type="button" class="p-1 text-gray-400 hover:text-white rounded hover:bg-white/10 disabled:opacity-30" ${index === ui.editingPlaylistSongs.length - 1 ? 'disabled' : ''} onclick="ui.moveEditingSong(${index}, 1)" title="Move down">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                            </button>
+                            <button type="button" class="p-1 text-red-400 hover:text-red-300 rounded hover:bg-red-500/10" onclick="ui.removeEditingSong(${index})" title="Remove">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            },
+            moveEditingSong: (index, direction) => {
+                const target = index + direction;
+                if (target < 0 || target >= ui.editingPlaylistSongs.length) return;
+                const item = ui.editingPlaylistSongs.splice(index, 1)[0];
+                ui.editingPlaylistSongs.splice(target, 0, item);
+                ui.renderEditingSongsList();
+            },
+            removeEditingSong: (index) => {
+                ui.editingPlaylistSongs.splice(index, 1);
+                ui.renderEditingSongsList();
+            },
+            savePlaylistEditorChanges: () => {
+                const oldName = ui.currentEditingPlaylistName;
+                const newName = document.getElementById('edit-pl-name-input').value.trim() || oldName;
+
+                if (oldName !== newName && state.playlists[newName]) {
+                    alert('A playlist with this name already exists.');
+                    return;
+                }
+
+                if (oldName !== newName) {
+                    delete state.playlists[oldName];
+                    delete state.playlistStyles[oldName];
+                    cloudLibrary.deletePlaylist(oldName);
+                }
+
+                state.playlists[newName] = [...ui.editingPlaylistSongs];
+                state.playlistStyles[newName] = { ...ui.editingPlaylistStyle };
+
+                localStorage.setItem('playlists', JSON.stringify(state.playlists));
+                localStorage.setItem('playlistStyles', JSON.stringify(state.playlistStyles));
+                cloudLibrary.savePlaylist(newName);
+
+                ui.togglePlaylistEditorModal(false);
+                ui.renderPlaylists();
+                ui.openPlaylist(newName);
+                ui.showToast(`Saved changes to "${newName}"`, 'success');
+            },
             openPlaylist: async (name) => {
-                ui.switchView('playlist'); document.getElementById('playlist-view-title').textContent = utils.escapeHtml(name);
+                ui.switchView('playlist');
+                document.getElementById('playlist-view-title').textContent = utils.escapeHtml(name);
                 let songs = [];
                 if (name === 'Liked Songs') { 
                     const loaded = [];
@@ -2539,31 +3213,255 @@
                     songs = loaded;
                 } 
                 else { songs = state.playlists[name] || []; }
-                document.getElementById('playlist-view-count').textContent = `${songs.length} tracks`;
+
+                let totalSec = songs.reduce((acc, s) => acc + (parseInt(s.duration) || 0), 0);
+                let durationStr = totalSec > 3600 ? `${Math.floor(totalSec / 3600)} hr ${Math.floor((totalSec % 3600) / 60)} min` : `${Math.floor(totalSec / 60)} min`;
+                document.getElementById('playlist-view-count').textContent = `${songs.length} tracks • ${durationStr}`;
                 
                 const style = ui.getPlaylistStyle(name);
                 document.getElementById('pl-view-art').className = `w-48 h-48 md:w-full md:aspect-square rounded-2xl shadow-2xl flex items-center justify-center text-5xl md:text-6xl font-bold text-white shadow-black/50 overflow-hidden ${style.bg}`;
                 document.getElementById('pl-view-art').innerHTML = style.customHtml || style.icon;
 
+                const customActions = document.getElementById('playlist-custom-actions');
+                if (customActions) {
+                    if (name === 'Liked Songs') customActions.classList.add('hidden');
+                    else customActions.classList.remove('hidden');
+                }
+
                 const listEl = document.getElementById('playlist-songs-list');
                 if (songs.length === 0) { listEl.innerHTML = '<p class="text-gray-400 py-4">No songs in this playlist yet.</p>'; } 
                 else { listEl.innerHTML = songs.map(song => ui.createListRow(song, name)).join(''); }
+                
                 document.getElementById('playlist-play-all').onclick = () => ui.playPlaylist(name);
+                const plPlayNext = document.getElementById('playlist-play-next');
+                if (plPlayNext) plPlayNext.onclick = () => player.addPlaylistNext(name);
+                const plAddQueue = document.getElementById('playlist-add-queue');
+                if (plAddQueue) plAddQueue.onclick = () => player.addPlaylistToQueue(name);
+                const plBtnEdit = document.getElementById('playlist-btn-edit');
+                if (plBtnEdit) plBtnEdit.onclick = () => ui.openPlaylistEditor(name);
+                const plBtnDelete = document.getElementById('playlist-btn-delete');
+                if (plBtnDelete) plBtnDelete.onclick = () => ui.deletePlaylist(name);
+
                 updateMarquees();
             },
-            openAlbum: async (id) => {
-                ui.switchView('playlist'); document.getElementById('playlist-songs-list').innerHTML = '<p class="text-gray-400 py-4">Loading album...</p>';
-                const album = await jiosaavnAPI.getAlbum(id);
-                if(album) {
-                    document.getElementById('playlist-view-title').textContent = utils.escapeHtml(album.name);
-                    document.getElementById('playlist-view-count').textContent = `${album.songs.length} tracks`;
-                    document.getElementById('pl-view-art').className = `w-48 h-48 md:w-full md:aspect-square rounded-2xl shadow-2xl overflow-hidden`;
-                    document.getElementById('pl-view-art').innerHTML = `<img src="${album.img}" class="w-full h-full object-cover">`;
-                    document.getElementById('playlist-songs-list').innerHTML = album.songs.map(song => ui.createListRow(song)).join('');
-                    document.getElementById('playlist-play-all').onclick = () => {
-                        if(album.songs.length > 0) { state.queue = [...album.songs]; state.userQueue = []; state.idx = 0; player.playDirect(album.songs[0]); }
-                    };
+            openAlbum: async (albumId) => {
+                ui.switchView('album');
+                const titleEl = document.getElementById('album-view-title');
+                const artistEl = document.getElementById('album-view-artist');
+                const metaEl = document.getElementById('album-view-meta');
+                const artEl = document.getElementById('album-view-art');
+                const listEl = document.getElementById('album-songs-list');
+
+                if (titleEl) titleEl.textContent = 'Loading album...';
+                if (artistEl) artistEl.textContent = '';
+                if (metaEl) metaEl.textContent = '';
+                if (artEl) artEl.src = FALLBACK_ART;
+                if (listEl) listEl.innerHTML = '<div class="text-gray-400 py-8 text-center"><div class="w-6 h-6 border-2 border-[var(--accent-color)] border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>Loading tracks...</div>';
+
+                try {
+                    const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/albums?id=${albumId}`);
+                    const albumData = data.data || {};
+                    const title = albumData.name || albumData.title || 'Album';
+                    const artist = albumData.artist || albumData.primaryArtists || 'Artist';
+                    const artistId = albumData.artistId || albumData.primaryArtistsId || '';
+                    const year = albumData.year || '';
+                    const img = albumData.image ? (Array.isArray(albumData.image) ? albumData.image[albumData.image.length - 1]?.url || albumData.image[0]?.url : albumData.image) : FALLBACK_ART;
+                    const songs = (albumData.songs || []).map(jiosaavnAPI.normalizeSong).filter(Boolean);
+
+                    if (titleEl) titleEl.textContent = title;
+                    if (artistEl) {
+                        artistEl.textContent = artist;
+                        artistEl.onclick = () => { if (artistId) ui.openArtist(artistId, artist); };
+                    }
+                    
+                    let totalSec = songs.reduce((acc, s) => acc + (parseInt(s.duration) || 0), 0);
+                    let durationStr = totalSec > 3600 ? `${Math.floor(totalSec / 3600)} hr ${Math.floor((totalSec % 3600) / 60)} min` : `${Math.floor(totalSec / 60)} min`;
+                    if (metaEl) metaEl.textContent = `${year ? year + ' • ' : ''}${songs.length} tracks • ${durationStr}`;
+                    if (artEl) artEl.src = img;
+
+                    if (songs.length === 0) {
+                        if (listEl) listEl.innerHTML = '<p class="text-gray-400 py-4">No songs found in this album.</p>';
+                    } else {
+                        if (listEl) {
+                            listEl.innerHTML = songs.map((song, idx) => {
+                                const storeId = songStore.add(song);
+                                return `
+                                <div class="swipe-song group flex items-center gap-3 p-2 rounded-xl glass-panel hover:bg-white/10 transition hover-pause" data-store-id="${storeId}" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                                    <span class="w-6 text-center text-xs font-mono text-gray-500 flex-shrink-0">${idx + 1}</span>
+                                    <div class="relative w-11 h-11 flex-shrink-0 cursor-pointer rounded-lg overflow-hidden" onclick="playSongById('${storeId}')">
+                                        <img src="${song.img}" class="w-full h-full object-cover" loading="lazy">
+                                        <div class="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+                                    </div>
+                                    <div class="flex-1 min-w-0 cursor-pointer flex flex-col justify-center" onclick="playSongById('${storeId}')">
+                                        <div class="marquee-container w-full"><h4 class="text-white font-medium text-sm marquee-text">${utils.escapeHtml(song.name)}</h4></div>
+                                        <div class="marquee-container w-full mt-0.5"><p class="text-gray-400 text-xs marquee-text">${utils.escapeHtml(song.artist)}</p></div>
+                                    </div>
+                                    <span class="text-xs text-gray-500 font-mono flex-shrink-0">${song.duration ? utils.formatTime(song.duration) : ''}</span>
+                                    <div class="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
+                                        <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 hidden md:block" title="Play Next" onclick="event.stopPropagation(); player.addNext(songStore.get('${storeId}'))"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg></button>
+                                        <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 hidden md:block" title="Add to Queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${storeId}'))"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg></button>
+                                        <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10" title="Options" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${storeId}')"><svg width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg></button>
+                                    </div>
+                                </div>`;
+                            }).join('');
+                        }
+                    }
+
+                    const albumPlayAll = document.getElementById('album-play-all');
+                    if (albumPlayAll) {
+                        albumPlayAll.onclick = () => {
+                            if (songs.length > 0) {
+                                state.queue = [...songs];
+                                state.userQueue = [];
+                                state.idx = 0;
+                                player.playDirect(songs[0]);
+                            }
+                        };
+                    }
+                    const albumPlayNext = document.getElementById('album-play-next');
+                    if (albumPlayNext) albumPlayNext.onclick = () => player.addAlbumNext(albumId);
+                    const albumAddQueue = document.getElementById('album-add-queue');
+                    if (albumAddQueue) albumAddQueue.onclick = () => player.addAlbumToQueue(albumId);
+
                     updateMarquees();
+                } catch (e) {
+                    if (titleEl) titleEl.textContent = 'Failed to load album';
+                    if (listEl) listEl.innerHTML = '<p class="text-red-400 py-4">Error loading album details. Please try again.</p>';
+                }
+            },
+            openArtist: async (artistId, fallbackName = 'Artist') => {
+                ui.switchView('artist');
+                const nameEl = document.getElementById('artist-view-name');
+                const subtitleEl = document.getElementById('artist-view-subtitle');
+                const avatarEl = document.getElementById('artist-view-avatar');
+                const heroBgEl = document.getElementById('artist-hero-bg');
+                const topSongsEl = document.getElementById('artist-top-songs-list');
+                const albumsGridEl = document.getElementById('artist-albums-grid');
+                const followBtn = document.getElementById('artist-follow-btn');
+                const followText = document.getElementById('artist-follow-text');
+
+                if (nameEl) nameEl.textContent = fallbackName;
+                if (subtitleEl) subtitleEl.textContent = 'Loading artist...';
+                if (avatarEl) avatarEl.src = FALLBACK_ART;
+                if (topSongsEl) topSongsEl.innerHTML = '<div class="text-gray-400 py-8 text-center"><div class="w-6 h-6 border-2 border-[var(--accent-color)] border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>Loading top songs...</div>';
+                if (albumsGridEl) albumsGridEl.innerHTML = '';
+
+                const isFollowing = state.likedArtists.some(a => (a.id || a.name) === artistId || a.name === fallbackName);
+                if (followText) followText.textContent = isFollowing ? 'Following' : 'Follow';
+                if (followBtn) followBtn.className = isFollowing ? 'px-5 py-2.5 rounded-full bg-[var(--accent-color)] text-black text-xs font-bold transition flex items-center gap-1.5' : 'px-5 py-2.5 rounded-full border border-white/20 bg-white/5 text-white text-xs font-bold hover:bg-white/15 transition flex items-center gap-1.5';
+
+                try {
+                    let artistData = null;
+                    if (artistId) {
+                        const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/artists?id=${artistId}`);
+                        artistData = data.data || {};
+                    } else {
+                        const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/search/artists?query=${encodeURIComponent(fallbackName)}`);
+                        const first = data.data?.results?.[0];
+                        if (first?.id) {
+                            const full = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/artists?id=${first.id}`);
+                            artistData = full.data || {};
+                        }
+                    }
+
+                    const name = artistData?.name || fallbackName;
+                    const img = artistData?.image ? (Array.isArray(artistData.image) ? artistData.image[artistData.image.length - 1]?.url || artistData.image[0]?.url : artistData.image) : FALLBACK_ART;
+                    const topSongs = (artistData?.topSongs || []).map(jiosaavnAPI.normalizeSong).filter(Boolean);
+                    const topAlbums = artistData?.topAlbums || [];
+
+                    if (nameEl) nameEl.textContent = name;
+                    if (subtitleEl) subtitleEl.textContent = artistData?.fanCount ? `${parseInt(artistData.fanCount).toLocaleString()} Monthly Listeners` : 'Top Artist';
+                    if (avatarEl) avatarEl.src = img;
+                    if (heroBgEl) heroBgEl.style.backgroundImage = `url('${img}')`;
+
+                    if (followBtn) {
+                        followBtn.onclick = () => {
+                            ui.toggleArtistLike({ id: artistId || name, name, img, type: 'artist' });
+                            const nowFollowing = state.likedArtists.some(a => (a.id || a.name) === (artistId || name));
+                            if (followText) followText.textContent = nowFollowing ? 'Following' : 'Follow';
+                            followBtn.className = nowFollowing ? 'px-5 py-2.5 rounded-full bg-[var(--accent-color)] text-black text-xs font-bold transition flex items-center gap-1.5' : 'px-5 py-2.5 rounded-full border border-white/20 bg-white/5 text-white text-xs font-bold hover:bg-white/15 transition flex items-center gap-1.5';
+                        };
+                    }
+
+                    if (topSongs.length === 0) {
+                        if (topSongsEl) topSongsEl.innerHTML = '<p class="text-gray-400 py-4">No top songs found for this artist.</p>';
+                    } else {
+                        if (topSongsEl) {
+                            topSongsEl.innerHTML = topSongs.slice(0, 10).map((song, idx) => {
+                                const storeId = songStore.add(song);
+                                return `
+                                <div class="swipe-song group flex items-center gap-3 p-2 rounded-xl glass-panel hover:bg-white/10 transition hover-pause" data-store-id="${storeId}" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                                    <span class="w-6 text-center text-xs font-mono text-gray-500 flex-shrink-0">${idx + 1}</span>
+                                    <div class="relative w-11 h-11 flex-shrink-0 cursor-pointer rounded-lg overflow-hidden" onclick="playSongById('${storeId}')">
+                                        <img src="${song.img}" class="w-full h-full object-cover" loading="lazy">
+                                        <div class="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><svg class="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
+                                    </div>
+                                    <div class="flex-1 min-w-0 cursor-pointer flex flex-col justify-center" onclick="playSongById('${storeId}')">
+                                        <div class="marquee-container w-full"><h4 class="text-white font-medium text-sm marquee-text">${utils.escapeHtml(song.name)}</h4></div>
+                                        <div class="marquee-container w-full mt-0.5"><p class="text-gray-400 text-xs marquee-text">${utils.escapeHtml(song.artist)}</p></div>
+                                    </div>
+                                    <span class="text-xs text-gray-500 font-mono flex-shrink-0">${song.duration ? utils.formatTime(song.duration) : ''}</span>
+                                    <div class="flex items-center gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
+                                        <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 hidden md:block" title="Play Next" onclick="event.stopPropagation(); player.addNext(songStore.get('${storeId}'))"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg></button>
+                                        <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 hidden md:block" title="Add to Queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${storeId}'))"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg></button>
+                                        <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10" title="Options" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${storeId}')"><svg width="14" height="14" fill="currentColor" viewBox="0 0 16 16"><path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg></button>
+                                    </div>
+                                </div>`;
+                            }).join('');
+                        }
+                    }
+
+                    const artistPlayAll = document.getElementById('artist-play-all');
+                    if (artistPlayAll) {
+                        artistPlayAll.onclick = () => {
+                            if (topSongs.length > 0) {
+                                state.queue = [...topSongs];
+                                state.userQueue = [];
+                                state.idx = 0;
+                                player.playDirect(topSongs[0]);
+                            }
+                        };
+                    }
+                    const artistAddQueue = document.getElementById('artist-add-queue');
+                    if (artistAddQueue) {
+                        artistAddQueue.onclick = () => {
+                            if (topSongs.length > 0) {
+                                state.userQueue.push(...topSongs);
+                                ui.renderQueue();
+                                primeNextTrack();
+                                persist.save();
+                                ui.showToast(`Added ${topSongs.length} top songs to queue`);
+                            }
+                        };
+                    }
+
+                    if (topAlbums.length === 0) {
+                        if (albumsGridEl) albumsGridEl.innerHTML = '<p class="text-gray-400 py-4 col-span-full">No albums found for this artist.</p>';
+                    } else {
+                        if (albumsGridEl) {
+                            albumsGridEl.innerHTML = topAlbums.map(alb => {
+                                const albImg = alb.image ? (Array.isArray(alb.image) ? alb.image[alb.image.length - 1]?.url || alb.image[0]?.url : alb.image) : FALLBACK_ART;
+                                const albId = utils.escapeJs(alb.id || alb.albumId || '');
+                                return `
+                                <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-full cursor-pointer" onclick="ui.openAlbum('${albId}')">
+                                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 bg-gray-800 shadow-md">
+                                        <img src="${albImg}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" loading="lazy">
+                                        <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
+                                            <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+                                        </div>
+                                    </div>
+                                    <div class="w-full min-w-0 flex-1">
+                                        <div class="marquee-container w-full"><h4 class="font-bold text-white text-xs marquee-text">${utils.escapeHtml(alb.name || alb.title || 'Album')}</h4></div>
+                                        <p class="text-[11px] text-gray-400 mt-1">${alb.year ? alb.year : 'Album'}</p>
+                                    </div>
+                                </div>`;
+                            }).join('');
+                        }
+                    }
+
+                    updateMarquees();
+                } catch (e) {
+                    if (subtitleEl) subtitleEl.textContent = 'Error loading artist details.';
                 }
             },
             renderPlaylists: () => {
@@ -2707,12 +3605,21 @@
                 </div>`;
             },
             createSongPillInner: (song) => {
+                const isCurrent = state.currentTrack && state.currentTrack.id === song.id;
+                const eqMarkup = isCurrent ? `
+                    <div class="playing-eq-icon ${state.playing ? '' : 'paused'} flex-shrink-0" title="Playing">
+                        <span class="playing-eq-bar"></span>
+                        <span class="playing-eq-bar"></span>
+                        <span class="playing-eq-bar"></span>
+                    </div>
+                ` : '';
                 return `
-                    <div class="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 shadow-md border border-white/20 ml-1">
+                    <div class="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 shadow-md border border-white/20 ml-1 relative">
                         <img src="${song.img}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover" loading="lazy">
+                        ${isCurrent ? `<div class="absolute inset-0 bg-black/45 flex items-center justify-center">${eqMarkup}</div>` : ''}
                     </div>
                     <div class="flex-1 min-w-0 flex flex-col justify-center ml-3">
-                        <div class="marquee-container w-full"><div class="font-bold text-white text-sm marquee-text">${utils.escapeHtml(song.name)}</div></div>
+                        <div class="marquee-container w-full flex items-center gap-1.5"><div class="font-bold text-white text-sm marquee-text">${utils.escapeHtml(song.name)}</div>${isCurrent ? eqMarkup : ''}</div>
                         <div class="marquee-container w-full mt-0.5"><div class="text-xs text-gray-400 marquee-text">${utils.escapeHtml(song.artist)}</div></div>
                     </div>
                 `;
@@ -2739,10 +3646,12 @@
             createSongPill: (song, clickHandlerStr, context = 'queue') => {
                 const storeId = songStore.add(song);
                 const hoverBtnVis = context === 'quicksearch' ? 'opacity-100' : 'opacity-100 md:opacity-0 group-hover:opacity-100';
-                
+                const timeBadge = song.playedAt ? `<span class="text-[10px] text-gray-400 font-mono px-2 py-0.5 rounded-md bg-white/5 flex-shrink-0 mr-1.5">${ui.formatRelativeTime(song.playedAt)}</span>` : '';
+
                 return `
                 <div class="swipe-song glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/90 hover-pause group cursor-pointer mb-2" data-store-id="${storeId}" onclick="${clickHandlerStr}" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
                     ${ui.createSongPillInner(song)}
+                    ${timeBadge}
                     <div class="flex items-center ${hoverBtnVis} transition-opacity duration-200 mr-1">
                         <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition hidden md:flex" title="Play Next" onclick="event.stopPropagation(); player.addNext(songStore.get('${storeId}'))"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg></button>
                         <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition hidden md:flex" title="Add to Queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${storeId}'))"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg></button>
@@ -3261,10 +4170,12 @@
             localSummary: () => {
                 const uniqueTracks = new Set(state.playHistory.map(song => song?.id).filter(Boolean));
                 const totalPlays = state.playHistory.length;
+                const totalDurationMs = state.playHistory.reduce((sum, s) => sum + (parseInt(s.duration || 0) * 1000 || 180000), 0);
                 const topArtists = Object.entries(state.artistPlayCounts || {})
                     .sort((a, b) => b[1] - a[1])
                     .slice(0, 5);
-                return { uniqueTracks: uniqueTracks.size, totalPlays, topArtists, source: 'local' };
+                const favArtist = topArtists[0]?.[0] || 'None';
+                return { uniqueTracks: uniqueTracks.size, totalPlays, totalDurationMs, topArtists, favArtist, source: 'local' };
             },
             renderCards: (summary, topTracks = [], daily = []) => {
                 const container = document.getElementById('stats-content');
@@ -3272,50 +4183,152 @@
                 if (!container) return;
                 if (subtitle) {
                     subtitle.textContent = summary.source === 'cloud'
-                        ? 'Synced from D\'Verse Cloud — same data as the Android app.'
-                        : 'Local browser stats. Sign in to D\'Verse Cloud for full cross-device listening stats.';
+                        ? 'Cross-device listening activity synced with D\'Verse Cloud.'
+                        : 'Local listening activity. Sign in to D\'Verse Cloud to sync across devices.';
                 }
+
+                const totalListeningTime = statsView.formatDuration(summary.totalDurationMs || (summary.totalPlays * 180000));
+
+                // Top 5 Artists with percentage progress bars
+                const maxArtistPlays = summary.topArtists && summary.topArtists.length ? Math.max(...summary.topArtists.map(a => a[1])) : 1;
                 const topArtistHtml = (summary.topArtists || []).length
-                    ? summary.topArtists.map(([name, count]) => `<div class="flex items-center justify-between py-2 border-b border-white/5"><span class="text-white truncate">${utils.escapeHtml(name)}</span><span class="text-gray-400 text-sm">${count} plays</span></div>`).join('')
-                    : '<p class="text-sm text-gray-500">No artist data yet.</p>';
-                const topTrackHtml = topTracks.length
-                    ? topTracks.map(row => {
-                        const track = row.dtunes_tracks || row.track || row;
-                        const title = track?.title || track?.name || 'Unknown';
-                        const artist = track?.artist || 'Artist';
-                        const plays = row.play_count || 0;
-                        const duration = statsView.formatDuration(row.total_duration_ms || 0);
-                        return `<div class="flex items-center justify-between py-2 border-b border-white/5 gap-3"><div class="min-w-0"><p class="text-white truncate">${utils.escapeHtml(title)}</p><p class="text-xs text-gray-400 truncate">${utils.escapeHtml(artist)}</p></div><div class="text-right flex-shrink-0"><p class="text-sm text-white">${plays} plays</p><p class="text-xs text-gray-400">${duration}</p></div></div>`;
+                    ? summary.topArtists.map(([name, count], index) => {
+                        const pct = Math.max(8, Math.round((count / maxArtistPlays) * 100));
+                        return `
+                        <div class="flex flex-col gap-1 py-2 border-b border-white/5">
+                            <div class="flex items-center justify-between text-xs font-bold">
+                                <span class="text-white flex items-center gap-2 truncate">
+                                    <span class="w-5 text-gray-500 font-mono">#${index + 1}</span>
+                                    <span class="truncate">${utils.escapeHtml(name)}</span>
+                                </span>
+                                <span class="text-gray-400 font-mono">${count} plays</span>
+                            </div>
+                            <div class="w-full bg-white/5 h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-[var(--accent-color)] h-full rounded-full transition-all duration-500" style="width: ${pct}%;"></div>
+                            </div>
+                        </div>`;
                     }).join('')
-                    : '<p class="text-sm text-gray-500">Play more songs to build track stats.</p>';
-                const dailyHtml = daily.length
-                    ? daily.map(row => `<div class="flex items-center justify-between py-2 border-b border-white/5"><span class="text-white">${utils.escapeHtml(row.day)}</span><span class="text-gray-400 text-sm">${row.play_count || 0} plays · ${statsView.formatDuration(row.total_duration_ms || 0)}</span></div>`).join('')
-                    : '<p class="text-sm text-gray-500">Daily stats appear after cloud listening sessions are recorded.</p>';
-                container.innerHTML = `
-                    <section class="glass-panel rounded-2xl p-6">
-                        <h3 class="text-lg font-bold text-white mb-4">Overview</h3>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div class="rounded-xl bg-white/5 p-4"><p class="text-xs text-gray-400">Unique tracks</p><p class="text-2xl font-bold text-white">${summary.uniqueTracks || 0}</p></div>
-                            <div class="rounded-xl bg-white/5 p-4"><p class="text-xs text-gray-400">Total plays</p><p class="text-2xl font-bold text-white">${summary.totalPlays || 0}</p></div>
+                    : '<p class="text-sm text-gray-500 py-3">No artist data yet.</p>';
+
+                // Top 5 Tracks ranking with artwork
+                let topTracksList = [];
+                if (topTracks.length > 0) {
+                    topTracksList = topTracks.slice(0, 5).map(row => {
+                        const track = row.dtunes_tracks || row.track || row;
+                        return {
+                            id: track?.id,
+                            name: track?.title || track?.name || 'Unknown',
+                            artist: track?.artist || 'Artist',
+                            img: track?.img || (track?.image_url ? (Array.isArray(track.image_url) ? track.image_url[track.image_url.length - 1]?.url : track.image_url) : FALLBACK_ART),
+                            plays: row.play_count || 0
+                        };
+                    });
+                } else if (state.playHistory.length > 0) {
+                    const counts = {};
+                    state.playHistory.forEach(s => {
+                        if (!s || !s.id) return;
+                        if (!counts[s.id]) counts[s.id] = { count: 0, song: s };
+                        counts[s.id].count++;
+                    });
+                    topTracksList = Object.values(counts)
+                        .sort((a, b) => b.count - a.count)
+                        .slice(0, 5)
+                        .map(item => ({ ...item.song, plays: item.count }));
+                }
+
+                const topTrackHtml = topTracksList.length
+                    ? topTracksList.map((song, index) => {
+                        const storeId = songStore.add(song);
+                        return `
+                        <div class="flex items-center justify-between p-2 rounded-xl bg-white/5 hover:bg-white/10 transition cursor-pointer gap-3" onclick="playSongById('${storeId}')">
+                            <span class="w-5 text-center text-xs font-mono font-bold text-gray-400 flex-shrink-0">#${index + 1}</span>
+                            <img src="${song.img || FALLBACK_ART}" class="w-10 h-10 rounded-lg object-cover flex-shrink-0">
+                            <div class="min-w-0 flex-1">
+                                <p class="text-xs font-bold text-white truncate">${utils.escapeHtml(song.name || song.title || 'Track')}</p>
+                                <p class="text-[10px] text-gray-400 truncate">${utils.escapeHtml(song.artist || 'Artist')}</p>
+                            </div>
+                            <div class="text-right flex-shrink-0">
+                                <p class="text-xs font-bold text-[var(--accent-color)] font-mono">${song.plays || 1} plays</p>
+                            </div>
+                        </div>`;
+                    }).join('')
+                    : '<p class="text-sm text-gray-500 py-3">Play more songs to build track stats.</p>';
+
+                // 7-day / Daily Listening Activity
+                let dailyList = daily.length > 0 ? daily.slice(0, 7) : [];
+                if (dailyList.length === 0 && state.playHistory.length > 0) {
+                    const dayMap = {};
+                    state.playHistory.forEach(s => {
+                        const d = s.playedAt ? new Date(s.playedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : 'Recent';
+                        if (!dayMap[d]) dayMap[d] = { day: d, play_count: 0, total_duration_ms: 0 };
+                        dayMap[d].play_count++;
+                        dayMap[d].total_duration_ms += (parseInt(s.duration || 0) * 1000 || 180000);
+                    });
+                    dailyList = Object.values(dayMap).slice(0, 7);
+                }
+
+                const dailyHtml = dailyList.length
+                    ? dailyList.map(row => `
+                        <div class="flex items-center justify-between py-2 border-b border-white/5 text-xs">
+                            <span class="text-white font-bold">${utils.escapeHtml(row.day)}</span>
+                            <span class="text-gray-400 font-mono">${row.play_count || 0} plays · ${statsView.formatDuration(row.total_duration_ms || 0)}</span>
                         </div>
+                    `).join('')
+                    : '<p class="text-sm text-gray-500 py-3">Listening activity will appear as you play songs.</p>';
+
+                container.innerHTML = `
+                    <!-- 4 Metric Cards -->
+                    <div class="grid grid-cols-2 gap-4 lg:col-span-2">
+                        <div class="glass-panel rounded-2xl p-5 border border-white/10 flex flex-col justify-between">
+                            <span class="text-[11px] font-extrabold uppercase tracking-wider text-gray-400">Total Listening Time</span>
+                            <p class="text-2xl md:text-3xl font-black text-[var(--accent-color)] mt-2">${totalListeningTime}</p>
+                        </div>
+                        <div class="glass-panel rounded-2xl p-5 border border-white/10 flex flex-col justify-between">
+                            <span class="text-[11px] font-extrabold uppercase tracking-wider text-gray-400">Total Plays</span>
+                            <p class="text-2xl md:text-3xl font-black text-white mt-2">${summary.totalPlays || 0}</p>
+                        </div>
+                        <div class="glass-panel rounded-2xl p-5 border border-white/10 flex flex-col justify-between">
+                            <span class="text-[11px] font-extrabold uppercase tracking-wider text-gray-400">Unique Tracks</span>
+                            <p class="text-2xl md:text-3xl font-black text-white mt-2">${summary.uniqueTracks || 0}</p>
+                        </div>
+                        <div class="glass-panel rounded-2xl p-5 border border-white/10 flex flex-col justify-between">
+                            <span class="text-[11px] font-extrabold uppercase tracking-wider text-gray-400">Top Artist</span>
+                            <p class="text-xl md:text-2xl font-black text-white truncate mt-2">${utils.escapeHtml(summary.favArtist || (summary.topArtists?.[0]?.[0] || 'None'))}</p>
+                        </div>
+                    </div>
+
+                    <!-- Top 5 Artists Ranking -->
+                    <section class="glass-panel rounded-2xl p-6 border border-white/10">
+                        <h3 class="text-lg font-black text-white mb-4 flex items-center gap-2">
+                            <span>🎤</span>
+                            <span>Top Artists</span>
+                        </h3>
+                        <div class="flex flex-col gap-1">${topArtistHtml}</div>
                     </section>
-                    <section class="glass-panel rounded-2xl p-6">
-                        <h3 class="text-lg font-bold text-white mb-4">Top Artists</h3>
-                        ${topArtistHtml}
+
+                    <!-- Top 5 Tracks Ranking -->
+                    <section class="glass-panel rounded-2xl p-6 border border-white/10">
+                        <h3 class="text-lg font-black text-white mb-4 flex items-center gap-2">
+                            <span>🔥</span>
+                            <span>Top Tracks</span>
+                        </h3>
+                        <div class="flex flex-col gap-2">${topTrackHtml}</div>
                     </section>
-                    <section class="glass-panel rounded-2xl p-6 lg:col-span-2">
-                        <h3 class="text-lg font-bold text-white mb-4">Top Tracks</h3>
-                        ${topTrackHtml}
+
+                    <!-- 7-Day Listening Timeline -->
+                    <section class="glass-panel rounded-2xl p-6 border border-white/10 lg:col-span-2">
+                        <h3 class="text-lg font-black text-white mb-4 flex items-center gap-2">
+                            <span>📅</span>
+                            <span>Recent Daily Activity</span>
+                        </h3>
+                        <div class="flex flex-col">${dailyHtml}</div>
                     </section>
-                    <section class="glass-panel rounded-2xl p-6 lg:col-span-2">
-                        <h3 class="text-lg font-bold text-white mb-4">Daily Listening</h3>
-                        ${dailyHtml}
-                    </section>`;
+                `;
             },
             render: async () => {
                 const container = document.getElementById('stats-content');
                 if (!container) return;
-                container.innerHTML = '<p class="text-gray-400">Loading stats...</p>';
+                container.innerHTML = '<p class="text-gray-400 col-span-full py-8 text-center"><div class="w-6 h-6 border-2 border-[var(--accent-color)] border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>Loading stats...</p>';
                 try {
                     if (cloudLibrary.session && window.dverse?.dtunes?.fetchListeningStats) {
                         const [topTracks, daily] = await Promise.all([
@@ -3326,7 +4339,9 @@
                         statsView.renderCards({
                             uniqueTracks: topTracks.length || local.uniqueTracks,
                             totalPlays: topTracks.reduce((sum, row) => sum + Number(row.play_count || 0), 0) || local.totalPlays,
+                            totalDurationMs: topTracks.reduce((sum, row) => sum + Number(row.total_duration_ms || 0), 0) || local.totalDurationMs,
                             topArtists: local.topArtists,
+                            favArtist: local.favArtist,
                             source: 'cloud'
                         }, topTracks, daily);
                         return;
@@ -3880,8 +4895,8 @@
                     swipeSongStart.row.style.setProperty('--song-swipe-x', `${clamped}px`);
                     swipeSongStart.row.style.setProperty('--swipe-scale', progress.toFixed(3));
                     swipeSongStart.row.classList.add('is-swiping');
-                    swipeSongStart.row.classList.toggle('swipe-show-next', dx < -14);
-                    swipeSongStart.row.classList.toggle('swipe-show-queue', dx > 14);
+                    swipeSongStart.row.classList.toggle('swipe-show-next', dx > 14);
+                    swipeSongStart.row.classList.toggle('swipe-show-queue', dx < -14);
                 }
             }, { passive: true });
             document.addEventListener('touchend', (e) => {
@@ -3894,14 +4909,14 @@
                 row.style.setProperty('--swipe-scale', '0');
                 row.classList.remove('is-swiping', 'swipe-show-next', 'swipe-show-queue');
                 swipeSongStart = null;
-                if (Math.abs(dx) > 72 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+                if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.2) {
                     const song = songStore.get(row.dataset.storeId);
                     if (!song) return;
-                    const addNext = dx < 0;
-                    const commitClass = addNext ? 'swipe-committed-next' : 'swipe-committed-queue';
+                    const isPlayNext = dx > 0;
+                    const commitClass = isPlayNext ? 'swipe-committed-next' : 'swipe-committed-queue';
                     row.classList.add(commitClass);
-                    row.style.setProperty('--song-swipe-x', addNext ? '-115%' : '115%');
-                    if (addNext) player.addNext(song); else player.addToQueue(song);
+                    row.style.setProperty('--song-swipe-x', isPlayNext ? '115%' : '-115%');
+                    if (isPlayNext) player.addNext(song); else player.addToQueue(song);
                     haptics.pulse('medium');
                     setTimeout(() => { row.classList.remove(commitClass); row.style.setProperty('--song-swipe-x', '0px'); row.style.setProperty('--swipe-scale', '0'); }, 420);
                     e.preventDefault();
@@ -4016,6 +5031,12 @@
                         songDurationSeconds: Math.floor(audio.duration || 0),
                     });
                 }
+
+                // If sleep timer is set to end-of-track, pause and finish
+                if (sleepTimer.onTrackEnded()) {
+                    return;
+                }
+
                 const wrap = document.getElementById('queue-wrapper');
                 if(state.upNextTriggered && !state.queueExpanded) {
                     wrap.classList.add('track-swap-out');
