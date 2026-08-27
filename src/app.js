@@ -136,6 +136,24 @@
             return url;
         };
 
+        // Media Session artwork set for Android/Chrome lock screen + notification
+        // and the iOS lock screen. JioSaavn CDN art embeds the size in the path
+        // (e.g. .../500x500/cover.jpg), so we can expose several resolutions and
+        // let the OS pick — sharper notification thumbs, lighter lock-screen art.
+        const buildMediaArtwork = (value) => {
+            const url = String(value || '').trim();
+            if (!url || url === 'undefined' || url === 'null') return [];
+            if (/^https?:\/\//.test(url) && /\/\d{2,4}x\d{2,4}\//.test(url)) {
+                return ['50x50', '150x150', '500x500'].map((size) => ({
+                    src: url.replace(/\/\d{2,4}x\d{2,4}\//, `/${size}/`),
+                    sizes: size,
+                    type: 'image/jpeg'
+                }));
+            }
+            const isSvg = /\.svg($|\?)/i.test(url);
+            return [{ src: url, sizes: isSvg ? 'any' : '500x500', type: isSvg ? 'image/svg+xml' : 'image/jpeg' }];
+        };
+
         const installGlobalImageFallback = () => {
             document.addEventListener('error', (event) => {
                 const target = event.target;
@@ -335,10 +353,15 @@
                 
                 const rawName = song.name || song.title || 'Unknown';
                 const rawArtist = song.artists?.primary?.map(a => a.name).join(', ') || song.primaryArtists || 'Unknown Artist';
+                const streamingUrl = jiosaavnAPI.isStreamingUrl(bestUrl) ? bestUrl : null;
                 return {
                     id: song.id, name: utils.decodeHtml(rawName), artist: utils.decodeHtml(rawArtist),
                     img: sanitizeImageUrl(song.image?.[2]?.url || song.image?.[1]?.url || song.image?.[0]?.url || FALLBACK_ART),
-                    url: jiosaavnAPI.isStreamingUrl(bestUrl) ? bestUrl : null,
+                    url: streamingUrl,
+                    // Stamp freshly resolved URLs so primeNextTrack can tell
+                    // fresh ones from potentially expired ones without
+                    // re-fetching every track that comes from search results.
+                    urlFetchedAt: streamingUrl ? Date.now() : 0,
                     duration: song.duration || 0,
                     source: 'jiosaavn'
                 };
@@ -1223,10 +1246,19 @@
         // ============================================
         const audio = document.getElementById('audio-el');
         const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        // iOS aggressively throttles hidden pages and only keeps a single media
+        // element alive in the background. Chrome on Android is far more
+        // capable: it keeps preloaded media warm, exposes the full Media
+        // Session API and the Page Lifecycle API. Only pre-buffer the next
+        // track where background media is reliable (everywhere except Apple
+        // handhelds), and respect the data-saver preference.
+        const isAppleHandheld = /iPhone|iPad|iPod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const networkInfo = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        const canPreloadNextTrack = !isAppleHandheld && !networkInfo?.saveData;
         audio.setAttribute('playsinline', '');
         audio.setAttribute('webkit-playsinline', '');
         audio.preload = 'auto';
-        const preloadAudio = isMobileDevice ? null : new Audio();
+        const preloadAudio = canPreloadNextTrack ? new Audio() : null;
         if (preloadAudio) {
             preloadAudio.preload = 'auto';
         }
@@ -1248,16 +1280,27 @@
             return state.queue.length > 1 ? state.queue[state.queue.length - 1] : null;
         };
 
+        // Streaming URLs can expire, so re-validate the upcoming track's URL
+        // if it was resolved more than 15 minutes ago. This guarantees that a
+        // background track change (iOS lock screen / Android notification)
+        // always has a fresh, playable URL ready without an async round trip.
+        const NEXT_TRACK_URL_TTL_MS = 15 * 60 * 1000;
+
         const primeNextTrack = async () => {
             const nextTrack = getUpcomingTrack();
-            if (!nextTrack?.id || state.nextTrackPreloadId === nextTrack.id) return;
+            if (!nextTrack?.id) return;
+            const alreadyPrimed = state.nextTrackPreloadId === nextTrack.id;
+            const urlIsStale = !nextTrack.url
+                || !nextTrack.urlFetchedAt
+                || (Date.now() - nextTrack.urlFetchedAt > NEXT_TRACK_URL_TTL_MS);
+            if (alreadyPrimed && !urlIsStale) return;
             state.nextTrackPreloadId = nextTrack.id;
             try {
-                const freshDetails = nextTrack.url ? null : await jiosaavnAPI.getSong(nextTrack.id);
+                const freshDetails = urlIsStale ? await jiosaavnAPI.getSong(nextTrack.id) : null;
                 const playUrl = freshDetails?.url || nextTrack.url;
                 if (!playUrl || state.nextTrackPreloadId !== nextTrack.id) return;
-                Object.assign(nextTrack, freshDetails || {}, { url: playUrl });
-                if (preloadAudio) {
+                Object.assign(nextTrack, freshDetails || {}, { url: playUrl, urlFetchedAt: Date.now() });
+                if (preloadAudio && preloadAudio.getAttribute('src') !== playUrl) {
                     preloadAudio.src = playUrl;
                     preloadAudio.load();
                 }
@@ -1273,14 +1316,39 @@
             }
         };
 
+        // Desktop routes the audio element through WebAudio (EQ/limiter/analyser).
+        // Once routed, a suspended AudioContext means the element keeps
+        // "playing" (time advances) while emitting NO sound. Firefox/Edge start
+        // contexts created outside a user gesture as "suspended", so the context
+        // must be created AND resumed inside the gesture's task — before
+        // audio.play() — and re-checked whenever playback resumes or the
+        // environment interrupts it (sleep/wake, audio device change, tab
+        // discard/restore).
+        const ensureAudioContextRunning = () => {
+            if (isMobileDevice) return; // no WebAudio routing on mobile
+            try {
+                if (!isAudioContextInitialized) setupAudioContext();
+                if (audioContext && audioContext.state === 'suspended') {
+                    const resumeAttempt = audioContext.resume();
+                    if (resumeAttempt && typeof resumeAttempt.catch === 'function') {
+                        // Swallow failures: the element must still be allowed
+                        // to play (unrouted output beats aborted playback).
+                        return resumeAttempt.catch(err => console.warn('[DTunes] AudioContext resume failed:', err));
+                    }
+                    return Promise.resolve();
+                }
+            } catch (e) {}
+            return Promise.resolve();
+        };
+
         const requestPlay = async () => {
             if (!state.loaded && !state.currentTrack) return;
             state.userPaused = false;
             try {
-                if (!isAudioContextInitialized) setupAudioContext();
-                if (audioContext && audioContext.state === 'suspended') {
-                    try { await audioContext.resume(); } catch (acErr) {}
-                }
+                // Create/resume the WebAudio context inside the user gesture,
+                // BEFORE play(), so the element is never routed into a
+                // suspended context (silent playback on desktop).
+                await ensureAudioContextRunning();
                 await audio.play();
                 state.playing = true;
                 ui.updatePlayBtn();
@@ -1295,9 +1363,31 @@
 
         const requestPause = () => {
             state.userPaused = true;
+            // Remember that the user (or OS media controls) explicitly paused:
+            // without this, returning to the foreground would auto-resume even
+            // though the listener pressed pause from the lock screen.
+            state.wasPlayingBeforeHidden = false;
             audio.pause();
             state.playing = false;
             ui.updatePlayBtn();
+        };
+
+        // Resuming after a source swap while the page is hidden is not always
+        // permitted (iOS rejects background play() calls made outside the
+        // original media-event task). In that case keep the intent to play and
+        // let the visibilitychange / lifecycle `resume` handlers retry with the
+        // refreshed URL once the user returns.
+        const tryResumePlayback = async () => {
+            if (state.playing || !state.userPaused) {
+                try {
+                    await audio.play();
+                } catch (playErr) {
+                    console.warn('[DTunes] Recovery playback rejected:', playErr);
+                    if (document.visibilityState === 'hidden') {
+                        state.wasPlayingBeforeHidden = true;
+                    }
+                }
+            }
         };
 
         const recoverFromAudioError = async () => {
@@ -1306,13 +1396,27 @@
             state.loading = true;
             ui.setPlayerLoading(true);
 
+            // While hidden, advancing would trigger a chain of background
+            // fetches that iOS will not authorize; park instead and let the
+            // visible-resume path retry.
+            const bailOut = () => {
+                if (document.visibilityState === 'hidden') {
+                    state.wasPlayingBeforeHidden = true;
+                    state.loading = false;
+                    ui.setPlayerLoading(false);
+                } else {
+                    player.next();
+                }
+            };
+
             try {
                 const refreshed = await jiosaavnAPI.getSong(state.currentTrack.id);
                 if (refreshed?.url && refreshed.url !== state.currentTrack.url) {
                     state.currentTrack.url = refreshed.url;
+                    state.currentTrack.urlFetchedAt = Date.now();
                     audio.src = refreshed.url;
                     audio.load();
-                    if (state.playing || !state.userPaused) await audio.play();
+                    await tryResumePlayback();
                     return;
                 }
 
@@ -1320,16 +1424,17 @@
                     const retried = await jiosaavnAPI.getSong(state.currentTrack.id);
                     if (retried?.url) {
                         state.currentTrack.url = retried.url;
+                        state.currentTrack.urlFetchedAt = Date.now();
                         audio.src = retried.url;
                         audio.load();
-                        if (state.playing || !state.userPaused) await audio.play();
+                        await tryResumePlayback();
                         return;
                     }
                 }
 
-                player.next();
+                bailOut();
             } catch (e) {
-                player.next();
+                bailOut();
             } finally {
                 isAudioRecoveryPending = false;
                 state.loading = false;
@@ -1382,6 +1487,43 @@
             }
         };
 
+        // Shared post-play bookkeeping used by both the foreground (fresh URL)
+        // and background (cached URL) playback paths.
+        const onTrackStarted = (track) => {
+            state.playing = true;
+            state.loading = false;
+            ui.setPlayerLoading(false);
+            ui.updatePlayBtn();
+
+            const isRepeatStart = recommendationEvents.lastStartedSongId === track.id && Date.now() - recommendationEvents.currentPlayStartAt < 15 * 60 * 1000;
+            recommendationEvents.currentPlayStartAt = Date.now();
+            recommendationEvents.lastStartedSongId = track.id;
+            recommendationEvents.completedSongId = null;
+            recommendationEvents.record(isRepeatStart ? 'repeat' : (recommendationEvents.contextForTrack(track).source === 'search' ? 'search_play' : 'play_start'), track, {
+                songDurationSeconds: track.duration,
+                context: recommendationEvents.contextForTrack(track),
+            });
+
+            // Keep the desktop WebAudio context alive across track changes.
+            ensureAudioContextRunning();
+            applyEqualizer();
+
+            ui.updateMetadata(track);
+            ui.renderQueue();
+            primeNextTrack();
+
+            const trackWithTime = { ...track, playedAt: new Date().toISOString() };
+            state.playHistory = state.playHistory.filter(t => t.id !== track.id);
+            state.playHistory.unshift(trackWithTime);
+            if (state.playHistory.length > 100) state.playHistory.pop();
+            localStorage.setItem('playHistory', JSON.stringify(state.playHistory));
+
+            if (window.listeningSession) listeningSession.start(track);
+            ui.renderHistory();
+            if (!document.getElementById('view-home').classList.contains('hidden')) homeView.renderRecentlyPlayed();
+            persist.save();
+        };
+
         const player = {
             playDirect: async (track) => {
                 if (!track) return;
@@ -1401,6 +1543,13 @@
                 ui.updatePlayBtn();
                 ui.renderQueue();
                 persist.save();
+
+                // Create/resume the desktop WebAudio context synchronously
+                // here: this section still runs inside the user's click task,
+                // before any await. Awaiting audio.play() first would leave the
+                // context created in a suspended (gesture-less) state on
+                // Firefox/Edge — i.e. silent playback on desktop.
+                ensureAudioContextRunning();
                 
                 const safetyTimer = setTimeout(() => {
                     if (currentRequestId === playRequestId && isPlaybackPending) {
@@ -1410,6 +1559,49 @@
                     }
                 }, 8000);
 
+                const finishRequest = () => {
+                    clearTimeout(safetyTimer);
+                    if (currentRequestId === playRequestId) {
+                        isPlaybackPending = false;
+                    }
+                };
+
+                // Background fast path (iOS lock screen / Android notification
+                // track changes): iOS only honors play() calls that run inside
+                // the same task as the media event that triggered them. Awaiting
+                // a network refresh first gets the background play() rejected,
+                // so when the page is hidden and the upcoming track already
+                // carries a playable URL (kept warm by primeNextTrack), swap the
+                // source and start playback synchronously.
+                if (document.visibilityState === 'hidden' && track.url) {
+                    try {
+                        const cachedTrack = { ...track };
+                        state.currentTrack = cachedTrack;
+                        state.loaded = true;
+                        state.userPaused = false;
+                        ui.enableControls();
+                        ensureAudioContextRunning();
+                        audio.loop = (state.repeat === 2);
+                        audio.src = cachedTrack.url;
+                        audio.load();
+                        const playPromise = audio.play();
+                        finishRequest();
+                        onTrackStarted(cachedTrack);
+                        playPromise.catch((err) => {
+                            console.warn('[DTunes] Background playback rejected, deferring recovery:', err);
+                            // A stale URL surfaces as an `error` event handled by
+                            // recoverFromAudioError; permission/route rejections
+                            // are retried by the visible-resume path.
+                            if (document.visibilityState === 'hidden') {
+                                state.wasPlayingBeforeHidden = true;
+                            }
+                        });
+                        return;
+                    } catch (syncError) {
+                        console.warn('[DTunes] Background fast path failed, refreshing URL instead:', syncError);
+                    }
+                }
+
                 try {
                     const freshDetails = await jiosaavnAPI.getSong(track.id);
                     if (currentRequestId !== playRequestId) return;
@@ -1417,7 +1609,7 @@
                     const playUrl = freshDetails?.url || track.url;
                     if (!playUrl) throw new Error('No audio URL found');
                     
-                    track = { ...track, ...freshDetails, url: playUrl };
+                    track = { ...track, ...freshDetails, url: playUrl, urlFetchedAt: Date.now() };
                     audio.preload = 'auto';
                     audio.src = playUrl;
                     audio.load();
@@ -1427,43 +1619,13 @@
                     ui.enableControls();
                     audio.loop = (state.repeat === 2);
 
+                    // Context was already created in the click task above;
+                    // re-check in case the OS suspended it while we fetched.
+                    await ensureAudioContextRunning();
                     await audio.play();
                     if (currentRequestId !== playRequestId) return;
 
-                    state.playing = true;
-                    state.loading = false;
-                    ui.setPlayerLoading(false);
-                    ui.updatePlayBtn();
-
-                    const isRepeatStart = recommendationEvents.lastStartedSongId === track.id && Date.now() - recommendationEvents.currentPlayStartAt < 15 * 60 * 1000;
-                    recommendationEvents.currentPlayStartAt = Date.now();
-                    recommendationEvents.lastStartedSongId = track.id;
-                    recommendationEvents.completedSongId = null;
-                    recommendationEvents.record(isRepeatStart ? 'repeat' : (recommendationEvents.contextForTrack(track).source === 'search' ? 'search_play' : 'play_start'), track, {
-                        songDurationSeconds: track.duration,
-                        context: recommendationEvents.contextForTrack(track),
-                    });
-                    
-                    if (!isAudioContextInitialized) setupAudioContext();
-                    if (audioContext && audioContext.state === 'suspended') {
-                        audioContext.resume().catch(err => console.warn('[DTunes] Could not resume audioContext in playDirect:', err));
-                    }
-                    applyEqualizer();
-                    
-                    ui.updateMetadata(track);
-                    ui.renderQueue();
-                    primeNextTrack(); 
-                    
-                    const trackWithTime = { ...track, playedAt: new Date().toISOString() };
-                    state.playHistory = state.playHistory.filter(t => t.id !== track.id);
-                    state.playHistory.unshift(trackWithTime);
-                    if(state.playHistory.length > 100) state.playHistory.pop();
-                    localStorage.setItem('playHistory', JSON.stringify(state.playHistory));
-                    
-                    if (window.listeningSession) listeningSession.start(track);
-                    ui.renderHistory();
-                    if(!document.getElementById('view-home').classList.contains('hidden')) homeView.renderRecentlyPlayed();
-                    persist.save();
+                    onTrackStarted(track);
                 } catch (error) {
                     if (currentRequestId === playRequestId) {
                         console.error('[DTunes] Error playing track:', error);
@@ -1473,10 +1635,7 @@
                         ui.updatePlayBtn();
                     }
                 } finally {
-                    clearTimeout(safetyTimer);
-                    if (currentRequestId === playRequestId) {
-                        isPlaybackPending = false;
-                    }
+                    finishRequest();
                 }
             },
             togglePlay: () => {
@@ -1633,13 +1792,20 @@
             state.wasPlayingBeforeHidden = true;
             state.userPaused = false;
             if (window.listeningSession) listeningSession.setPlaying(true);
+            // Desktop watchdog: if the element started but the WebAudio context
+            // is suspended (OS interruption, device switch), the element runs
+            // silently — resume the context immediately.
+            ensureAudioContextRunning();
             ui.updatePlayBtn();
             persist.save();
+            updateMediaPosition();
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
         });
         audio.addEventListener('pause', () => { 
             // Only update play state if the user explicitly requested a pause,
             // or if the playback naturally ended, or if the page is visible.
+            // (Swapping audio.src while hidden fires a synthetic pause event;
+            // treating it as a real stop kills iOS background playback.)
             if (state.userPaused || audio.ended || document.visibilityState !== 'hidden') {
                 state.playing = false;
                 state.wasPlayingBeforeHidden = false;
@@ -1651,8 +1817,41 @@
             if (document.visibilityState !== 'hidden') {
                 persist.save();
             }
-            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+            // Never report "paused" to the OS while the page is hidden and we
+            // still intend to be playing (background track transition or an
+            // OS interruption): doing so makes iOS/Android drop the media
+            // session and fully suspend the page.
+            if ('mediaSession' in navigator && !(document.visibilityState === 'hidden' && (state.playing || state.wasPlayingBeforeHidden))) {
+                navigator.mediaSession.playbackState = 'paused';
+            }
         });
+        audio.addEventListener('loadedmetadata', updateMediaPosition);
+
+        // Register Media Session handlers at startup so OS-level controls are
+        // wired before the first track renders (and stay wired while Chrome on
+        // Android freezes/unfreezes the tab). updateMetadata re-applies them
+        // per track; unsupported actions throw and are ignored per platform.
+        if ('mediaSession' in navigator) {
+            const safeSetStartupHandler = (action, handler) => {
+                try { navigator.mediaSession.setActionHandler(action, handler); } catch (e) {}
+            };
+            safeSetStartupHandler('play', requestPlay);
+            safeSetStartupHandler('pause', requestPause);
+            safeSetStartupHandler('previoustrack', () => player.prev());
+            safeSetStartupHandler('nexttrack', () => player.next(true));
+            safeSetStartupHandler('stop', () => { requestPause(); audio.currentTime = 0; updateMediaPosition(); });
+            safeSetStartupHandler('seekbackward', (details) => { audio.currentTime = Math.max(audio.currentTime - (details.seekOffset || 10), 0); updateMediaPosition(); });
+            safeSetStartupHandler('seekforward', (details) => { audio.currentTime = Math.min(audio.currentTime + (details.seekOffset || 10), audio.duration || 0); updateMediaPosition(); });
+            safeSetStartupHandler('seekto', (details) => {
+                if (!details || !Number.isFinite(details.seekTime)) return;
+                if (details.fastSeek && typeof audio.fastSeek === 'function' && Number.isFinite(audio.duration)) {
+                    audio.fastSeek(Math.max(0, Math.min(details.seekTime, audio.duration)));
+                } else {
+                    audio.currentTime = Math.max(0, Math.min(details.seekTime, audio.duration || details.seekTime));
+                }
+                updateMediaPosition();
+            });
+        }
 
         ['loadstart', 'waiting', 'stalled'].forEach((eventName) => {
             audio.addEventListener(eventName, () => {
@@ -1674,6 +1873,12 @@
         // element and UI state (especially on mobile expanded player).
         setInterval(() => {
             if (!state.loaded || isPlaybackPending) return;
+            // Desktop silent-playback watchdog: the element can keep playing
+            // while a suspended WebAudio context swallows all output (sleep/
+            // wake, audio device change). Resume it whenever detected.
+            if (!audio.paused && audioContext && audioContext.state === 'suspended') {
+                audioContext.resume().catch(() => {});
+            }
             const audioActuallyPlaying = !audio.paused && !audio.ended && audio.readyState > 2;
             const stateDesync = (audioActuallyPlaying !== state.playing) && document.visibilityState !== 'hidden' && !state.wasPlayingBeforeHidden;
             if (stateDesync) {
@@ -1684,6 +1889,49 @@
             }
         }, 2000);
 
+        // Reusable resume path: invoked when the page becomes visible again
+        // and after a Chrome-on-Android lifecycle `resume` (tab unfreeze).
+        // Covers OS interruptions (calls, headphone unplug) and background
+        // transitions that the OS refused, while always respecting an
+        // explicit pause issued from the lock screen / notification.
+        const resumePlaybackIfExpected = () => {
+            isPlaybackPending = false;
+            state.loading = false;
+            ui.setPlayerLoading(false);
+
+            if (state.userPaused) {
+                state.wasPlayingBeforeHidden = false;
+                ui.updatePlayBtn();
+                return;
+            }
+
+            const shouldResume = state.wasPlayingBeforeHidden || state.playing;
+            // Even when the element never paused, the WebAudio context may have
+            // been suspended by the OS while hidden (desktop silent playback).
+            ensureAudioContextRunning();
+            if (shouldResume) {
+                audio.muted = false;
+                if (audio.paused) {
+                    audio.play().then(() => {
+                        state.playing = true;
+                        ui.updatePlayBtn();
+                    }).catch(err => {
+                        console.warn('[DTunes] Could not resume audio on focus:', err);
+                        if (audio.error) {
+                            recoverFromAudioError();
+                        } else {
+                            state.playing = false;
+                            state.wasPlayingBeforeHidden = false;
+                            ui.updatePlayBtn();
+                        }
+                    });
+                } else {
+                    state.playing = true;
+                    ui.updatePlayBtn();
+                }
+            }
+        };
+
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
                 state.wasPlayingBeforeHidden = state.playing || !audio.paused;
@@ -1693,40 +1941,24 @@
                 cloudLibrary.flushPlaybackState(true);
                 setTimeout(() => { audio.volume = preservedVolume; audio.muted = false; }, 0);
             } else {
-                isPlaybackPending = false;
-                state.loading = false;
-                ui.setPlayerLoading(false);
-
-                const shouldResume = state.wasPlayingBeforeHidden || state.playing;
-                if (shouldResume) {
-                    audio.muted = false;
-                    if (audioContext && audioContext.state === 'suspended') {
-                        audioContext.resume().catch(err => console.warn('[DTunes] audioContext resume failed:', err));
-                    }
-                    if (audio.paused) {
-                        audio.play().then(() => {
-                            state.playing = true;
-                            ui.updatePlayBtn();
-                        }).catch(err => {
-                            console.warn('[DTunes] Could not resume audio on focus:', err);
-                            if (audio.error) {
-                                recoverFromAudioError();
-                            } else {
-                                state.playing = false;
-                                state.wasPlayingBeforeHidden = false;
-                                ui.updatePlayBtn();
-                            }
-                        });
-                    } else {
-                        state.playing = true;
-                        ui.updatePlayBtn();
-                    }
-                }
+                resumePlaybackIfExpected();
             }
             if ('mediaSession' in navigator && document.visibilityState === 'hidden' && (state.playing || state.wasPlayingBeforeHidden)) {
                 navigator.mediaSession.playbackState = 'playing';
             }
         });
+
+        // Page Lifecycle API (Chrome on Android): the browser may freeze this
+        // tab while it is backgrounded. When it unfreezes the page, reconcile
+        // playback the same way as returning to a visible tab.
+        if (typeof document.addEventListener === 'function') {
+            document.addEventListener('resume', resumePlaybackIfExpected);
+            document.addEventListener('freeze', () => {
+                // Flush any pending state before the browser suspends JS.
+                persist.save();
+                cloudLibrary.flushPlaybackState(true);
+            });
+        }
         window.addEventListener('pagehide', () => {
             if (window.listeningSession) listeningSession.finalize();
             persist.save();
@@ -2893,7 +3125,14 @@
                     artist.textContent = activeLoading ? `Loading • ${state.currentTrack.artist || 'Preparing audio'}` : (state.currentTrack.artist || 'Unknown Artist');
                 }
                 if ('mediaSession' in navigator) {
-                    navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused';
+                    // Keep the OS media session alive during background track
+                    // swaps — flipping to "paused" mid-transition makes iOS
+                    // treat playback as stopped. But don't claim "playing"
+                    // once playback has genuinely ended/stopped.
+                    const intendsToPlay = isPlaybackPending
+                        || (state.currentTrack && state.playing)
+                        || (document.visibilityState === 'hidden' && state.wasPlayingBeforeHidden);
+                    navigator.mediaSession.playbackState = intendsToPlay ? 'playing' : 'paused';
                 }
                 updateMarquees();
             },
@@ -2936,10 +3175,12 @@
                 const isLiked = state.likedIds.some(item => (typeof item === 'string' ? item === track.id : item.id === track.id));
                 likeBtn.className = isLiked ? 'text-red-500 transition flex-shrink-0 ml-2' : 'text-gray-400 hover:text-red-500 transition flex-shrink-0 ml-2';
 
-                if ('mediaSession' in navigator) {
+                if ('mediaSession' in navigator && typeof window.MediaMetadata === 'function') {
                     navigator.mediaSession.metadata = new MediaMetadata({
-                        title: track.name, artist: options.loading ? `Loading • ${track.artist || ''}` : track.artist,
-                        artwork: [{ src: safeArt, sizes: '500x500', type: 'image/jpeg' }]
+                        title: track.name,
+                        artist: options.loading ? `Loading • ${track.artist || ''}` : track.artist,
+                        album: track.album || "D'Tunes",
+                        artwork: buildMediaArtwork(safeArt)
                     });
                     const safeSetHandler = (action, handler) => {
                         try { navigator.mediaSession.setActionHandler(action, handler); } catch (e) {}
@@ -2948,11 +3189,24 @@
                     safeSetHandler('pause', requestPause);
                     safeSetHandler('previoustrack', player.prev);
                     safeSetHandler('nexttrack', () => player.next(true));
+                    // Chrome on Android maps this to dismissing the media
+                    // notification (unsupported actions throw on iOS — ignored).
+                    safeSetHandler('stop', () => {
+                        requestPause();
+                        audio.currentTime = 0;
+                        updateMediaPosition();
+                    });
                     safeSetHandler('seekbackward', (details) => { audio.currentTime = Math.max(audio.currentTime - (details.seekOffset || 10), 0); updateMediaPosition(); });
                     safeSetHandler('seekforward', (details) => { audio.currentTime = Math.min(audio.currentTime + (details.seekOffset || 10), audio.duration || 0); updateMediaPosition(); });
                     safeSetHandler('seekto', (details) => {
                         if (!details || !Number.isFinite(details.seekTime)) return;
-                        audio.currentTime = Math.max(0, Math.min(details.seekTime, audio.duration || details.seekTime)); updateMediaPosition();
+                        // Chrome passes fastSeek=true for coarse scrubbing.
+                        if (details.fastSeek && typeof audio.fastSeek === 'function' && Number.isFinite(audio.duration)) {
+                            audio.fastSeek(Math.max(0, Math.min(details.seekTime, audio.duration)));
+                        } else {
+                            audio.currentTime = Math.max(0, Math.min(details.seekTime, audio.duration || details.seekTime));
+                        }
+                        updateMediaPosition();
                     });
                 }
                 
@@ -4017,15 +4271,19 @@
                     });
                 }
                 const wrap = document.getElementById('queue-wrapper');
-                if(state.upNextTriggered && !state.queueExpanded) {
-                    wrap.classList.add('track-swap-out');
-                    setTimeout(() => {
-                        wrap.classList.remove('preview-expanded', 'track-swap-out');
-                        if(state.repeat === 2) { audio.currentTime = 0; requestPlay(); state.upNextTriggered = false; } else player.next();
-                    }, document.visibilityState === 'hidden' ? 0 : 400); // Wait for CSS swap out morph only when visible
-                } else {
+                const advance = () => {
                     wrap.classList.remove('preview-expanded', 'track-swap-out');
-                    if(state.repeat === 2) { audio.currentTime = 0; requestPlay(); state.upNextTriggered = false; } else player.next();
+                    if (state.repeat === 2) { audio.currentTime = 0; requestPlay(); state.upNextTriggered = false; } else player.next();
+                };
+                if (state.upNextTriggered && !state.queueExpanded && document.visibilityState !== 'hidden') {
+                    wrap.classList.add('track-swap-out');
+                    setTimeout(advance, 400); // Wait for CSS swap out morph only when visible
+                } else {
+                    // Background auto-advance must happen synchronously inside
+                    // this media event task: iOS rejects play() calls made from
+                    // a timer/async continuation in a hidden page, and Chrome's
+                    // freeze grace period is short.
+                    advance();
                 }
             });
 
