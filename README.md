@@ -26,6 +26,21 @@ The original single-file app has been split into:
 - `db/migrations/001_recommendations.sql` — PostgreSQL schema.
 - `tests/recommendationEngine.test.js` — scoring/ranking tests.
 
+## Security & performance hardening
+
+The server applies the following protections (see `tests/hardening.test.js`):
+
+- **Static allow-listing** — repo internals (`.git/`, `data/`, `lib/`, `db/`, `tests/`, `server.js`, `.env*`, …) are never served; public assets get `ETag`/`304` revalidation, cache headers, `X-Content-Type-Options: nosniff`, and `Referrer-Policy: no-referrer`.
+- **Request validation** — `POST /api/music/event` only accepts the documented event types, caps request bodies at 64 KB (HTTP 413), and is rate limited per IP (60 req/min, HTTP 429).
+- **Limit sanitization** — playlist/recommendation `limit` params are clamped to 1–100 (default 25) instead of silently returning empty results on bad input.
+- **Resilience** — the JioSaavn wrapper fails over across four community API mirrors with per-request timeouts; external candidate fetching runs in parallel; identical playlist queries are served from a short-lived in-memory cache.
+- **Storage hygiene** — the JSON store compacts raw song metadata, prunes old events (configurable via `DTUNES_MAX_EVENTS`), and writes the file once per event. `data/` is git-ignored.
+- **Health check** — `GET /api/music/health` returns service status and uptime.
+
+## Mobile now-playing sheet
+
+The expanded mobile player is a dedicated `#mobile-player-sheet` overlay (see `tests/mobilePlayerSheet.test.js`) rather than a CSS re-arrangement of the desktop footer. It stacks album art → song info (centered) → seek bar + transport controls → internally scrollable queue/history, slides in and out with a single transform animation, supports swipe-to-change-track on the art and pull-down-to-close, and bans horizontal scrolling. All seek bars share one pointer-capture based controller (44px touch targets, `touch-action: none`, window-level drag release) so seeking always tracks the real song.
+
 ## How the recommender works
 
 No embeddings or paid APIs are used. The engine combines explicit behavior signals, listening history, song metadata, and JioSaavn search/trending results.

@@ -14,6 +14,8 @@
 
   function toApiSong(song) {
     if (!song) return null;
+    // NOTE: deliberately do not embed the full song object as raw metadata —
+    // that bloats every event payload and the offline localStorage queue.
     return {
       saavn_id: song.saavn_id || song.id,
       title: song.title || song.name,
@@ -25,7 +27,7 @@
       image_url: song.image_url || song.img || '',
       duration_seconds: song.duration_seconds || song.duration || null,
       play_url: song.play_url || song.url || '',
-      raw_metadata_json: song.raw_metadata_json || song,
+      raw_metadata_json: song.raw_metadata_json && typeof song.raw_metadata_json === 'object' ? song.raw_metadata_json : undefined,
     };
   }
 
@@ -44,9 +46,54 @@
 
   const recentKeys = new Map();
   function rememberLocal(payload) {
+    payload.queuedAt = Date.now();
     const current = JSON.parse(localStorage.getItem(LOCAL_EVENTS_KEY) || '[]');
     current.push(payload);
     localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify(current.slice(-500)));
+  }
+
+  // The de-dup map previously grew forever; keep it bounded.
+  function rememberDedupKey(key, now) {
+    if (recentKeys.size > 500) {
+      for (const [storedKey, storedAt] of recentKeys) {
+        if (now - storedAt >= DUPLICATE_WINDOW_MS) recentKeys.delete(storedKey);
+        if (recentKeys.size <= 250) break;
+      }
+    }
+    recentKeys.set(key, now);
+  }
+
+  let isFlushing = false;
+  // Replays offline-queued events to the server once connectivity returns.
+  async function flushQueuedEvents() {
+    if (isFlushing) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    const queued = JSON.parse(localStorage.getItem(LOCAL_EVENTS_KEY) || '[]');
+    if (queued.length === 0) return;
+    isFlushing = true;
+    const flushStartedAt = Date.now();
+    const remaining = [];
+    try {
+      // Oldest first, cap the batch so a single flush stays fast.
+      for (const payload of queued.slice(0, 100)) {
+        if (!payload || payload.queuedAt > flushStartedAt) continue;
+        try {
+          const response = await fetch('/api/music/event', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (!response.ok) remaining.push(payload);
+        } catch (error) {
+          remaining.push(payload);
+        }
+      }
+    } finally {
+      const after = JSON.parse(localStorage.getItem(LOCAL_EVENTS_KEY) || '[]');
+      const addedDuringFlush = after.filter((item) => item.queuedAt > flushStartedAt);
+      localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify([...remaining, ...addedDuringFlush].slice(-500)));
+      isFlushing = false;
+    }
   }
 
   async function recordEvent(eventType, song, details = {}) {
@@ -54,7 +101,7 @@
     const now = Date.now();
     const key = `${eventType}:${song.id || song.saavn_id}:${details.context?.source || 'manual'}`;
     if (recentKeys.has(key) && now - recentKeys.get(key) < DUPLICATE_WINDOW_MS) return;
-    recentKeys.set(key, now);
+    rememberDedupKey(key, now);
 
     const payload = {
       userId: details.userId || getUserId(),
@@ -68,14 +115,23 @@
     rememberLocal(payload);
 
     try {
-      await fetch('/api/music/event', {
+      const response = await fetch('/api/music/event', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),
       });
+      // We are back online: drain anything queued while offline.
+      if (response && response.ok) {
+        const queued = JSON.parse(localStorage.getItem(LOCAL_EVENTS_KEY) || '[]');
+        if (queued.length > 1) setTimeout(flushQueuedEvents, 1500);
+      }
     } catch (error) {
       // Offline/static hosting fallback: keep anonymous history in localStorage and sync later.
     }
+  }
+
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('online', () => setTimeout(flushQueuedEvents, 500));
   }
 
   async function generateClientFallback(type, options = {}) {
@@ -147,6 +203,6 @@
     return await generateClientFallback(type, options);
   }
 
-  window.recommendationClient = { getUserId, recordEvent, fetchPlaylist, toAppSong, toApiSong };
+  window.recommendationClient = { getUserId, recordEvent, fetchPlaylist, toAppSong, toApiSong, flushQueuedEvents };
 }());
 
