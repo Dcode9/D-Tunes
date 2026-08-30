@@ -964,6 +964,7 @@
 
                 if (resolvedMode !== 'mobile') {
                     document.body.classList.remove('mobile-player-open');
+                    document.getElementById('mobile-player-sheet')?.classList.remove('open');
                     document.body.classList.remove('mobile-search-open');
                     document.documentElement.style.setProperty('--mobile-keyboard-offset', '0px');
                 }
@@ -1319,6 +1320,7 @@
                 document.getElementById('queue-wrapper')?.classList.remove('queue-expanded', 'preview-expanded', 'track-swap-out');
                 document.getElementById('player-footer')?.classList.add('translate-y-[150%]', 'opacity-0');
                 document.body.classList.remove('mobile-player-open');
+                document.getElementById('mobile-player-sheet')?.classList.remove('open');
                 const title = document.getElementById('p-title');
                 const artist = document.getElementById('p-artist');
                 const art = document.getElementById('curr-art-img');
@@ -1696,6 +1698,84 @@
                 }
             } catch (e) {}
         };
+
+        // ------------------------------------------------------------
+        // Seek controller — one shared binder for every seek bar
+        // (desktop footer bar + mobile now-playing sheet).
+        //
+        // The old binding used a 20px-tall input with mouse/touch
+        // listeners attached only to the element itself, so drags that
+        // started slightly off the track did nothing and `isDragging`
+        // could get stuck (bar stopped tracking the song). Pointer
+        // capture + window-level release listeners fix both.
+        // ------------------------------------------------------------
+        const seekInputs = [];
+
+        function updateSeekUI(force = false) {
+            const dur = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+            const cur = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+            for (const entry of seekInputs) {
+                const { input, timeCurrentEl, timeDurationEl } = entry;
+                if (!input) continue;
+                const dragging = state.isDragging && !force;
+                const rawValue = parseFloat(input.value);
+                // While dragging, the bar should show where the finger is,
+                // not where the audio currently is.
+                const pos = dragging && Number.isFinite(rawValue) ? Math.max(0, Math.min(rawValue, dur || rawValue)) : cur;
+                if (dur > 0 && String(input.max) !== String(dur)) input.max = String(dur);
+                if (dur > 0 && !dragging) input.value = String(Math.min(cur, dur));
+                input.style.setProperty('--fill', dur > 0 ? `${((pos / dur) * 100).toFixed(2)}%` : '0%');
+                if (timeCurrentEl) timeCurrentEl.textContent = utils.formatTime(pos);
+                if (timeDurationEl) timeDurationEl.textContent = utils.formatTime(dur);
+            }
+            if (dur > 0) currentProgress = Math.max(0, Math.min(1, cur / dur));
+        }
+
+        function bindSeekBar(input, { timeCurrentEl = null, timeDurationEl = null } = {}) {
+            if (!input) return;
+            seekInputs.push({ input, timeCurrentEl, timeDurationEl });
+            let activePointerId = null;
+
+            const commit = () => {
+                const dur = Number.isFinite(audio.duration) ? audio.duration : 0;
+                if (dur <= 0) return;
+                const nextTime = parseFloat(input.value);
+                if (!Number.isFinite(nextTime)) return;
+                if (Math.abs(audio.currentTime - nextTime) > 0.05) {
+                    audio.currentTime = nextTime;
+                    updateMediaPosition();
+                }
+                currentProgress = Math.max(0, Math.min(1, nextTime / dur));
+                input.style.setProperty('--fill', `${(currentProgress * 100).toFixed(2)}%`);
+                if (timeCurrentEl) timeCurrentEl.textContent = utils.formatTime(nextTime);
+            };
+
+            const releaseDrag = () => {
+                if (activePointerId === null && !state.isDragging) return;
+                activePointerId = null;
+                if (state.isDragging) {
+                    state.isDragging = false;
+                    persist.save();
+                }
+                updateSeekUI(true);
+            };
+
+            input.addEventListener('pointerdown', (e) => {
+                activePointerId = e.pointerId;
+                state.isDragging = true;
+                try { input.setPointerCapture(e.pointerId); } catch (err) {}
+            });
+            input.addEventListener('input', () => {
+                if (!state.isDragging) state.isDragging = true;
+                commit();
+            });
+            input.addEventListener('change', () => { commit(); releaseDrag(); });
+            input.addEventListener('blur', releaseDrag);
+            // Window-level release: even if the pointer leaves the bar or the
+            // gesture is cancelled, dragging can never get stuck again.
+            window.addEventListener('pointerup', (e) => { if (activePointerId === null || activePointerId === e.pointerId) releaseDrag(); });
+            window.addEventListener('pointercancel', (e) => { if (activePointerId === null || activePointerId === e.pointerId) releaseDrag(); });
+        }
 
         const updateMediaPosition = () => {
             if (!('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function' || !state.currentTrack) return;
@@ -2541,6 +2621,7 @@
 
                 if (view !== 'home' && deviceMode.isMobileUI()) {
                     document.body.classList.remove('mobile-player-open');
+                    document.getElementById('mobile-player-sheet')?.classList.remove('open');
                     document.body.classList.remove('mobile-search-open');
                     document.documentElement.style.setProperty('--mobile-keyboard-offset', '0px');
                     document.documentElement.style.setProperty('--mobile-keyboard-lift', '0px');
@@ -2560,25 +2641,89 @@
 
             toggleMobilePlayer: (expand) => {
                 if (!deviceMode.isMobileUI()) return;
-                if(expand) {
+                const sheet = document.getElementById('mobile-player-sheet');
+                if (expand) {
                     if (!state.currentTrack) return;
                     ui.closeMobileSearch();
                     document.body.classList.add('mobile-player-open');
-                    if (!state.mobileQueueAutoOpened) {
-                        state.mobileQueueAutoOpened = true;
-                        state.queueExpanded = true;
-                        document.getElementById('queue-wrapper')?.classList.add('queue-expanded');
-                        ui.switchQueueTab('upnext');
-                    }
-                    requestAnimationFrame(resizeCanvas);
-                    setTimeout(resizeCanvas, 120);
-                    setTimeout(resizeCanvas, 320);
+                    sheet?.classList.add('open');
+                    sheet?.setAttribute('aria-hidden', 'false');
+                    ui.syncMobilePlayerUI();
+                    ui.switchQueueTab(state.activeQueueTab || 'upnext');
+                    ui.renderQueue();
+                    ui.renderHistory();
+                    const mpsQueueEl = document.getElementById('mps-queue');
+                    document.getElementById('mps-queue-toggle')?.classList.toggle('queue-open', !mpsQueueEl?.classList.contains('collapsed'));
                 } else {
                     document.body.classList.remove('mobile-player-open');
+                    sheet?.classList.remove('open');
+                    sheet?.setAttribute('aria-hidden', 'true');
+                    // The compact footer becomes visible again — re-measure the
+                    // visualizer canvas that was hidden while the sheet was open.
+                    requestAnimationFrame(resizeCanvas);
+                    setTimeout(resizeCanvas, 460);
                 }
                 updateMarquees();
-                setTimeout(updateMarquees, 120);
-                setTimeout(updateMarquees, 420);
+                setTimeout(updateMarquees, 450);
+            },
+
+            // Mirrors player state (track, art, like, transport, seek) into the
+            // mobile now-playing sheet. Called from every state-changing path.
+            syncMobilePlayerUI: () => {
+                const sheet = document.getElementById('mobile-player-sheet');
+                if (!sheet) return;
+                const track = state.currentTrack;
+                const hasTrack = Boolean(track);
+                if (track) {
+                    const art = document.getElementById('mps-art');
+                    const safeArt = sanitizeImageUrl(track.img) || FALLBACK_ART;
+                    if (art && art.getAttribute('src') !== safeArt) art.src = safeArt;
+                    const title = document.getElementById('mps-title');
+                    const artist = document.getElementById('mps-artist');
+                    if (title && title.textContent !== (track.name || '')) title.textContent = track.name || '';
+                    const artistText = state.loading && isPlaybackPending ? `Loading • ${track.artist || 'Preparing audio'}` : (track.artist || 'Unknown Artist');
+                    if (artist && artist.textContent !== artistText) artist.textContent = artistText;
+                }
+                const playing = state.playing;
+                const playIcon = document.getElementById('mps-icon-play');
+                const pauseIcon = document.getElementById('mps-icon-pause');
+                if (playIcon && pauseIcon) {
+                    playIcon.classList.toggle('hidden', playing);
+                    pauseIcon.classList.toggle('hidden', !playing);
+                }
+                const durationReady = Number.isFinite(audio.duration) && audio.duration > 0;
+                for (const id of ['mps-play', 'mps-prev', 'mps-next', 'mps-shuffle', 'mps-repeat', 'mps-like']) {
+                    const el = document.getElementById(id);
+                    if (el) el.disabled = !hasTrack;
+                }
+                const seekEl = document.getElementById('mps-seek-bar');
+                if (seekEl) seekEl.disabled = !durationReady;
+                const shuffleBtn = document.getElementById('mps-shuffle');
+                if (shuffleBtn) shuffleBtn.classList.toggle('active-state', state.shuffle);
+                const repeatBtn = document.getElementById('mps-repeat');
+                if (repeatBtn) {
+                    repeatBtn.classList.toggle('active-state', state.repeat > 0);
+                    repeatBtn.classList.toggle('mps-repeat-one', state.repeat === 2);
+                }
+                const likeBtn = document.getElementById('mps-like');
+                if (likeBtn && track) {
+                    const liked = player.isLiked(track.id);
+                    likeBtn.classList.toggle('liked', liked);
+                    likeBtn.setAttribute('aria-pressed', String(liked));
+                }
+                sheet.classList.toggle('is-loading', Boolean(state.loading && hasTrack));
+                updateSeekUI();
+                updateMarquees();
+            },
+
+            toggleMpsQueue: () => {
+                const queueEl = document.getElementById('mps-queue');
+                if (!queueEl) return;
+                const collapsed = queueEl.classList.toggle('collapsed');
+                const toggleBtn = document.getElementById('mps-queue-toggle');
+                toggleBtn?.classList.toggle('queue-open', !collapsed);
+                updateMarquees();
+                setTimeout(updateMarquees, 320);
             },
 
             openMobileSearch: () => {
@@ -2589,6 +2734,7 @@
                 const input = document.getElementById('search-input');
                 state.mobileSearchOriginView = ui.getCurrentView();
                 document.body.classList.remove('mobile-player-open');
+                document.getElementById('mobile-player-sheet')?.classList.remove('open');
                 document.body.classList.add('mobile-search-open');
                 ui.setMobileNavActive('search');
 
@@ -2944,6 +3090,7 @@
                 document.getElementById('queue-wrapper').classList.remove('queue-expanded', 'preview-expanded', 'track-swap-out');
                 document.getElementById('player-footer').classList.add('translate-y-[150%]', 'opacity-0');
                 document.body.classList.remove('mobile-player-open');
+                document.getElementById('mobile-player-sheet')?.classList.remove('open');
                 document.getElementById('p-title').textContent = 'Not Playing';
                 document.getElementById('p-artist').textContent = 'Select song';
                 document.getElementById('curr-art-img').src = FALLBACK_ART;
@@ -3826,6 +3973,7 @@
                 ['seek-bar-container', 'seek-bar', 'btn-play', 'btn-prev', 'btn-next', 'p-like-btn', 'btn-shuffle', 'btn-repeat'].forEach(id => {
                     const el = document.getElementById(id); if(el) { el.classList.remove('disabled'); el.disabled = false; }
                 });
+                ui.syncMobilePlayerUI();
             },
             setPlayerLoading: (loading) => {
                 const island = document.getElementById('info-island');
@@ -3841,6 +3989,7 @@
                 if ('mediaSession' in navigator) {
                     navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused';
                 }
+                ui.syncMobilePlayerUI();
                 updateMarquees();
             },
             updateRepeatBtn: () => {
@@ -3860,6 +4009,7 @@
                     btn.title = "Repeat One";
                 }
                 audio.loop = (state.repeat === 2);
+                ui.syncMobilePlayerUI();
             },
             updateShuffleBtn: () => {
                 const btn = document.getElementById('btn-shuffle');
@@ -3871,6 +4021,7 @@
                     btn.classList.remove('active-state');
                     btn.title = "Shuffle Off";
                 }
+                ui.syncMobilePlayerUI();
             },
             updateMetadata: (track, options = {}) => {
                 document.getElementById('p-title').textContent = track.name; 
@@ -3908,6 +4059,7 @@
                     mPlayBtn.className = state.playing ? 'hidden' : 'flex';
                     mPauseBtn.className = state.playing ? 'flex' : 'hidden';
                 }
+                ui.syncMobilePlayerUI();
                 updateMarquees();
             },
             updatePlayBtn: () => {
@@ -3934,8 +4086,16 @@
                     mPlayBtn.className = playing ? 'hidden' : 'flex';
                     mPauseBtn.className = playing ? 'flex' : 'hidden';
                 }
+                ui.syncMobilePlayerUI();
             },
             toggleQueue: () => {
+                if (deviceMode.isMobileUI()) {
+                    // On mobile the queue lives inside the now-playing sheet.
+                    ui.toggleMobilePlayer(true);
+                    const queueEl = document.getElementById('mps-queue');
+                    if (queueEl?.classList.contains('collapsed')) ui.toggleMpsQueue();
+                    return;
+                }
                 state.queueExpanded = !state.queueExpanded;
                 const wrap = document.getElementById('queue-wrapper');
                 if (state.queueExpanded) {
@@ -3958,6 +4118,19 @@
                     document.getElementById('tab-upnext').className = "text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-300";
                     document.getElementById('history-list').classList.remove('hidden');
                     document.getElementById('queue-list').classList.add('hidden');
+                }
+                // Mirror the tab state into the mobile now-playing sheet.
+                const mpsUp = document.getElementById('mps-tab-upnext');
+                const mpsHist = document.getElementById('mps-tab-history');
+                const mpsQueueList = document.getElementById('mps-queue-list');
+                const mpsHistList = document.getElementById('mps-history-list');
+                if (mpsUp && mpsHist && mpsQueueList && mpsHistList) {
+                    const activeTab = tab === 'history' ? mpsHist : mpsUp;
+                    const inactiveTab = tab === 'history' ? mpsUp : mpsHist;
+                    activeTab.classList.add('active');
+                    inactiveTab.classList.remove('active');
+                    mpsQueueList.classList.toggle('hidden', tab === 'history');
+                    mpsHistList.classList.toggle('hidden', tab !== 'history');
                 }
                 updateMarquees();
             },
@@ -4007,6 +4180,17 @@
                     html += upcoming.map((song, index) => ui.createQueuePill(song, 'auto', index)).join('');
                 }
                 listEl.innerHTML = html === '' ? '<div class="text-xs text-gray-500 p-3 rounded-xl border border-white/5 bg-white/5">Queue is empty. Add songs and they will appear here instantly.</div>' : html;
+                // Mirror into the mobile now-playing sheet.
+                const mpsQueueList = document.getElementById('mps-queue-list');
+                if (mpsQueueList) {
+                    mpsQueueList.innerHTML = html === '' ? '<div class="text-xs text-gray-500 p-3 rounded-xl border border-white/5 bg-white/5 text-center">Queue is empty</div>' : html;
+                }
+                const mpsClearBtn = document.getElementById('mps-clear-queue');
+                if (mpsClearBtn) {
+                    const pending = manualCount + autoCount;
+                    mpsClearBtn.disabled = pending === 0;
+                    mpsClearBtn.textContent = pending > 0 ? `Clear (${pending})` : 'Clear';
+                }
                 updateMarquees();
             },
             renderHistory: () => {
@@ -4030,6 +4214,12 @@
                 }
                 
                 histEl.innerHTML = html;
+                const mpsHistList = document.getElementById('mps-history-list');
+                if (mpsHistList) {
+                    mpsHistList.innerHTML = state.playHistory.length <= 1
+                        ? '<div class="text-xs text-gray-500 p-3 text-center">No history yet</div>'
+                        : html;
+                }
                 updateMarquees();
             }
         };
@@ -4734,46 +4924,21 @@
             }
 
             const seekBar = document.getElementById('seek-bar'); const container = document.getElementById('seek-bar-container'); const tooltip = document.getElementById('seek-tooltip');
-            const setDragging = (dragging) => {
-                state.isDragging = dragging;
-                if (!dragging) persist.save();
-            };
 
-            seekBar.addEventListener('mousedown', () => setDragging(true));
-            seekBar.addEventListener('pointerdown', () => setDragging(true));
-            seekBar.addEventListener('touchstart', () => setDragging(true), { passive: true });
-
-            seekBar.addEventListener('mouseup', () => setDragging(false));
-            seekBar.addEventListener('pointerup', () => setDragging(false));
-            seekBar.addEventListener('pointercancel', () => setDragging(false));
-            seekBar.addEventListener('mouseleave', () => setDragging(false));
-            seekBar.addEventListener('touchend', () => setDragging(false), { passive: true });
-            seekBar.addEventListener('touchcancel', () => setDragging(false), { passive: true });
-
-            seekBar.addEventListener('input', () => {
-                if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
-                const nextTime = parseFloat(seekBar.value);
-                if (!Number.isFinite(nextTime)) return;
-                currentProgress = Math.max(0, Math.min(1, nextTime / audio.duration));
-                if (Math.abs(audio.currentTime - nextTime) > 0.08) {
-                    audio.currentTime = nextTime;
-                    updateMediaPosition();
-                }
+            // Both seek bars (desktop footer + mobile now-playing sheet) share one
+            // pointer-capture based controller with window-level release handling.
+            bindSeekBar(seekBar, {
+                timeCurrentEl: document.getElementById('seek-current-time'),
+                timeDurationEl: document.getElementById('seek-duration-time'),
             });
-
-            seekBar.addEventListener('change', () => {
-                if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
-                const nextTime = parseFloat(seekBar.value);
-                if (!Number.isFinite(nextTime)) return;
-                audio.currentTime = nextTime;
-                updateMediaPosition();
-                currentProgress = Math.max(0, Math.min(1, nextTime / audio.duration));
-                setDragging(false);
+            bindSeekBar(document.getElementById('mps-seek-bar'), {
+                timeCurrentEl: document.getElementById('mps-time-current'),
+                timeDurationEl: document.getElementById('mps-time-duration'),
             });
 
             audio.addEventListener('loadedmetadata', () => {
                 if (Number.isFinite(audio.duration) && audio.duration > 0) {
-                    seekBar.max = audio.duration;
+                    updateSeekUI();
                     updateMediaPosition();
                     primeNextTrack();
                 }
@@ -4853,7 +5018,7 @@
             }, {passive: true});
             island.addEventListener('touchcancel', resetCompactSwipe, {passive: true});
 
-            const albumArtSwipeTarget = document.getElementById('album-art-wrapper');
+            const albumArtSwipeTarget = document.getElementById('mps-art-wrap');
             let albumSwipeStart = null;
             const resetAlbumSwipe = () => {
                 albumSwipeStart = null;
@@ -4891,14 +5056,9 @@
             }, { passive: true });
             albumArtSwipeTarget?.addEventListener('touchcancel', resetAlbumSwipe, { passive: true });
 
-            // Expanded mobile player: pull down on header to collapse
-            const playerFooter = document.getElementById('player-footer');
-            const mobileHeader = document.querySelector('.mobile-player-header');
+            // Expanded mobile player sheet: pull down on the header to collapse
+            const mobileHeader = document.querySelector('.mps-header');
             let expandedPlayerTouchStartY = 0;
-
-            const resetExpandedPlayerScroll = () => {
-                if (playerFooter) playerFooter.scrollTop = 0;
-            };
 
             mobileHeader?.addEventListener('touchstart', e => {
                 if (!deviceMode.isMobileUI() || !document.body.classList.contains('mobile-player-open')) return;
@@ -4918,8 +5078,6 @@
             mobileHeader?.addEventListener('touchend', () => {
                 expandedPlayerTouchStartY = 0;
             }, {passive: true});
-
-            document.addEventListener('mobile-player-opened', resetExpandedPlayerScroll);
 
             let queueDragSource = null;
             document.addEventListener('dragstart', (e) => {
@@ -5048,14 +5206,11 @@
             let lastPersistSecond = -1;
             audio.addEventListener('timeupdate', () => {
                 if (window.listeningSession) listeningSession.update();
-                if (Number.isFinite(audio.duration) && audio.duration > 0 && !state.isDragging) {
-                    seekBar.max = audio.duration; seekBar.value = audio.currentTime;
-                    currentProgress = audio.currentTime / audio.duration;
-
-                    const currTimeEl = document.getElementById('seek-current-time');
-                    const durTimeEl = document.getElementById('seek-duration-time');
-                    if (currTimeEl) currTimeEl.textContent = utils.formatTime(audio.currentTime || 0);
-                    if (durTimeEl) durTimeEl.textContent = utils.formatTime(audio.duration || 0);
+                if (Number.isFinite(audio.duration) && audio.duration > 0) {
+                    // Shared updater: refreshes every bound seek bar, its fill and
+                    // time labels (skips the value overwrite only while dragging).
+                    updateSeekUI();
+                    seekBar.max = audio.duration;
 
                     if ('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function' && state.currentTrack) {
                         updateMediaPosition();

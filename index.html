@@ -842,16 +842,6 @@
 
     <!-- PLAYER FOOTER STACK -->
     <div id="player-footer" class="fixed bottom-6 left-6 right-6 z-50 flex flex-col items-end pointer-events-none gap-2 translate-y-[150%] opacity-0 transition-transform duration-700 ease-out">
-        
-        <div class="mobile-player-header hidden w-full flex items-center justify-between pt-1 pb-1 px-2">
-            <button class="mobile-collapse-btn text-gray-300 hover:text-white transition p-2 rounded-full bg-white/10 active:scale-95" onclick="ui.toggleMobilePlayer(false)" aria-label="Collapse player">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg>
-            </button>
-            <div class="text-[11px] font-bold uppercase tracking-widest text-gray-400">Now Playing</div>
-            <button class="text-gray-300 hover:text-white transition p-2 rounded-full bg-white/10 active:scale-95 flex items-center justify-center" onclick="ui.toggleEqualizerModal(true)" aria-label="Open Equalizer">
-                <svg class="w-5 h-5 text-[var(--accent-color)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
-            </button>
-        </div>
 
         <!-- Queue Anchor -->
         <div id="queue-anchor" class="relative w-full md:w-80 flex-shrink-0 pointer-events-none h-0 z-[40]">
@@ -958,11 +948,91 @@
         </div>
 
         <!-- Mobile Queue Button inside Expanded View -->
-        <button class="mobile-queue-btn hidden" onclick="ui.toggleQueue()">
-            <span>Up Next & Queue</span>
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
-        </button>
     </div>
+
+    <!-- ================================================== -->
+    <!-- MOBILE EXPANDED NOW-PLAYING SHEET (rebuilt) -->
+    <!-- Layout: header / album art / song info (centered) / -->
+    <!-- seek + transport controls / scrollable queue-history -->
+    <!-- ================================================== -->
+    <div id="mobile-player-sheet" aria-hidden="true" role="dialog" aria-label="Now playing">
+        <div class="mps-inner">
+            <div class="mps-header">
+                <button class="mps-btn" onclick="ui.toggleMobilePlayer(false)" aria-label="Collapse player">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div class="mps-header-title">Now Playing</div>
+                <button class="mps-btn mps-eq-btn" onclick="ui.toggleEqualizerModal(true)" aria-label="Open Equalizer">
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
+                </button>
+            </div>
+
+            <div class="mps-body">
+                <!-- 1. Album art on top -->
+                <div class="mps-art-wrap" id="mps-art-wrap" ondblclick="player.toggleLike()">
+                    <img id="mps-art" src="https://raw.githubusercontent.com/Datamaverik/D-Tunes/main/assets/DTunes2.svg" alt="Album artwork" decoding="async">
+                    <div class="mps-loading-ring" aria-hidden="true"></div>
+                </div>
+
+                <!-- 2. Song title + artist, centered -->
+                <div class="mps-info">
+                    <div class="marquee-container mps-title-wrap"><h3 id="mps-title" class="marquee-text mps-title">Not Playing</h3></div>
+                    <div class="marquee-container mps-artist-wrap"><p id="mps-artist" class="marquee-text mps-artist">Select song</p></div>
+                </div>
+
+                <!-- 3. Music controls anchored to the bottom -->
+                <div class="mps-controls">
+                    <div class="mps-seek">
+                        <span class="mps-time" id="mps-time-current">0:00</span>
+                        <input type="range" id="mps-seek-bar" min="0" max="100" step="0.1" value="0" disabled aria-label="Seek">
+                        <span class="mps-time" id="mps-time-duration">0:00</span>
+                    </div>
+                    <div class="mps-transport">
+                        <button class="mps-transport-btn" id="mps-shuffle" onclick="player.toggleShuffle()" disabled aria-label="Shuffle">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
+                        </button>
+                        <button class="mps-transport-btn" id="mps-prev" onclick="player.prev()" disabled aria-label="Previous track">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg>
+                        </button>
+                        <button id="mps-play" onclick="player.togglePlay()" disabled aria-label="Play or pause">
+                            <span id="mps-icon-play" class="flex"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
+                            <span id="mps-icon-pause" class="hidden"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg></span>
+                        </button>
+                        <button class="mps-transport-btn" id="mps-next" onclick="player.next()" disabled aria-label="Next track">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg>
+                        </button>
+                        <button class="mps-transport-btn" id="mps-repeat" onclick="player.toggleRepeat()" disabled aria-label="Repeat">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                            <span class="mps-repeat-badge">1</span>
+                        </button>
+                    </div>
+                    <div class="mps-secondary">
+                        <button class="mps-like" id="mps-like" onclick="player.toggleLike()" aria-label="Like current song" aria-pressed="false">
+                            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                        </button>
+                        <button class="mps-queue-toggle" id="mps-queue-toggle" onclick="ui.toggleMpsQueue()">
+                            <span>Up Next &amp; Queue</span>
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 4. Scrollable queue / history -->
+                <div class="mps-queue" id="mps-queue">
+                    <div class="mps-queue-tabs">
+                        <div class="mps-queue-tab-group">
+                            <button id="mps-tab-upnext" onclick="ui.switchQueueTab('upnext')">Up Next</button>
+                            <button id="mps-tab-history" onclick="ui.switchQueueTab('history')">History</button>
+                        </div>
+                        <button id="mps-clear-queue" onclick="player.clearQueue()" disabled>Clear</button>
+                    </div>
+                    <div class="mps-scroll" id="mps-queue-list"></div>
+                    <div class="mps-scroll hidden" id="mps-history-list"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     <!-- Mobile Bottom Nav -->
     <nav id="mobile-nav" class="fixed bottom-0 left-0 right-0 h-[64px] bg-[#050505]/95 backdrop-blur-xl border-t border-white/10 z-[100] flex md:hidden items-center justify-around pb-safe">

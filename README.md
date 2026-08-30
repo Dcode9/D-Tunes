@@ -37,6 +37,10 @@ The server applies the following protections (see `tests/hardening.test.js`):
 - **Storage hygiene** — the JSON store compacts raw song metadata, prunes old events (configurable via `DTUNES_MAX_EVENTS`), and writes the file once per event. `data/` is git-ignored.
 - **Health check** — `GET /api/music/health` returns service status and uptime.
 
+## Mobile now-playing sheet
+
+The expanded mobile player is a dedicated `#mobile-player-sheet` overlay (see `tests/mobilePlayerSheet.test.js`) rather than a CSS re-arrangement of the desktop footer. It stacks album art → song info (centered) → seek bar + transport controls → internally scrollable queue/history, slides in and out with a single transform animation, supports swipe-to-change-track on the art and pull-down-to-close, and bans horizontal scrolling. All seek bars share one pointer-capture based controller (44px touch targets, `touch-action: none`, window-level drag release) so seeking always tracks the real song.
+
 ## How the recommender works
 
 No embeddings or paid APIs are used. The engine combines explicit behavior signals, listening history, song metadata, and JioSaavn search/trending results.
