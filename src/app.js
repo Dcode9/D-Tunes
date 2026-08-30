@@ -217,24 +217,25 @@
         function switchToNextApi() { currentApiIndex = (currentApiIndex + 1) % JIOSAAVN_API_ENDPOINTS.length; JIOSAAVN_API = JIOSAAVN_API_ENDPOINTS[currentApiIndex]; return currentApiIndex !== 0; }
 
         const jiosaavnAPI = {
-            fetchWithRetry: async (url, retries = 3) => {
-                let apiSwitchAttempts = JIOSAAVN_API_ENDPOINTS.length;
-                while (apiSwitchAttempts > 0) {
-                    for (let i = 0; i < retries; i++) {
-                        try {
-                            const currentUrl = url.replace(/https:\/\/[^\/]+\/api/, JIOSAAVN_API);
-                            const response = await fetch(currentUrl);
-                            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                            const data = await response.json();
-                            if (data.success === false) throw new Error(data.message);
-                            return data;
-                        } catch (error) {
-                            if (i === retries - 1) { if (switchToNextApi()) { apiSwitchAttempts--; break; } }
-                            if (i === retries - 1) throw error; await new Promise(r => setTimeout(r, 1000));
-                        }
+            // Tries each configured JioSaavn mirror once with a hard timeout so a
+            // hung connection can never freeze the UI, then fails over to the next.
+            fetchWithRetry: async (url) => {
+                let lastError = null;
+                for (let attempt = 0; attempt < JIOSAAVN_API_ENDPOINTS.length; attempt++) {
+                    try {
+                        const currentUrl = url.replace(/https:\/\/[^\/]+\/api/, JIOSAAVN_API);
+                        const signal = typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined;
+                        const response = await fetch(currentUrl, signal ? { signal } : undefined);
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        const data = await response.json();
+                        if (data.success === false) throw new Error(data.message);
+                        return data;
+                    } catch (error) {
+                        lastError = error;
+                        switchToNextApi();
                     }
-                    if (apiSwitchAttempts > 0 && apiSwitchAttempts < JIOSAAVN_API_ENDPOINTS.length) continue; break;
                 }
+                throw lastError || new Error('All JioSaavn API endpoints failed');
             },
             searchSongs: async (query, limit = 20) => {
                 try {
@@ -915,6 +916,7 @@
             playlistStyles: safeStorage.getJSON('playlistStyles', {}),
             username: safeStorage.get('username', 'Guest User'),
             quality: safeStorage.get('audioQuality', 'high'),
+            volume: (() => { const v = parseFloat(safeStorage.get('playerVolume', '1')); return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1; })(),
             equalizer: normalizeEqualizerSettings(safeStorage.getJSON('equalizerSettings', {})),
             forYouSongs: [],
             searchDebounce: null, hoverProgress: -1, lastHoverProgress: 0.5, isDragging: false, 
@@ -1084,11 +1086,26 @@
                 document.getElementById('player-footer').classList.remove('translate-y-[150%]', 'opacity-0');
                 ui.enableControls(); ui.updateMetadata(state.currentTrack); ui.renderQueue(); ui.renderHistory();
 
-                audio.src = state.currentTrack.url;
+                // Restored streaming URLs are usually expired; avoid pointing the
+                // audio element at a dead (or missing) link and refresh it in the
+                // background so the first play after a reload still works.
+                if (state.currentTrack.url) {
+                    audio.src = state.currentTrack.url;
+                } else {
+                    audio.removeAttribute('src');
+                }
                 audio.addEventListener('loadedmetadata', function onMetaLoad() {
                     audio.currentTime = data.time || 0; currentProgress = audio.duration ? audio.currentTime / audio.duration : 0;
                     document.getElementById('seek-bar').value = data.time || 0; audio.removeEventListener('loadedmetadata', onMetaLoad);
                 });
+                if (state.currentTrack.id) {
+                    jiosaavnAPI.getSong(state.currentTrack.id).then((fresh) => {
+                        if (!fresh?.url || !state.currentTrack || String(state.currentTrack.id) !== String(fresh.id)) return;
+                        state.currentTrack.url = fresh.url;
+                        if (!audio.currentSrc || audio.error) { audio.src = fresh.url; }
+                        persist.save();
+                    }).catch(() => {});
+                }
                 return true;
             },
             save: () => {
@@ -1265,7 +1282,8 @@
                     'songStore', 'dtunes_tester_streak', 'savedQueue', 'lastActiveTrack',
                     'playbackState', 'equalizerSettings', 'audioQuality', 'preferredLanguage',
                     'dverse_session_cache', 'dverse_supabase_auth_token', 'sb-supabase-auth-token',
-                    'sb-qvvnhvowffvbbhfgwypw-auth-token'
+                    'sb-qvvnhvowffvbbhfgwypw-auth-token',
+                    'discoverMixCache', 'dtunesRecommendationEvents', 'dtunesAnonymousUserId'
                 ];
                 targetKeys.forEach(k => localStorage.removeItem(k));
                 Object.keys(localStorage).forEach(k => {
@@ -1649,7 +1667,11 @@
         const getUpcomingTrack = () => {
             if (state.userQueue.length > 0) return state.userQueue[0];
             if (state.queue.length === 0) return null;
-            if (state.shuffle) return state.queue.find((_, i) => i !== state.idx) || null;
+            if (state.shuffle) {
+                const others = state.queue.filter((_, i) => i !== state.idx);
+                if (others.length === 0) return null;
+                return others[Math.floor(Math.random() * others.length)];
+            }
             return state.idx >= 0 && state.idx < state.queue.length - 1 ? state.queue[state.idx + 1] : null;
         };
 
@@ -1897,7 +1919,17 @@
             next: (force = false) => { 
                 if (state.userQueue.length > 0) { const nextSong = state.userQueue.shift(); player.playDirect(nextSong); } 
                 else if (state.queue.length > 0) {
-                    let nextIdx = state.shuffle ? Math.floor(Math.random() * state.queue.length) : state.idx + 1;
+                    let nextIdx;
+                    if (state.shuffle) {
+                        // Pick a random track that is NOT the one currently playing,
+                        // otherwise "next" can silently restart the same song.
+                        if (state.queue.length === 1) nextIdx = 0;
+                        else {
+                            do { nextIdx = Math.floor(Math.random() * state.queue.length); } while (nextIdx === state.idx);
+                        }
+                    } else {
+                        nextIdx = state.idx + 1;
+                    }
                     if (nextIdx >= state.queue.length) {
                         if (state.repeat === 1 || force) {
                             nextIdx = 0;
@@ -1927,7 +1959,12 @@
                 let prevIdx = state.idx - 1; if(prevIdx < 0) prevIdx = state.queue.length - 1;
                 state.idx = prevIdx; player.playDirect(state.queue[prevIdx]);
             },
-            setVolume: (val) => { audio.volume = Math.max(0, Math.min(1, val)); },
+            setVolume: (val) => {
+                const next = Math.max(0, Math.min(1, Number(val)));
+                if (!Number.isFinite(next)) return;
+                audio.volume = next; state.volume = next;
+                safeStorage.set('playerVolume', String(next));
+            },
             toggleShuffle: () => { 
                 state.shuffle = !state.shuffle; 
                 localStorage.setItem('playShuffle', state.shuffle);
@@ -2950,7 +2987,7 @@
                     area.classList.remove('hidden');
                     list.innerHTML = stagedPlaylistSongs.map(song => `
                         <div class="flex items-center gap-3 p-2 bg-white/5 rounded-lg border border-white/5">
-                            <img src="${song.img}" class="w-8 h-8 rounded-md object-cover">
+                            <img loading="lazy" decoding="async" src="${song.img}" class="w-8 h-8 rounded-md object-cover">
                             <div class="flex-1 min-w-0"><p class="text-xs text-white truncate">${utils.escapeHtml(song.name)}</p></div>
                         </div>
                     `).join('');
@@ -3140,7 +3177,7 @@
 
                 listEl.innerHTML = ui.editingPlaylistSongs.map((song, index) => `
                     <div class="flex items-center justify-between p-2 rounded-xl bg-white/5 border border-white/5 gap-2">
-                        <img src="${song.img}" class="w-8 h-8 rounded-lg object-cover flex-shrink-0">
+                        <img loading="lazy" decoding="async" src="${song.img}" class="w-8 h-8 rounded-lg object-cover flex-shrink-0">
                         <div class="flex-1 min-w-0">
                             <p class="text-xs font-bold text-white truncate">${utils.escapeHtml(song.name)}</p>
                             <p class="text-[10px] text-gray-400 truncate">${utils.escapeHtml(song.artist)}</p>
@@ -3705,14 +3742,14 @@
                 if (imgs.length >= 3) {
                     collageHtml = `
                     <div class="absolute top-4 right-4 w-28 h-28 pointer-events-none">
-                        <img src="${imgs[0]}" class="absolute top-0 right-0 w-16 h-16 rounded-xl object-cover shadow-2xl border border-white/20 transform rotate-6 z-10">
-                        <img src="${imgs[1]}" class="absolute top-3 right-5 w-14 h-14 rounded-xl object-cover shadow-2xl border border-white/20 transform -rotate-12 z-20">
-                        <img src="${imgs[2]}" class="absolute top-7 right-2 w-14 h-14 rounded-xl object-cover shadow-2xl border border-white/20 transform rotate-3 z-30">
+                        <img decoding="async" src="${imgs[0]}" class="absolute top-0 right-0 w-16 h-16 rounded-xl object-cover shadow-2xl border border-white/20 transform rotate-6 z-10">
+                        <img decoding="async" src="${imgs[1]}" class="absolute top-3 right-5 w-14 h-14 rounded-xl object-cover shadow-2xl border border-white/20 transform -rotate-12 z-20">
+                        <img decoding="async" src="${imgs[2]}" class="absolute top-7 right-2 w-14 h-14 rounded-xl object-cover shadow-2xl border border-white/20 transform rotate-3 z-30">
                     </div>`;
                 } else if (imgs.length > 0) {
                     collageHtml = `
                     <div class="absolute top-4 right-4 w-24 h-24 pointer-events-none">
-                        <img src="${imgs[0]}" class="w-full h-full rounded-2xl object-cover shadow-2xl border border-white/20 transform rotate-3">
+                        <img decoding="async" src="${imgs[0]}" class="w-full h-full rounded-2xl object-cover shadow-2xl border border-white/20 transform rotate-3">
                     </div>`;
                 } else {
                     collageHtml = `
@@ -3747,13 +3784,13 @@
                 let inner = '';
                 if (imgs.length >= 4) {
                     inner = `<div class="grid grid-cols-2 gap-1 w-full h-full p-1.5">
-                        <img src="${imgs[0]}" class="w-full h-full object-cover rounded">
-                        <img src="${imgs[1]}" class="w-full h-full object-cover rounded">
-                        <img src="${imgs[2]}" class="w-full h-full object-cover rounded">
-                        <img src="${imgs[3]}" class="w-full h-full object-cover rounded">
+                        <img decoding="async" src="${imgs[0]}" class="w-full h-full object-cover rounded">
+                        <img decoding="async" src="${imgs[1]}" class="w-full h-full object-cover rounded">
+                        <img decoding="async" src="${imgs[2]}" class="w-full h-full object-cover rounded">
+                        <img decoding="async" src="${imgs[3]}" class="w-full h-full object-cover rounded">
                     </div>`;
                 } else if (imgs.length > 0) {
-                    inner = `<img src="${imgs[0]}" class="w-full h-full object-cover">`;
+                    inner = `<img decoding="async" src="${imgs[0]}" class="w-full h-full object-cover">`;
                 } else {
                     inner = `<div class="w-full h-full flex items-center justify-center text-white/80"><svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg></div>`;
                 }
@@ -4057,6 +4094,7 @@
         }
         
         const searchManager = {
+            fullSearchSeq: 0,
             init: () => {
                 const input = document.getElementById('search-input'); 
                 const dropWrapper = document.getElementById('search-dropdown');
@@ -4108,21 +4146,25 @@
                 });
             },
             performFullSearch: async (query) => {
+                const requestId = ++searchManager.fullSearchSeq;
                 ui.switchView('search'); document.getElementById('search-title').textContent = `Results for "${query}"`;
                 document.getElementById('search-content').classList.add('hidden'); document.getElementById('search-loading').classList.remove('hidden');
 
                 const data = await jiosaavnAPI.searchAll(query);
+                // A newer search may have started while this request was in flight;
+                // only the most recent one is allowed to paint results.
+                if (requestId !== searchManager.fullSearchSeq) return;
                 document.getElementById('search-loading').classList.add('hidden'); document.getElementById('search-content').classList.remove('hidden');
                 if(!data.top) { document.getElementById('search-content').innerHTML = '<p class="text-gray-400 pl-8">No results found.</p>'; return; }
 
                 const topStoreId = songStore.add(data.top);
                 document.getElementById('search-top-result').innerHTML = `
                     <div class="absolute inset-0 z-0" ondblclick="player.likeSong('${utils.escapeJs(data.top.id)}')">
-                        <img src="${data.top.img}" class="w-full h-full object-cover opacity-20 blur-sm">
+                        <img decoding="async" src="${data.top.img}" class="w-full h-full object-cover opacity-20 blur-sm">
                         <div class="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-transparent"></div>
                     </div>
                     <div class="relative z-10 flex flex-col justify-end h-full">
-                        <img src="${data.top.img}" class="w-32 h-32 md:w-40 md:h-40 rounded-lg shadow-2xl mb-4 border border-white/10 object-cover" ondblclick="player.likeSong('${utils.escapeJs(data.top.id)}')">
+                        <img decoding="async" src="${data.top.img}" class="w-32 h-32 md:w-40 md:h-40 rounded-lg shadow-2xl mb-4 border border-white/10 object-cover" ondblclick="player.likeSong('${utils.escapeJs(data.top.id)}')">
                         
                         <div class="flex items-start justify-between gap-4">
                             <div class="flex-1 min-w-0" ondblclick="player.likeSong('${utils.escapeJs(data.top.id)}')">
@@ -4242,7 +4284,7 @@
                         return `
                         <div class="flex items-center justify-between p-2 rounded-xl bg-white/5 hover:bg-white/10 transition cursor-pointer gap-3" onclick="playSongById('${storeId}')">
                             <span class="w-5 text-center text-xs font-mono font-bold text-gray-400 flex-shrink-0">#${index + 1}</span>
-                            <img src="${song.img || FALLBACK_ART}" class="w-10 h-10 rounded-lg object-cover flex-shrink-0">
+                            <img loading="lazy" decoding="async" src="${song.img || FALLBACK_ART}" class="w-10 h-10 rounded-lg object-cover flex-shrink-0">
                             <div class="min-w-0 flex-1">
                                 <p class="text-xs font-bold text-white truncate">${utils.escapeHtml(song.name || song.title || 'Track')}</p>
                                 <p class="text-[10px] text-gray-400 truncate">${utils.escapeHtml(song.artist || 'Artist')}</p>
@@ -4355,6 +4397,40 @@
         };
 
         const homeView = {
+            // Short-TTL local cache for discover mixes so revisiting Home doesn't
+            // re-issue 6 playlist API calls before anything can render.
+            DISCOVER_CACHE_KEY: 'discoverMixCache',
+            DISCOVER_CACHE_TTL_MS: 6 * 60 * 60 * 1000,
+            discoverCacheRead: (key, language, allowStale = false) => {
+                try {
+                    const cache = JSON.parse(localStorage.getItem('discoverMixCache') || '{}');
+                    const entry = cache[`${key}|${language || ''}`];
+                    if (entry && Array.isArray(entry.songs) && (allowStale || Date.now() - entry.at <= homeView.DISCOVER_CACHE_TTL_MS)) return entry.songs;
+                } catch (e) {}
+                return null;
+            },
+            discoverCacheWrite: (key, language, songs) => {
+                try {
+                    const cache = JSON.parse(localStorage.getItem('discoverMixCache') || '{}');
+                    cache[`${key}|${language || ''}`] = { at: Date.now(), songs: songs.map(s => ({ ...s })) };
+                    const trimmed = Object.entries(cache).sort((a, b) => (b[1].at || 0) - (a[1].at || 0)).slice(0, 12);
+                    localStorage.setItem('discoverMixCache', JSON.stringify(Object.fromEntries(trimmed)));
+                } catch (e) {}
+            },
+            fetchDiscoverMixSongs: async (key, limit, preferredLanguage, forceRefresh = false) => {
+                if (!forceRefresh) {
+                    const cached = homeView.discoverCacheRead(key, preferredLanguage);
+                    if (cached && cached.length > 0) return cached;
+                }
+                const fetched = window.recommendationClient ? await window.recommendationClient.fetchPlaylist(key, { limit, language: preferredLanguage }) : [];
+                if (fetched && fetched.length > 0) {
+                    homeView.discoverCacheWrite(key, preferredLanguage, fetched);
+                    return fetched;
+                }
+                // Upstream hiccup: fall back to stale cache rather than an empty mix.
+                const stale = homeView.discoverCacheRead(key, preferredLanguage, true);
+                return stale || [];
+            },
             loadGeneratedPlaylist: async (type = 'for-you', options = {}) => {
                 const status = document.getElementById('generated-playlist-status');
                 const forYouSection = document.getElementById('section-for-you');
@@ -4491,11 +4567,11 @@
 
                 const renderedCards = await Promise.all(DISCOVER_MIX_DEFINITIONS.map(async (def) => {
                     let songs = state.discoverMixes[def.key];
-                    if (!songs || forceRefresh || songs.length === 0) {
-                        songs = window.recommendationClient ? await window.recommendationClient.fetchPlaylist(def.key, { limit: 20, language: preferredLanguage }) : [];
-                        state.discoverMixes[def.key] = songs;
+                    if (!songs || songs.length === 0) {
+                        songs = await homeView.fetchDiscoverMixSongs(def.key, 20, preferredLanguage, forceRefresh);
                     }
-                    const fullMix = { ...def, songs };
+                    if (songs && songs.length > 0) state.discoverMixes[def.key] = songs;
+                    const fullMix = { ...def, songs: songs || [] };
                     return ui.createDiscoverCard(fullMix);
                 }));
 
@@ -4516,7 +4592,7 @@
                 let songs = state.discoverMixes?.[key];
                 if (!songs || songs.length === 0) {
                     const preferredLanguage = document.getElementById('preferred-language-select')?.value || localStorage.getItem('preferredLanguage') || '';
-                    songs = window.recommendationClient ? await window.recommendationClient.fetchPlaylist(key, { limit: 25, language: preferredLanguage }) : [];
+                    songs = await homeView.fetchDiscoverMixSongs(key, 25, preferredLanguage);
                     if (!state.discoverMixes) state.discoverMixes = {};
                     state.discoverMixes[key] = songs;
                 }
@@ -4527,7 +4603,7 @@
                 let songs = state.discoverMixes?.[key];
                 if (!songs || songs.length === 0) {
                     const preferredLanguage = document.getElementById('preferred-language-select')?.value || localStorage.getItem('preferredLanguage') || '';
-                    songs = window.recommendationClient ? await window.recommendationClient.fetchPlaylist(key, { limit: 25, language: preferredLanguage }) : [];
+                    songs = await homeView.fetchDiscoverMixSongs(key, 25, preferredLanguage);
                 }
                 if (!songs || songs.length === 0) return;
                 state.queue = [...songs]; state.userQueue = []; state.idx = 0; ui.renderQueue();
@@ -5052,8 +5128,13 @@
 
             // Keyboard Shortcuts
             document.addEventListener('keydown', (e) => {
-                if(e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-                switch(e.key.toLowerCase()) {
+                // Never hijack browser/system shortcuts (Ctrl+D bookmark, Cmd+F find, Alt+D, ...)
+                if (e.ctrlKey || e.metaKey || e.altKey) return;
+                const target = e.target;
+                if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+                const key = typeof e.key === 'string' ? e.key.toLowerCase() : '';
+                if (!key) return;
+                switch(key) {
                     case ' ': e.preventDefault(); player.togglePlay(); break;
                     case 'arrowleft':
                     case 'a': player.prev(); break;
@@ -5080,7 +5161,7 @@
                     resultsBox.innerHTML = songs.map(song => {
                         const id = songStore.add(song);
                         return `<div class="flex items-center gap-2 p-1.5 hover:bg-white/10 rounded cursor-pointer transition" onclick="window.stageSongForPlaylist('${id}')">
-                            <img src="${song.img}" class="w-8 h-8 rounded object-cover">
+                            <img loading="lazy" decoding="async" src="${song.img}" class="w-8 h-8 rounded object-cover">
                             <div class="flex-1 min-w-0"><p class="text-xs text-white truncate">${utils.escapeHtml(song.name)}</p><p class="text-[10px] text-gray-400 truncate">${utils.escapeHtml(song.artist)}</p></div>
                             <svg class="w-4 h-4 text-[var(--accent-color)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                         </div>`;
@@ -5102,6 +5183,9 @@
 
             ctxMenu.init(); searchManager.init(); persist.load(); ui.updateRepeatBtn(); ui.updateShuffleBtn(); homeView.init(); cloudLibrary.init(); requestAnimationFrame(viz.render);
             deviceMode.apply();
+
+            // Restore the persisted volume level (persisted by player.setVolume / w-s keys).
+            audio.volume = state.volume;
 
             let scrollDebounceTimer = null;
             const onScrollActivity = () => {
