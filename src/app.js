@@ -1738,6 +1738,7 @@
                 const refreshed = await jiosaavnAPI.getSong(state.currentTrack.id);
                 if (refreshed?.url && refreshed.url !== state.currentTrack.url) {
                     state.currentTrack.url = refreshed.url;
+                    audio.crossOrigin = 'anonymous';
                     audio.src = refreshed.url;
                     audio.load();
                     if (state.playing || !state.userPaused) await audio.play();
@@ -1748,6 +1749,7 @@
                     const retried = await jiosaavnAPI.getSong(state.currentTrack.id);
                     if (retried?.url) {
                         state.currentTrack.url = retried.url;
+                        audio.crossOrigin = 'anonymous';
                         audio.src = retried.url;
                         audio.load();
                         if (state.playing || !state.userPaused) await audio.play();

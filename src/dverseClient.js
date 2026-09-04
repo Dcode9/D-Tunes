@@ -13,8 +13,10 @@
 
   function setCookie(name, value, days = 365) {
     if (typeof document === 'undefined') return;
+    if (typeof value === 'string' && value.length > 3500) return;
     const expires = new Date(Date.now() + days * 864e5).toUTCString();
-    document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax; Secure`;
+    const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax${isSecure ? '; Secure' : ''}`;
   }
 
   function deleteCookie(name) {
@@ -69,7 +71,7 @@
       storageKey: 'dverse_supabase_auth_token',
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true,
+      detectSessionInUrl: false,
       flowType: 'pkce'
     }
   }) : null;
@@ -180,12 +182,13 @@
     const searchParams = new URLSearchParams(window.location.search);
     const code = searchParams.get('code');
     if (code && typeof client.auth.exchangeCodeForSession === 'function') {
-      searchParams.delete('code');
-      const cleanSearch = searchParams.toString();
-      try { window.history.replaceState({}, document.title, `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`); } catch (_) {}
       try {
         const { data, error } = await client.auth.exchangeCodeForSession(code);
         if (!error && data?.session) {
+          searchParams.delete('code');
+          searchParams.delete('state');
+          const cleanSearch = searchParams.toString();
+          try { window.history.replaceState({}, document.title, `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`); } catch (_) {}
           currentSession = data.session;
           try {
             universalStorage.setItem('dverse_session_cache', JSON.stringify({
@@ -196,16 +199,18 @@
           syncSessionToPortal(currentSession);
           notifyDesktopAppIfRunning(currentSession);
           return currentSession;
+        } else if (error) {
+          console.warn('[DVerse] Failed to exchange code for session:', error);
         }
       } catch (err) {
-        console.warn('[DVerse] Failed to exchange code for session:', err);
+        console.warn('[DVerse] Exception during code exchange:', err);
       }
     }
 
     return null;
   }
 
-  function bridgeRequest(message, timeoutMs = 2500) {
+  function bridgeRequest(message, timeoutMs = 800) {
     if (!PORTAL_ORIGIN || window.location.origin === PORTAL_ORIGIN || typeof document === 'undefined') {
       return Promise.resolve(null);
     }
