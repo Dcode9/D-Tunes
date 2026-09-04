@@ -169,6 +169,7 @@
             }
           } catch (_) {}
           syncSessionToPortal(currentSession);
+          notifyDesktopAppIfRunning(currentSession);
           return currentSession;
         }
       } catch (err) {
@@ -309,6 +310,24 @@
     return portalSessionPromise;
   }
 
+  
+  function notifyDesktopAppIfRunning(session) {
+    if (!session || typeof window === 'undefined' || window.electronAPI) return;
+    try {
+      const payload = {
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+        expires_in: session.expires_in,
+        token_type: session.token_type
+      };
+      fetch('http://127.0.0.1:49200/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).catch(() => {});
+    } catch (_) {}
+  }
+
   function syncSessionToPortal(session) {
     if (!session?.access_token || !session?.refresh_token) return;
     try {
@@ -347,6 +366,15 @@
   }
 
   async function signInWithGoogle() {
+    if (window.electronAPI && typeof window.electronAPI.startGoogleLogin === 'function') {
+      console.log('[DVerse] Delegating Google Sign-In to Electron native browser...');
+      try {
+        await window.electronAPI.startGoogleLogin();
+        return;
+      } catch (e) {
+        console.warn('[DVerse] Electron native login call failed:', e);
+      }
+    }
     if (!client) throw new Error('D\'Verse Supabase client is not configured.');
     
     // Direct sign in with Supabase OAuth (Google)
