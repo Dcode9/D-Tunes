@@ -212,7 +212,7 @@
         // ============================================
         // JIOSAAVN API CORE
         // ============================================
-        const JIOSAAVN_API_ENDPOINTS = ['https://jiosaavn-api-taupe-phi.vercel.app/api', 'https://jiosaavn-api-v2.vercel.app/api', 'https://saavn.me/api', 'https://jio-saavn-api-red.vercel.app/api'];
+        const JIOSAAVN_API_ENDPOINTS = ['https://jiosaavn-api-taupe-phi.vercel.app/api'];
         let currentApiIndex = 0; let JIOSAAVN_API = JIOSAAVN_API_ENDPOINTS[currentApiIndex];
         function switchToNextApi() { currentApiIndex = (currentApiIndex + 1) % JIOSAAVN_API_ENDPOINTS.length; JIOSAAVN_API = JIOSAAVN_API_ENDPOINTS[currentApiIndex]; return currentApiIndex !== 0; }
 
@@ -1647,11 +1647,15 @@
         // ============================================
         const audio = document.getElementById('audio-el');
         const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        audio.crossOrigin = 'anonymous';
+        audio.setAttribute('crossorigin', 'anonymous');
         audio.setAttribute('playsinline', '');
         audio.setAttribute('webkit-playsinline', '');
         audio.preload = 'auto';
         const preloadAudio = isMobileDevice ? null : new Audio();
         if (preloadAudio) {
+            preloadAudio.crossOrigin = 'anonymous';
+            preloadAudio.setAttribute('crossorigin', 'anonymous');
             preloadAudio.preload = 'auto';
         }
         let isPlaybackPending = false;
@@ -1842,6 +1846,7 @@
                     if (!playUrl) throw new Error('No audio URL found');
                     
                     track = { ...track, ...freshDetails, url: playUrl };
+                    audio.crossOrigin = 'anonymous';
                     audio.preload = 'auto';
                     audio.src = playUrl;
                     audio.load();
@@ -2309,11 +2314,19 @@
 
         function setupAudioContext() {
             if (isMobileDevice) return; // Do not attach Web Audio API on mobile as it mutes audio in background and silent mode
-            if (isAudioContextInitialized) return;
+            if (isAudioContextInitialized) {
+                if (audioContext && audioContext.state === 'suspended') {
+                    audioContext.resume().catch(() => {});
+                }
+                return;
+            }
             try {
                 const AudioCtx = window.AudioContext || window.webkitAudioContext;
                 if (!AudioCtx) return;
                 audioContext = new AudioCtx();
+                if (audioContext.state === 'suspended') {
+                    audioContext.resume().catch(() => {});
+                }
                 
                 analyser = audioContext.createAnalyser();
                 analyser.fftSize = 256;
@@ -2360,7 +2373,8 @@
                 
                 applyEqualizer();
             } catch(e) {
-                console.warn('[DTunes] AudioContext setup notice:', e);
+                console.warn('[DTunes] AudioContext setup notice, falling back to direct audio:', e);
+                isAudioContextInitialized = false;
             }
         }
         // Visualizer frequency bin ranges: bins 0-4 = bass/low, bins 10-39 = mid frequencies.

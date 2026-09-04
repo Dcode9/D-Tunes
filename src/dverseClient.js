@@ -194,6 +194,7 @@
             }));
           } catch (_) {}
           syncSessionToPortal(currentSession);
+          notifyDesktopAppIfRunning(currentSession);
           return currentSession;
         }
       } catch (err) {
@@ -342,6 +343,7 @@
         refresh_token: session.refresh_token
       }
     }, 1500).catch((error) => console.warn('[DVerse] Portal session sync failed:', error));
+    notifyDesktopAppIfRunning(session);
   }
 
   async function getSession() {
@@ -365,18 +367,40 @@
   }
 
   async function signInWithGoogle() {
-    if (window.electronAPI && typeof window.electronAPI.startGoogleLogin === 'function') {
-      console.log('[DVerse] Delegating Google Sign-In to Electron native browser...');
+    if (!client) throw new Error('D\'Verse Supabase client is not configured.');
+
+    // 1. Electron Desktop App handling:
+    // Generate the PKCE challenge in this window so mainWindow holds the code_verifier,
+    // then open the generated URL in the user's default desktop browser via Electron shell.
+    const isDesktop = Boolean(window.electronAPI || window.isDTunesDesktop);
+    if (isDesktop) {
+      console.log('[DVerse] Desktop app detected: initiating PKCE OAuth with system browser...');
       try {
-        await window.electronAPI.startGoogleLogin();
-        return;
+        const loopbackCallback = 'http://127.0.0.1:49200/callback';
+        const { data, error } = await client.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: loopbackCallback,
+            skipBrowserRedirect: true
+          }
+        });
+        if (error) throw error;
+        if (data?.url) {
+          console.log('[DVerse] Opening PKCE OAuth URL in system browser:', data.url);
+          if (window.electronAPI && typeof window.electronAPI.openExternalUrl === 'function') {
+            await window.electronAPI.openExternalUrl(data.url);
+            return;
+          } else if (window.electronAPI && typeof window.electronAPI.startGoogleLogin === 'function') {
+            await window.electronAPI.startGoogleLogin(data.url);
+            return;
+          }
+        }
       } catch (e) {
-        console.warn('[DVerse] Electron native login call failed:', e);
+        console.warn('[DVerse] Desktop PKCE flow error, falling back:', e);
       }
     }
-    if (!client) throw new Error('D\'Verse Supabase client is not configured.');
     
-    // Direct sign in with Supabase OAuth (Google)
+    // 2. Standard Web Browser flow
     try {
       const redirectUrl = `${window.location.origin}${window.location.pathname}`;
       const { data, error } = await client.auth.signInWithOAuth({
