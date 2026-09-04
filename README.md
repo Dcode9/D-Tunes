@@ -1,6 +1,6 @@
 # D-Tunes
 
-D-Tunes is a browser music player for tunes.dverse.fun backed by JioSaavn unofficial API sources.
+D-Tunes is a browser music player for tunes.d-verse.in backed by JioSaavn unofficial API sources.
 
 ## Running locally
 

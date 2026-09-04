@@ -5,6 +5,7 @@ const { getRecommendations, PLAYLIST_TYPES } = require('./lib/recommendationEngi
 const { deduplicateSongs } = require('./lib/deduplication');
 const store = require('./lib/jsonStore');
 const saavn = require('./lib/saavnClient');
+const lyricsService = require('./lib/lyricsService');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_ROOT = process.cwd();
@@ -160,6 +161,27 @@ async function handleApi(req, res, url) {
     const deps = await recommendationDeps({ language: url.searchParams.get('language') });
     const songs = await getRecommendations(userId, { limit, playlistType: type, language: url.searchParams.get('language') }, deps);
     return sendJson(res, 200, { songs: deduplicateSongs(songs) });
+  }
+
+  if (req.method === 'GET' && url.pathname === '/api/music/lyrics') {
+    const track = url.searchParams.get('track') || url.searchParams.get('track_name') || url.searchParams.get('title') || url.searchParams.get('name');
+    const artist = url.searchParams.get('artist') || url.searchParams.get('artist_name') || url.searchParams.get('primary_artists') || '';
+    const album = url.searchParams.get('album') || '';
+    const duration = Number(url.searchParams.get('duration') || 0);
+
+    if (!track) {
+      return sendJson(res, 400, { error: 'track or title parameter is required' });
+    }
+
+    try {
+      const result = await lyricsService.fetchLyrics({ track, artist, album, duration });
+      return sendJson(res, 200, {
+        lyrics: result,
+        success: Boolean(result && (result.syncedLyrics || result.plainLyrics || result.instrumental))
+      });
+    } catch (err) {
+      return sendJson(res, 500, { error: err.message || 'Failed to fetch lyrics' });
+    }
   }
 
   return sendJson(res, 404, { error: 'Not found' });
