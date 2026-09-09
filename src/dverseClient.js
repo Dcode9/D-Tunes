@@ -16,12 +16,16 @@
     if (typeof value === 'string' && value.length > 3500) return;
     const expires = new Date(Date.now() + days * 864e5).toUTCString();
     const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
-    document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax${isSecure ? '; Secure' : ''}`;
+    const isDverse = typeof window !== 'undefined' && window.location.hostname.endsWith('d-verse.in');
+    const domainAttr = isDverse ? '; domain=.d-verse.in' : '';
+    document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; expires=${expires}; path=/${domainAttr}; SameSite=Lax${isSecure ? '; Secure' : ''}`;
   }
 
   function deleteCookie(name) {
     if (typeof document === 'undefined') return;
-    document.cookie = `${encodeURIComponent(name)}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax; Secure`;
+    const isDverse = typeof window !== 'undefined' && window.location.hostname.endsWith('d-verse.in');
+    const domainAttr = isDverse ? '; domain=.d-verse.in' : '';
+    document.cookie = `${encodeURIComponent(name)}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/${domainAttr}; SameSite=Lax; Secure`;
   }
 
   const universalStorage = {
@@ -210,7 +214,7 @@
     return null;
   }
 
-  function bridgeRequest(message, timeoutMs = 800) {
+  function bridgeRequest(message, timeoutMs = 2500) {
     if (!PORTAL_ORIGIN || window.location.origin === PORTAL_ORIGIN || typeof document === 'undefined') {
       return Promise.resolve(null);
     }
@@ -408,6 +412,12 @@
     // 2. Standard Web Browser flow
     try {
       const redirectUrl = `${window.location.origin}${window.location.pathname}`;
+      setCookie('dverse_auth_return_to', `${window.location.origin}/`, 1);
+      setCookie('dverse.auth.returnTo', `${window.location.origin}/`, 1);
+      try {
+        localStorage.setItem('dverse.auth.returnTo', `${window.location.origin}/`);
+        sessionStorage.setItem('dverse.auth.returnTo', `${window.location.origin}/`);
+      } catch (_) {}
       const { data, error } = await client.auth.signInWithOAuth({
         provider: 'google',
         options: {
