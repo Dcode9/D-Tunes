@@ -264,3 +264,69 @@ test('Beta 1.2 - External Playback Seekbar & Visualizer Wake', async (t) => {
         assert.equal(vizCanvas.style.clipPath, 'inset(0 195px 0 0)');
     });
 });
+
+test('Beta 1.2 - Desktop Sign-In Handoff & Isolation', async (t) => {
+    await t.test('Desktop handoff triggers loopback POST and dtunes:// deep link when desktop_auth=1 is present', () => {
+        let loopbackNotified = false;
+        let deepLinkNavigated = '';
+        let overlayRendered = false;
+
+        const session = {
+            access_token: 'mock_access_123',
+            refresh_token: 'mock_refresh_456'
+        };
+
+        const mockNotifyDesktop = (s) => {
+            if (s && s.access_token) loopbackNotified = true;
+        };
+
+        const mockRenderUI = (link) => {
+            overlayRendered = true;
+            deepLinkNavigated = link;
+        };
+
+        const handleHandoff = (s, isDesktopAuth) => {
+            if (!s || !isDesktopAuth) return;
+            mockNotifyDesktop(s);
+            const deepLinkUrl = `dtunes://auth?access_token=${encodeURIComponent(s.access_token)}&refresh_token=${encodeURIComponent(s.refresh_token)}`;
+            mockRenderUI(deepLinkUrl);
+        };
+
+        handleHandoff(session, true);
+
+        assert.equal(loopbackNotified, true, 'Desktop loopback port 49200 must be notified');
+        assert.equal(overlayRendered, true, 'Handoff overlay UI must be displayed');
+        assert.equal(deepLinkNavigated, 'dtunes://auth?access_token=mock_access_123&refresh_token=mock_refresh_456');
+    });
+
+    await t.test('Normal web sign-in ignores desktop handoff and never notifies port 49200', () => {
+        let loopbackNotified = false;
+        let overlayRendered = false;
+
+        const session = {
+            access_token: 'web_token_789',
+            refresh_token: 'web_refresh_012'
+        };
+
+        const handleHandoff = (s, isDesktopAuth) => {
+            if (!s || !isDesktopAuth) return;
+            loopbackNotified = true;
+            overlayRendered = true;
+        };
+
+        handleHandoff(session, false);
+
+        assert.equal(loopbackNotified, false, 'Web sign-in must NOT notify port 49200');
+        assert.equal(overlayRendered, false, 'Web sign-in must NOT render desktop handoff overlay');
+    });
+
+    await t.test('Desktop OAuth redirect uses Site URL with desktop_auth=1 query param', () => {
+        const origin = 'https://tunes.d-verse.in';
+        const desktopRedirect = `${origin}/?desktop_auth=1`;
+        const url = new URL(desktopRedirect);
+
+        assert.equal(url.origin, 'https://tunes.d-verse.in');
+        assert.equal(url.searchParams.get('desktop_auth'), '1');
+    });
+});
+

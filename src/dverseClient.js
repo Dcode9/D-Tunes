@@ -86,6 +86,10 @@
   let currentSession = null;
   let checkedUrlHandoff = false;
 
+  if (typeof window !== 'undefined' && window.location && window.location.search && window.location.search.includes('desktop_auth=1')) {
+    try { sessionStorage.setItem('dverse_desktop_auth', '1'); } catch (_) {}
+  }
+
   function base64UrlDecode(value) {
     const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
     const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=');
@@ -174,6 +178,7 @@
             }
           } catch (_) {}
           syncSessionToPortal(currentSession);
+          handleDesktopHandoffIfRequested(currentSession);
           return currentSession;
         }
       } catch (err) {
@@ -188,8 +193,10 @@
       try {
         const { data, error } = await client.auth.exchangeCodeForSession(code);
         if (!error && data?.session) {
+          const isDesktopAuth = searchParams.get('desktop_auth') === '1';
           searchParams.delete('code');
           searchParams.delete('state');
+          if (!isDesktopAuth) searchParams.delete('desktop_auth');
           const cleanSearch = searchParams.toString();
           try { window.history.replaceState({}, document.title, `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`); } catch (_) {}
           currentSession = data.session;
@@ -200,6 +207,7 @@
             }));
           } catch (_) {}
           syncSessionToPortal(currentSession);
+          handleDesktopHandoffIfRequested(currentSession);
           return currentSession;
         } else if (error) {
           console.warn('[DVerse] Failed to exchange code for session:', error);
@@ -335,6 +343,72 @@
     } catch (_) {}
   }
 
+  function handleDesktopHandoffIfRequested(session) {
+    if (!session || typeof window === 'undefined' || window.electronAPI) return;
+
+    const searchParams = new URLSearchParams(window.location.search);
+    const isDesktopAuth = searchParams.get('desktop_auth') === '1' || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('dverse_desktop_auth') === '1');
+    if (!isDesktopAuth) return;
+
+    try { sessionStorage.removeItem('dverse_desktop_auth'); } catch (_) {}
+
+    try {
+      searchParams.delete('desktop_auth');
+      const cleanSearch = searchParams.toString();
+      const cleanUrl = `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`;
+      window.history.replaceState({}, document.title, cleanUrl);
+    } catch (_) {}
+
+    // 1. Notify desktop app via loopback server on port 49200
+    notifyDesktopAppIfRunning(session);
+
+    // 2. Build deep link URL
+    const deepLinkUrl = `dtunes://auth?access_token=${encodeURIComponent(session.access_token)}&refresh_token=${encodeURIComponent(session.refresh_token)}`;
+
+    // 3. Render desktop handoff UI in browser
+    renderDesktopHandoffUI(deepLinkUrl);
+
+    // 4. Trigger deep link navigation
+    try {
+      window.location.href = deepLinkUrl;
+    } catch (_) {}
+  }
+
+  function renderDesktopHandoffUI(deepLinkUrl) {
+    if (typeof document === 'undefined') return;
+    const existing = document.getElementById('dtunes-desktop-handoff-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'dtunes-desktop-handoff-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999999;background:rgba(9,9,11,0.94);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);display:flex;align-items:center;justify-content:center;padding:1.5rem;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f4f4f5;';
+
+    overlay.innerHTML = `
+      <div style="background:rgba(24,24,30,0.96);border:1px solid rgba(255,255,255,0.14);border-radius:1.5rem;padding:2.5rem 2.25rem;max-width:440px;width:100%;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.7);">
+        <div style="width:60px;height:60px;border-radius:50%;background:rgba(34,211,238,0.15);color:#22d3ee;display:inline-flex;align-items:center;justify-content:center;font-size:30px;margin-bottom:1.25rem;border:1px solid rgba(34,211,238,0.3);">✓</div>
+        <h2 style="font-size:1.4rem;font-weight:700;margin:0 0 0.5rem;color:#ffffff;">Signed In Successfully</h2>
+        <p style="color:#a1a1aa;font-size:0.95rem;margin:0 0 1.75rem;line-height:1.5;">
+          Redirecting back to your <strong>D'Tunes Windows app</strong>. Your library, playlists, and history are now syncing...
+        </p>
+        <div style="display:flex;flex-direction:column;gap:0.75rem;">
+          <a id="dtunes-open-app-btn" href="${deepLinkUrl}" style="display:block;background:#22d3ee;color:#09090b;font-weight:700;font-size:0.95rem;padding:0.8rem 1.5rem;border-radius:9999px;text-decoration:none;box-shadow:0 4px 20px rgba(34,211,238,0.35);">Open D'Tunes App</a>
+          <button id="dtunes-dismiss-handoff-btn" style="background:transparent;color:#71717a;border:none;font-size:0.85rem;cursor:pointer;padding:0.5rem;">Continue in Web Player</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const dismissBtn = overlay.querySelector('#dtunes-dismiss-handoff-btn');
+    if (dismissBtn) {
+      dismissBtn.addEventListener('click', () => overlay.remove());
+    }
+
+    setTimeout(() => {
+      try { window.close(); } catch (_) {}
+    }, 4000);
+  }
+
   function syncSessionToPortal(session) {
     if (!session?.access_token || !session?.refresh_token) return;
     try {
@@ -363,6 +437,7 @@
       currentSession = session || null;
       if (session && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
         syncSessionToPortal(session);
+        handleDesktopHandoffIfRequested(session);
       }
       if (event === 'SIGNED_OUT') {
         try { localStorage.removeItem('dverse_session_cache'); } catch (_) {}
@@ -376,23 +451,23 @@
     if (!client) throw new Error('D\'Verse Supabase client is not configured.');
 
     // 1. Electron Desktop App handling:
-    // Generate the PKCE challenge in this window so mainWindow holds the code_verifier,
-    // then open the generated URL in the user's default desktop browser via Electron shell.
+    // Route OAuth through Site URL with desktop_auth=1 to satisfy Supabase redirect whitelist
+    // and hand the session directly back to the Windows app via loopback and dtunes:// protocol.
     const isDesktop = Boolean(window.electronAPI || window.isDTunesDesktop);
     if (isDesktop) {
-      console.log('[DVerse] Desktop app detected: initiating PKCE OAuth with system browser...');
+      console.log('[DVerse] Desktop app detected: initiating OAuth with system browser...');
       try {
-        const loopbackCallback = 'http://127.0.0.1:49200/callback';
+        const desktopRedirect = `${window.location.origin}/?desktop_auth=1`;
         const { data, error } = await client.auth.signInWithOAuth({
           provider: 'google',
           options: {
-            redirectTo: loopbackCallback,
+            redirectTo: desktopRedirect,
             skipBrowserRedirect: true
           }
         });
         if (error) throw error;
         if (data?.url) {
-          console.log('[DVerse] Opening PKCE OAuth URL in system browser:', data.url);
+          console.log('[DVerse] Opening OAuth URL in system browser:', data.url);
           if (window.electronAPI && typeof window.electronAPI.openExternalUrl === 'function') {
             await window.electronAPI.openExternalUrl(data.url);
             return;
@@ -402,7 +477,7 @@
           }
         }
       } catch (e) {
-        console.warn('[DVerse] Desktop PKCE flow error, falling back:', e);
+        console.warn('[DVerse] Desktop OAuth error, falling back:', e);
       }
     }
     
