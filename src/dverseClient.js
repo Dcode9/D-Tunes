@@ -174,7 +174,6 @@
             }
           } catch (_) {}
           syncSessionToPortal(currentSession);
-          notifyDesktopAppIfRunning(currentSession);
           return currentSession;
         }
       } catch (err) {
@@ -201,7 +200,6 @@
             }));
           } catch (_) {}
           syncSessionToPortal(currentSession);
-          notifyDesktopAppIfRunning(currentSession);
           return currentSession;
         } else if (error) {
           console.warn('[DVerse] Failed to exchange code for session:', error);
@@ -352,7 +350,6 @@
         refresh_token: session.refresh_token
       }
     }, 1500).catch((error) => console.warn('[DVerse] Portal session sync failed:', error));
-    notifyDesktopAppIfRunning(session);
   }
 
   async function getSession() {

@@ -2481,7 +2481,6 @@
                 }
                 const rgbStr = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
                 const hexStr = `#${color.map(x => Math.min(255, Math.max(0, x)).toString(16).padStart(2, '0')).join('')}`;
-                document.documentElement.style.setProperty('--accent-color', rgbStr);
                 document.documentElement.style.setProperty('--album-art-gradient', `conic-gradient(from 0deg, ${rgbStr}, #050505, ${rgbStr})`);
                 
                 const bgPlaying = document.getElementById('background-playing');
@@ -5563,16 +5562,71 @@
                 }
             });
 
-            // Desktop Horizontal Mouse Wheel Scrolling on Music Shelves
+            // Strict Scrolling Isolation: Vertical scroll moves page, horizontal gestures move shelf
             document.addEventListener('wheel', (e) => {
                 const scrollShelf = e.target.closest('.horizontal-scroll');
-                if (scrollShelf && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
-                    if (scrollShelf.scrollWidth > scrollShelf.clientWidth) {
+                if (!scrollShelf) return;
+
+                const isHorizontalIntent = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY);
+                if (isHorizontalIntent) {
+                    const canScrollLeft = scrollShelf.scrollLeft > 0;
+                    const canScrollRight = scrollShelf.scrollLeft < (scrollShelf.scrollWidth - scrollShelf.clientWidth - 1);
+                    const delta = e.shiftKey ? e.deltaY : e.deltaX;
+                    if ((delta < 0 && canScrollLeft) || (delta > 0 && canScrollRight)) {
                         e.preventDefault();
-                        scrollShelf.scrollLeft += e.deltaY;
+                        scrollShelf.scrollLeft += delta;
                     }
                 }
+                // When deltaY > deltaX without ShiftKey: Do NOT preventDefault, let vertical document scrolling proceed naturally!
             }, { passive: false });
+
+            // Edge Blur Optimization: compute/render blurs ONLY when scrolling or edge-hovered
+            document.addEventListener('scroll', (e) => {
+                const shelf = e.target;
+                if (!shelf || !shelf.classList || !shelf.classList.contains('horizontal-scroll')) return;
+                const wrapper = shelf.closest('.relative');
+                if (!wrapper) return;
+                const leftBlur = wrapper.querySelector('.row-blur-left');
+                const rightBlur = wrapper.querySelector('.row-blur-right');
+                if (!leftBlur && !rightBlur) return;
+
+                const maxScroll = shelf.scrollWidth - shelf.clientWidth;
+                if (leftBlur) leftBlur.classList.toggle('active', shelf.scrollLeft > 4);
+                if (rightBlur) rightBlur.classList.toggle('active', shelf.scrollLeft < maxScroll - 4);
+
+                clearTimeout(shelf._blurTimer);
+                shelf._blurTimer = setTimeout(() => {
+                    if (leftBlur) leftBlur.classList.remove('active');
+                    if (rightBlur) rightBlur.classList.remove('active');
+                }, 220);
+            }, true);
+
+            document.addEventListener('mousemove', (e) => {
+                const shelf = e.target.closest('.horizontal-scroll');
+                if (!shelf) {
+                    const activeEdgeBlurs = document.querySelectorAll('.row-blur-left.edge-hovered, .row-blur-right.edge-hovered');
+                    if (activeEdgeBlurs.length > 0) {
+                        activeEdgeBlurs.forEach(el => el.classList.remove('edge-hovered'));
+                    }
+                    return;
+                }
+                const wrapper = shelf.closest('.relative');
+                if (!wrapper) return;
+                const leftBlur = wrapper.querySelector('.row-blur-left');
+                const rightBlur = wrapper.querySelector('.row-blur-right');
+                if (!leftBlur && !rightBlur) return;
+
+                const rect = shelf.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const maxScroll = shelf.scrollWidth - shelf.clientWidth;
+
+                if (leftBlur) {
+                    leftBlur.classList.toggle('edge-hovered', x >= 0 && x <= 56 && shelf.scrollLeft > 4);
+                }
+                if (rightBlur) {
+                    rightBlur.classList.toggle('edge-hovered', x >= rect.width - 56 && x <= rect.width && shelf.scrollLeft < maxScroll - 4);
+                }
+            });
 
             // iOS Platform Optimizations (Hardware Volume & AudioContext Unlock)
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
