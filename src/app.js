@@ -1758,6 +1758,31 @@
             }
         };
 
+        const resetSeekbarAndTimes = (track = null) => {
+            currentProgress = 0;
+            if (audio) {
+                try { audio.currentTime = 0; } catch (_) {}
+            }
+            if (seekBar) {
+                seekBar.value = 0;
+                seekBar.max = track?.duration ? track.duration : 100;
+            }
+            const currTimeEl = document.getElementById('seek-current-time');
+            const durTimeEl = document.getElementById('seek-duration-time');
+            if (currTimeEl) currTimeEl.textContent = '0:00';
+            if (durTimeEl) durTimeEl.textContent = track?.duration ? utils.formatTime(track.duration) : '0:00';
+            const tooltipEl = document.getElementById('seek-tooltip');
+            if (tooltipEl) tooltipEl.textContent = '0:00';
+            if (vizSeekTrack) {
+                vizSeekTrack.style.clipPath = 'inset(0 0 0 0%)';
+            }
+            if (vizCanvas) {
+                const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                const canvasW = (vizCanvas.width || 0) / dpr;
+                vizCanvas.style.clipPath = `inset(0 ${canvasW}px 0 0)`;
+            }
+        };
+
         const requestPlay = async () => {
             if (!state.loaded && !state.currentTrack) return;
             state.userPaused = false;
@@ -1788,6 +1813,10 @@
 
         const recoverFromAudioError = async () => {
             if (!state.currentTrack || isAudioRecoveryPending) return;
+            // Ignore aborts (e.g. from rapid track skipping or new track load) and non-errors
+            if (audio.error && (audio.error.code === 1 || audio.error.code === 0)) {
+                return;
+            }
             isAudioRecoveryPending = true;
             state.loading = true;
             ui.setPlayerLoading(true);
@@ -1906,6 +1935,8 @@
                 state.loading = true;
                 state.loaded = false;
                 state.currentTrack = { ...track };
+                resetSeekbarAndTimes(track);
+
                 document.body.classList.add('has-active-track');
                 document.getElementById('queue-wrapper')?.classList.remove('preview-expanded', 'track-swap-out');
                 document.getElementById('player-footer')?.classList.remove('translate-y-[150%]', 'opacity-0');
@@ -1923,26 +1954,18 @@
                     }
                 }, 8000);
 
-                try {
-                    const freshDetails = await jiosaavnAPI.getSong(track.id);
-                    if (currentRequestId !== playRequestId) return;
-
-                    const playUrl = freshDetails?.url || track.url;
-                    if (!playUrl) throw new Error('No audio URL found');
-                    
-                    track = { ...track, ...freshDetails, url: playUrl };
+                const setupAndStartPlayback = async (urlToPlay) => {
                     audio.crossOrigin = 'anonymous';
                     audio.preload = 'auto';
-                    audio.src = playUrl;
+                    audio.src = urlToPlay;
                     audio.load();
 
-                    state.currentTrack = track;
                     state.loaded = true;
                     ui.enableControls();
                     audio.loop = (state.repeat === 2);
 
                     await audio.play();
-                    if (currentRequestId !== playRequestId) return;
+                    if (currentRequestId !== playRequestId) return false;
 
                     state.playing = true;
                     state.loading = false;
@@ -1964,22 +1987,50 @@
                     }
                     applyEqualizer();
                     
-                    ui.updateMetadata(track);
+                    ui.updateMetadata(state.currentTrack);
                     ui.renderQueue();
                     primeNextTrack(); 
-                    if (typeof lyricsManager !== 'undefined') lyricsManager.fetchLyricsForTrack(track);
+                    if (typeof lyricsManager !== 'undefined') lyricsManager.fetchLyricsForTrack(state.currentTrack);
                     if (typeof viz !== 'undefined') viz.start();
                     
-                    const trackWithTime = { ...track, playedAt: new Date().toISOString() };
+                    const trackWithTime = { ...state.currentTrack, playedAt: new Date().toISOString() };
                     state.playHistory = state.playHistory.filter(t => t.id !== track.id);
                     state.playHistory.unshift(trackWithTime);
                     if(state.playHistory.length > 100) state.playHistory.pop();
                     localStorage.setItem('playHistory', JSON.stringify(state.playHistory));
                     
-                    if (window.listeningSession) listeningSession.start(track);
+                    if (window.listeningSession) listeningSession.start(state.currentTrack);
                     ui.renderHistory();
                     if(!document.getElementById('view-home').classList.contains('hidden')) homeView.renderRecentlyPlayed();
                     persist.save();
+                    return true;
+                };
+
+                try {
+                    const hasStreamUrl = Boolean(track.url && (jiosaavnAPI.isStreamingUrl(track.url) || track.url.startsWith('http')));
+                    if (hasStreamUrl) {
+                        // Instant playback with known streaming URL
+                        await setupAndStartPlayback(track.url);
+                        // Refresh details asynchronously in background for 320kbps upgrade and accurate lyrics
+                        jiosaavnAPI.getSong(track.id).then((freshDetails) => {
+                            if (currentRequestId === playRequestId && freshDetails) {
+                                state.currentTrack = { ...state.currentTrack, ...freshDetails };
+                                ui.updateMetadata(state.currentTrack);
+                                if (typeof lyricsManager !== 'undefined') lyricsManager.fetchLyricsForTrack(state.currentTrack);
+                            }
+                        }).catch(() => {});
+                    } else {
+                        // URL not in memory; fetch before playing
+                        const freshDetails = await jiosaavnAPI.getSong(track.id);
+                        if (currentRequestId !== playRequestId) return;
+
+                        const playUrl = freshDetails?.url || track.url;
+                        if (!playUrl) throw new Error('No audio URL found');
+                        
+                        track = { ...track, ...freshDetails, url: playUrl };
+                        state.currentTrack = track;
+                        await setupAndStartPlayback(playUrl);
+                    }
                 } catch (error) {
                     if (currentRequestId === playRequestId) {
                         console.error('[DTunes] Error playing track:', error);
@@ -2360,59 +2411,45 @@
         audio.addEventListener('error', recoverFromAudioError);
 
         // Periodic state reconciliation: catches any desync between audio
-        // element and UI state (especially on mobile expanded player).
+        // element and UI state without false triggers from buffering readyState.
         setInterval(() => {
             if (!state.loaded || isPlaybackPending) return;
-            const audioActuallyPlaying = !audio.paused && !audio.ended && audio.readyState > 2;
-            const stateDesync = (audioActuallyPlaying !== state.playing) && document.visibilityState !== 'hidden' && !state.wasPlayingBeforeHidden;
-            if (stateDesync) {
-                state.playing = audioActuallyPlaying;
-                state.loading = false;
-                ui.setPlayerLoading(false);
+            const isAudioRunning = !audio.paused && !audio.ended;
+            if (isAudioRunning !== state.playing && !state.loading) {
+                state.playing = isAudioRunning;
                 ui.updatePlayBtn();
             }
         }, 2000);
 
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'hidden') {
-                state.wasPlayingBeforeHidden = state.playing || !audio.paused;
-                const preservedVolume = audio.volume;
-                audio.muted = false;
+                state.wasPlayingBeforeHidden = Boolean(state.playing || !audio.paused);
                 persist.save();
                 cloudLibrary.flushPlaybackState(true);
-                setTimeout(() => { audio.volume = preservedVolume; audio.muted = false; }, 0);
             } else {
                 isPlaybackPending = false;
                 state.loading = false;
                 ui.setPlayerLoading(false);
 
-                const shouldResume = state.wasPlayingBeforeHidden || state.playing;
-                if (shouldResume) {
-                    audio.muted = false;
-                    if (audioContext && audioContext.state === 'suspended') {
-                        audioContext.resume().catch(err => console.warn('[DTunes] audioContext resume failed:', err));
-                    }
-                    if (audio.paused) {
-                        audio.play().then(() => {
-                            state.playing = true;
-                            ui.updatePlayBtn();
-                        }).catch(err => {
-                            console.warn('[DTunes] Could not resume audio on focus:', err);
-                            if (audio.error) {
-                                recoverFromAudioError();
-                            } else {
-                                state.playing = false;
-                                state.wasPlayingBeforeHidden = false;
-                                ui.updatePlayBtn();
-                            }
-                        });
-                    } else {
+                if (audioContext && audioContext.state === 'suspended') {
+                    audioContext.resume().catch(err => console.warn('[DTunes] audioContext resume failed:', err));
+                }
+
+                // If audio is already playing smoothly in the background, DO NOT touch or restart it!
+                if (!audio.paused && !audio.ended) {
+                    state.playing = true;
+                    ui.updatePlayBtn();
+                } else if (state.wasPlayingBeforeHidden && !state.userPaused && audio.paused && !audio.ended) {
+                    // Only resume if OS/browser paused the element while hidden
+                    audio.play().then(() => {
                         state.playing = true;
                         ui.updatePlayBtn();
-                    }
+                    }).catch(err => {
+                        console.warn('[DTunes] Could not resume audio on focus:', err);
+                    });
                 }
             }
-            if ('mediaSession' in navigator && document.visibilityState === 'hidden' && (state.playing || state.wasPlayingBeforeHidden)) {
+            if ('mediaSession' in navigator && (state.playing || !audio.paused)) {
                 navigator.mediaSession.playbackState = 'playing';
             }
         });
@@ -4410,26 +4447,23 @@
                 }
             },
             updatePlayBtn: () => {
-                // Reconcile state.playing with actual audio element state.
-                // If the audio is playing but state says otherwise (or vice versa),
-                // use the audio element as the source of truth — unless we're
-                // in the middle of loading a new track.
+                // Audio element is the source of truth: if not paused and not ended, it IS playing.
                 if (state.loaded && !isPlaybackPending) {
-                    const audioActuallyPlaying = !audio.paused && !audio.ended && audio.readyState > 2;
-                    if (audioActuallyPlaying && !state.playing) {
+                    const isAudioRunning = !audio.paused && !audio.ended;
+                    if (isAudioRunning && !state.playing) {
                         state.playing = true;
-                    } else if (!audioActuallyPlaying && state.playing && document.visibilityState !== 'hidden') {
-                        // Only correct when visible; when hidden the browser may
-                        // have suspended audio but we still intend to play.
+                    } else if (audio.paused && state.playing && !state.loading) {
                         state.playing = false;
                     }
                 }
                 const playing = state.playing;
-                document.getElementById('icon-play').className = playing ? 'hidden' : 'flex ml-1';
-                document.getElementById('icon-pause').className = playing ? 'flex' : 'hidden';
+                const playIcon = document.getElementById('icon-play');
+                const pauseIcon = document.getElementById('icon-pause');
+                if (playIcon) playIcon.className = playing ? 'hidden' : 'flex ml-1';
+                if (pauseIcon) pauseIcon.className = playing ? 'flex' : 'hidden';
                 const mPlayBtn = document.getElementById('m-icon-play');
                 const mPauseBtn = document.getElementById('m-icon-pause');
-                if(mPlayBtn && mPauseBtn) {
+                if (mPlayBtn && mPauseBtn) {
                     mPlayBtn.className = playing ? 'hidden' : 'flex';
                     mPauseBtn.className = playing ? 'flex' : 'hidden';
                 }
@@ -5609,6 +5643,7 @@
             
             // Seamless Swap Out Track Animation
             audio.addEventListener('ended', () => {
+                resetSeekbarAndTimes(null);
                 if (state.currentTrack && recommendationEvents.completedSongId !== state.currentTrack.id) {
                     recommendationEvents.completedSongId = state.currentTrack.id;
                     recommendationEvents.record('play_complete', state.currentTrack, {

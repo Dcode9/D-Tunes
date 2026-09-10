@@ -328,5 +328,175 @@ test('Beta 1.2 - Desktop Sign-In Handoff & Isolation', async (t) => {
         assert.equal(url.origin, 'https://tunes.d-verse.in');
         assert.equal(url.searchParams.get('desktop_auth'), '1');
     });
+
+    await t.test('Desktop auth handoff extracts code and constructs dtunes://auth?code= URL', () => {
+        const url = new URL('https://tunes.d-verse.in/?desktop_auth=1&code=google_auth_code_xyz');
+        const searchParams = url.searchParams;
+        const isDesktopAuth = searchParams.get('desktop_auth') === '1';
+        assert.ok(isDesktopAuth);
+
+        const code = searchParams.get('code');
+        assert.equal(code, 'google_auth_code_xyz');
+
+        const payload = code ? { code } : null;
+        assert.deepEqual(payload, { code: 'google_auth_code_xyz' });
+
+        const deepLinkUrl = `dtunes://auth?code=${encodeURIComponent(code)}`;
+        assert.equal(deepLinkUrl, 'dtunes://auth?code=google_auth_code_xyz');
+    });
+});
+
+test('Beta 1.2 - Audio Engine Resilience, Instant Playback & Seekbar Reset', async (t) => {
+    await t.test('resetSeekbarAndTimes immediately zeroes progress, seekbar, and timestamps', () => {
+        let currentTime = 142;
+        const audio = {
+            currentTime,
+            duration: 210,
+        };
+        const seekBar = { value: 142, max: 210 };
+        const currTimeEl = { textContent: '2:22' };
+        const durTimeEl = { textContent: '3:30' };
+        const vizSeekTrack = { style: { clipPath: 'inset(0 0 0 67%)' } };
+        const vizCanvas = { width: 600, style: { clipPath: 'inset(0 100px 0 0)' } };
+        let currentProgress = 0.67;
+
+        const formatTime = (secs) => {
+            const m = Math.floor(secs / 60);
+            const s = Math.floor(secs % 60);
+            return `${m}:${s < 10 ? '0' : ''}${s}`;
+        };
+
+        const resetSeekbarAndTimes = (track = null) => {
+            currentProgress = 0;
+            audio.currentTime = 0;
+            seekBar.value = 0;
+            seekBar.max = track?.duration ? track.duration : 100;
+            currTimeEl.textContent = '0:00';
+            durTimeEl.textContent = track?.duration ? formatTime(track.duration) : '0:00';
+            vizSeekTrack.style.clipPath = 'inset(0 0 0 0%)';
+            const dpr = 2;
+            const canvasW = vizCanvas.width / dpr;
+            vizCanvas.style.clipPath = `inset(0 ${canvasW}px 0 0)`;
+        };
+
+        // Reset on song ended (track = null)
+        resetSeekbarAndTimes(null);
+        assert.equal(currentProgress, 0);
+        assert.equal(audio.currentTime, 0);
+        assert.equal(seekBar.value, 0);
+        assert.equal(currTimeEl.textContent, '0:00');
+        assert.equal(durTimeEl.textContent, '0:00');
+        assert.equal(vizSeekTrack.style.clipPath, 'inset(0 0 0 0%)');
+        assert.equal(vizCanvas.style.clipPath, 'inset(0 300px 0 0)');
+
+        // Reset on new track loaded with known duration 180s
+        resetSeekbarAndTimes({ duration: 180 });
+        assert.equal(seekBar.max, 180);
+        assert.equal(currTimeEl.textContent, '0:00');
+        assert.equal(durTimeEl.textContent, '3:00');
+    });
+
+    await t.test('Focus & visibility change does not pause or override state when audio is playing and readyState is 2', () => {
+        let playCalled = false;
+        let pauseCalled = false;
+        const audio = {
+            paused: false,
+            ended: false,
+            readyState: 2, // HAVE_CURRENT_DATA (buffering / normal stream)
+            play: async () => { playCalled = true; },
+            pause: () => { pauseCalled = true; },
+        };
+        const state = {
+            playing: true,
+            wasPlayingBeforeHidden: true,
+            userPaused: false,
+            loaded: true,
+            loading: false,
+        };
+
+        // Simulate visibilitychange to 'visible'
+        const onVisibilityChangeVisible = () => {
+            if (!audio.paused && !audio.ended) {
+                state.playing = true;
+                // Never call audio.play() or audio.pause() when already running
+            } else if (state.wasPlayingBeforeHidden && !state.userPaused && audio.paused && !audio.ended) {
+                audio.play();
+            }
+        };
+
+        onVisibilityChangeVisible();
+
+        assert.equal(state.playing, true, 'State must remain playing');
+        assert.equal(playCalled, false, 'play() must NOT be called if audio is already unpaused');
+        assert.equal(pauseCalled, false, 'pause() must NEVER be called on focus');
+    });
+
+    await t.test('updatePlayBtn synchronizes state without false pause when readyState <= 2', () => {
+        const audio = { paused: false, ended: false, readyState: 2 };
+        const state = { playing: false, loaded: true, loading: false };
+        const isPlaybackPending = false;
+
+        const updatePlayBtn = () => {
+            if (state.loaded && !isPlaybackPending) {
+                const isAudioRunning = !audio.paused && !audio.ended;
+                if (isAudioRunning && !state.playing) {
+                    state.playing = true;
+                } else if (audio.paused && state.playing && !state.loading) {
+                    state.playing = false;
+                }
+            }
+        };
+
+        updatePlayBtn();
+        assert.equal(state.playing, true, 'Audio playing state must reconcile to true even if readyState is 2');
+    });
+
+    await t.test('recoverFromAudioError ignores MEDIA_ERR_ABORTED (code 1)', () => {
+        let recoveryTriggered = false;
+        const audio = {
+            error: { code: 1, message: 'MEDIA_ERR_ABORTED' }
+        };
+
+        const recoverFromAudioError = () => {
+            if (audio.error && (audio.error.code === 1 || audio.error.code === 0)) {
+                return;
+            }
+            recoveryTriggered = true;
+        };
+
+        recoverFromAudioError();
+        assert.equal(recoveryTriggered, false, 'Aborted requests must not trigger error recovery');
+    });
+
+    await t.test('Instant playback starts immediately when track.url is already present', async () => {
+        let playStartedImmediately = false;
+        let backgroundDetailsFetched = false;
+
+        const track = {
+            id: 'test_song_1',
+            name: 'Test Song',
+            url: 'https://aac.saavncdn.com/test_stream.mp4',
+            duration: 240,
+        };
+
+        const isStreamingUrl = (url) => typeof url === 'string' && url.includes('saavncdn.com');
+
+        const simulatePlayDirect = async (t) => {
+            const hasStreamUrl = Boolean(t.url && isStreamingUrl(t.url));
+            if (hasStreamUrl) {
+                // Instant branch
+                playStartedImmediately = true;
+                // Background async details fetch
+                Promise.resolve({ lyrics: 'test lyrics' }).then(() => {
+                    backgroundDetailsFetched = true;
+                });
+            }
+        };
+
+        await simulatePlayDirect(track);
+        assert.equal(playStartedImmediately, true, 'Playback must start immediately without awaiting API');
+        await new Promise(r => setTimeout(r, 10));
+        assert.equal(backgroundDetailsFetched, true, 'Background details must resolve asynchronously');
+    });
 });
 

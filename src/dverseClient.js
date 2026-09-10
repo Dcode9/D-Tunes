@@ -90,6 +90,66 @@
     try { sessionStorage.setItem('dverse_desktop_auth', '1'); } catch (_) {}
   }
 
+  // Immediate Desktop OAuth Return Handler:
+  // When returning from Google OAuth in the external system browser with desktop_auth=1,
+  // do NOT attempt PKCE code exchange in this browser (the PKCE code_verifier was generated
+  // and stored inside the Electron app). Immediately hand off code or tokens to the Windows app
+  // via loopback server (http://127.0.0.1:49200/token) and custom protocol (dtunes://auth).
+  function checkImmediateDesktopAuthHandoff() {
+    if (typeof window === 'undefined' || window.electronAPI || !window.location) return;
+    const searchParams = new URLSearchParams(window.location.search);
+    const hashText = window.location.hash ? window.location.hash.slice(1) : '';
+    const hashParams = new URLSearchParams(hashText.startsWith('?') ? hashText.slice(1) : hashText);
+
+    const isDesktopAuth = searchParams.get('desktop_auth') === '1' ||
+      (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('dverse_desktop_auth') === '1');
+
+    if (!isDesktopAuth) return;
+
+    const code = searchParams.get('code') || hashParams.get('code');
+    const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
+    const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token');
+
+    if (code || (accessToken && refreshToken)) {
+      try { sessionStorage.removeItem('dverse_desktop_auth'); } catch (_) {}
+
+      const payload = code
+        ? { code }
+        : {
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            expires_in: hashParams.get('expires_in') || searchParams.get('expires_in'),
+            token_type: hashParams.get('token_type') || searchParams.get('token_type')
+          };
+
+      const deepLinkUrl = code
+        ? `dtunes://auth?code=${encodeURIComponent(code)}`
+        : `dtunes://auth?access_token=${encodeURIComponent(accessToken)}&refresh_token=${encodeURIComponent(refreshToken)}`;
+
+      // 1. Post to loopback server on port 49200
+      try {
+        fetch('http://127.0.0.1:49200/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        }).catch(() => {});
+      } catch (_) {}
+
+      // 2. Render desktop handoff UI in browser
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => renderDesktopHandoffUI(deepLinkUrl));
+      } else {
+        renderDesktopHandoffUI(deepLinkUrl);
+      }
+
+      // 3. Trigger deep link navigation to bring Windows app to front
+      try {
+        window.location.href = deepLinkUrl;
+      } catch (_) {}
+    }
+  }
+  checkImmediateDesktopAuthHandoff();
+
   function base64UrlDecode(value) {
     const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
     const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=');
@@ -190,13 +250,17 @@
     const searchParams = new URLSearchParams(window.location.search);
     const code = searchParams.get('code');
     if (code && typeof client.auth.exchangeCodeForSession === 'function') {
+      const isDesktopAuth = searchParams.get('desktop_auth') === '1' ||
+        (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('dverse_desktop_auth') === '1');
+      if (isDesktopAuth) {
+        // Handled directly by checkImmediateDesktopAuthHandoff() and Electron mainWindow
+        return null;
+      }
       try {
         const { data, error } = await client.auth.exchangeCodeForSession(code);
         if (!error && data?.session) {
-          const isDesktopAuth = searchParams.get('desktop_auth') === '1';
           searchParams.delete('code');
           searchParams.delete('state');
-          if (!isDesktopAuth) searchParams.delete('desktop_auth');
           const cleanSearch = searchParams.toString();
           try { window.history.replaceState({}, document.title, `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`); } catch (_) {}
           currentSession = data.session;
