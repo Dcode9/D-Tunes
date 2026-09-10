@@ -918,6 +918,7 @@
             queue: [], userQueue: [], idx: -1, playing: false, loading: false, loaded: false,
             shuffle: safeStorage.get('playShuffle') === 'true',
             repeat: parseInt(safeStorage.get('playRepeat', '0'), 10) || 0,
+            shuffledOrder: [], shufflePointer: 0, _audioRetryCount: 0,
             currentTrack: null,
             likedIds: safeStorage.getJSON('likedIds', []),
             libraryIds: safeStorage.getJSON('libraryIds', []),
@@ -1330,6 +1331,24 @@
                 ui.updatePlayBtn();
                 cloudLibrary.updateUI();
                 ui.switchView('home');
+
+                // Immediately purge and hide personalized shelves on the homepage without requiring page reload
+                document.getElementById('section-for-you')?.classList.add('hidden');
+                document.getElementById('for-you-actions')?.classList.add('hidden');
+                const forYouGrid = document.getElementById('for-you-grid');
+                if (forYouGrid) forYouGrid.innerHTML = '';
+
+                document.getElementById('section-quick-picks')?.classList.add('hidden');
+                const quickPicksGrid = document.getElementById('quick-picks-grid');
+                if (quickPicksGrid) quickPicksGrid.innerHTML = '';
+
+                document.getElementById('section-recent')?.classList.add('hidden');
+                const recentGrid = document.getElementById('recent-grid');
+                if (recentGrid) recentGrid.innerHTML = '';
+
+                state.discoverMixes = {};
+                homeView.renderDiscoverSection(true);
+
                 if (ui.showToast) ui.showToast('Account data cleared and signed out', 'info');
             },
             init: async () => {
@@ -1663,15 +1682,53 @@
         let playRequestId = 0;
 
 
+        const generateShuffledQueue = () => {
+            if (!state.queue || state.queue.length <= 1) {
+                state.shuffledOrder = (state.queue || []).map((_, i) => i);
+                state.shufflePointer = 0;
+                return;
+            }
+            const currentIdx = state.idx >= 0 && state.idx < state.queue.length ? state.idx : 0;
+            const remaining = state.queue.map((_, i) => i).filter(i => i !== currentIdx);
+            // Deterministic Fisher-Yates shuffle of remaining queue tracks
+            for (let i = remaining.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const temp = remaining[i];
+                remaining[i] = remaining[j];
+                remaining[j] = temp;
+            }
+            state.shuffledOrder = [currentIdx, ...remaining];
+            state.shufflePointer = 0;
+        };
+
         const getUpcomingTrack = () => {
             if (state.userQueue.length > 0) return state.userQueue[0];
-            if (state.queue.length === 0) return null;
-            if (state.shuffle) return state.queue.find((_, i) => i !== state.idx) || null;
+            if (!state.queue || state.queue.length === 0) return null;
+            if (state.shuffle) {
+                if (!state.shuffledOrder || state.shuffledOrder.length !== state.queue.length) {
+                    generateShuffledQueue();
+                }
+                const nextShuffleIdx = state.shuffledOrder[state.shufflePointer + 1];
+                if (nextShuffleIdx !== undefined && state.queue[nextShuffleIdx]) {
+                    return state.queue[nextShuffleIdx];
+                }
+                return state.repeat === 1 && state.shuffledOrder.length > 0 ? state.queue[state.shuffledOrder[0]] : null;
+            }
             return state.idx >= 0 && state.idx < state.queue.length - 1 ? state.queue[state.idx + 1] : null;
         };
 
         const getPreviousTrack = () => {
-            if (state.queue.length === 0) return null;
+            if (!state.queue || state.queue.length === 0) return null;
+            if (state.shuffle) {
+                if (!state.shuffledOrder || state.shuffledOrder.length !== state.queue.length) {
+                    generateShuffledQueue();
+                }
+                if (state.shufflePointer > 0) {
+                    const prevShuffleIdx = state.shuffledOrder[state.shufflePointer - 1];
+                    return state.queue[prevShuffleIdx] || null;
+                }
+                return state.queue.length > 1 ? state.queue[state.shuffledOrder[state.shuffledOrder.length - 1]] : null;
+            }
             if (state.idx > 0) return state.queue[state.idx - 1];
             return state.queue.length > 1 ? state.queue[state.queue.length - 1] : null;
         };
@@ -1709,6 +1766,7 @@
                 if (audioContext && audioContext.state === 'suspended') {
                     try { await audioContext.resume(); } catch (acErr) {}
                 }
+                if (typeof viz !== 'undefined' && viz.start) viz.start();
                 await audio.play();
                 state.playing = true;
                 ui.updatePlayBtn();
@@ -1734,13 +1792,33 @@
             state.loading = true;
             ui.setPlayerLoading(true);
 
+            const resumeTime = Math.max(0, audio.currentTime || 0);
+            state._audioRetryCount = (state._audioRetryCount || 0) + 1;
+
             try {
+                // Attempts 1 & 2: Smooth retry at current timestamp before skipping track
+                if (state._audioRetryCount <= 2 && state.currentTrack.url) {
+                    await new Promise(r => setTimeout(r, 400));
+                    audio.crossOrigin = 'anonymous';
+                    audio.src = state.currentTrack.url;
+                    audio.load();
+                    if (resumeTime > 0) {
+                        try { audio.currentTime = resumeTime; } catch (_) {}
+                    }
+                    if (state.playing || !state.userPaused) await audio.play();
+                    return;
+                }
+
+                // Attempt 3: Refresh song details from API
                 const refreshed = await jiosaavnAPI.getSong(state.currentTrack.id);
-                if (refreshed?.url && refreshed.url !== state.currentTrack.url) {
+                if (refreshed?.url) {
                     state.currentTrack.url = refreshed.url;
                     audio.crossOrigin = 'anonymous';
                     audio.src = refreshed.url;
                     audio.load();
+                    if (resumeTime > 0) {
+                        try { audio.currentTime = resumeTime; } catch (_) {}
+                    }
                     if (state.playing || !state.userPaused) await audio.play();
                     return;
                 }
@@ -1752,6 +1830,9 @@
                         audio.crossOrigin = 'anonymous';
                         audio.src = retried.url;
                         audio.load();
+                        if (resumeTime > 0) {
+                            try { audio.currentTime = resumeTime; } catch (_) {}
+                        }
                         if (state.playing || !state.userPaused) await audio.play();
                         return;
                     }
@@ -1759,7 +1840,9 @@
 
                 player.next();
             } catch (e) {
-                player.next();
+                if (state._audioRetryCount > 2) {
+                    player.next();
+                }
             } finally {
                 isAudioRecoveryPending = false;
                 state.loading = false;
@@ -1929,42 +2012,104 @@
                 updateMediaPosition();
             },
             next: (force = false) => { 
-                if (state.userQueue.length > 0) { const nextSong = state.userQueue.shift(); player.playDirect(nextSong); } 
-                else if (state.queue.length > 0) {
-                    let nextIdx = state.shuffle ? Math.floor(Math.random() * state.queue.length) : state.idx + 1;
-                    if (nextIdx >= state.queue.length) {
-                        if (state.repeat === 1 || force) {
-                            nextIdx = 0;
-                        } else {
-                            homeView.autoplayNextIntelligentTracks().then(success => {
-                                if (success && state.idx + 1 < state.queue.length) {
-                                    state.idx = state.idx + 1;
-                                    player.playDirect(state.queue[state.idx]);
-                                } else {
-                                    audio.pause();
-                                    audio.currentTime = 0;
-                                    state.playing = false;
-                                    state.loading = false;
-                                    ui.setPlayerLoading(false);
-                                    ui.updatePlayBtn();
-                                    persist.save();
-                                }
-                            });
-                            return;
+                if (state.userQueue.length > 0) {
+                    const nextSong = state.userQueue.shift();
+                    player.playDirect(nextSong);
+                } else if (state.queue.length > 0) {
+                    let nextIdx;
+                    if (state.shuffle) {
+                        if (!state.shuffledOrder || state.shuffledOrder.length !== state.queue.length) {
+                            generateShuffledQueue();
+                        }
+                        state.shufflePointer++;
+                        if (state.shufflePointer >= state.shuffledOrder.length) {
+                            if (state.repeat === 1 || force) {
+                                generateShuffledQueue();
+                                state.shufflePointer = 0;
+                            } else {
+                                homeView.autoplayNextIntelligentTracks().then(success => {
+                                    if (success && state.idx + 1 < state.queue.length) {
+                                        state.idx = state.idx + 1;
+                                        player.playDirect(state.queue[state.idx]);
+                                    } else {
+                                        audio.pause();
+                                        audio.currentTime = 0;
+                                        state.playing = false;
+                                        state.loading = false;
+                                        ui.setPlayerLoading(false);
+                                        ui.updatePlayBtn();
+                                        persist.save();
+                                    }
+                                });
+                                return;
+                            }
+                        }
+                        nextIdx = state.shuffledOrder[state.shufflePointer];
+                    } else {
+                        nextIdx = state.idx + 1;
+                        if (nextIdx >= state.queue.length) {
+                            if (state.repeat === 1 || force) {
+                                nextIdx = 0;
+                            } else {
+                                homeView.autoplayNextIntelligentTracks().then(success => {
+                                    if (success && state.idx + 1 < state.queue.length) {
+                                        state.idx = state.idx + 1;
+                                        player.playDirect(state.queue[state.idx]);
+                                    } else {
+                                        audio.pause();
+                                        audio.currentTime = 0;
+                                        state.playing = false;
+                                        state.loading = false;
+                                        ui.setPlayerLoading(false);
+                                        ui.updatePlayBtn();
+                                        persist.save();
+                                    }
+                                });
+                                return;
+                            }
                         }
                     }
-                    state.idx = nextIdx; player.playDirect(state.queue[nextIdx]);
+                    if (nextIdx !== undefined && state.queue[nextIdx]) {
+                        state.idx = nextIdx;
+                        player.playDirect(state.queue[nextIdx]);
+                    }
                 }
             },
             prev: () => { 
-                if(state.queue.length === 0) return;
-                let prevIdx = state.idx - 1; if(prevIdx < 0) prevIdx = state.queue.length - 1;
-                state.idx = prevIdx; player.playDirect(state.queue[prevIdx]);
+                if (state.queue.length === 0) return;
+                if (audio.currentTime > 3) {
+                    audio.currentTime = 0;
+                    if (typeof viz !== 'undefined' && viz.start) viz.start();
+                    updateMediaPosition();
+                    return;
+                }
+                let prevIdx;
+                if (state.shuffle) {
+                    if (!state.shuffledOrder || state.shuffledOrder.length !== state.queue.length) {
+                        generateShuffledQueue();
+                    }
+                    if (state.shufflePointer > 0) {
+                        state.shufflePointer--;
+                        prevIdx = state.shuffledOrder[state.shufflePointer];
+                    } else {
+                        prevIdx = state.shuffledOrder[state.shuffledOrder.length - 1];
+                    }
+                } else {
+                    prevIdx = state.idx - 1;
+                    if (prevIdx < 0) prevIdx = state.queue.length - 1;
+                }
+                if (prevIdx !== undefined && state.queue[prevIdx]) {
+                    state.idx = prevIdx;
+                    player.playDirect(state.queue[prevIdx]);
+                }
             },
             setVolume: (val) => { audio.volume = Math.max(0, Math.min(1, val)); },
             toggleShuffle: () => { 
                 state.shuffle = !state.shuffle; 
                 localStorage.setItem('playShuffle', state.shuffle);
+                if (state.shuffle) {
+                    generateShuffledQueue();
+                }
                 ui.updateShuffleBtn();
                 ui.renderQueue(); 
                 persist.save(); 
@@ -2165,6 +2310,13 @@
             ui.updatePlayBtn();
             persist.save();
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+
+            // Ensure AudioContext and Visualizer animate smoothly on external/system play
+            if (!isAudioContextInitialized) setupAudioContext();
+            if (audioContext && audioContext.state === 'suspended') {
+                audioContext.resume().catch(() => {});
+            }
+            if (typeof viz !== 'undefined' && viz.start) viz.start();
         });
         audio.addEventListener('pause', () => { 
             // Only update play state if the user explicitly requested a pause,
@@ -2181,6 +2333,14 @@
                 persist.save();
             }
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+            if (typeof viz !== 'undefined' && viz.start) viz.start();
+        });
+
+        audio.addEventListener('playing', () => {
+            state._audioRetryCount = 0;
+            state.loading = false;
+            ui.setPlayerLoading(false);
+            if (typeof viz !== 'undefined' && viz.start) viz.start();
         });
 
         ['loadstart', 'waiting', 'stalled'].forEach((eventName) => {
@@ -2190,7 +2350,7 @@
                 ui.setPlayerLoading(true);
             });
         });
-        ['canplay', 'canplaythrough', 'playing', 'loadeddata', 'loadedmetadata'].forEach((eventName) => {
+        ['canplay', 'canplaythrough', 'loadeddata', 'loadedmetadata'].forEach((eventName) => {
             audio.addEventListener(eventName, () => {
                 state.loading = false;
                 ui.setPlayerLoading(false);
@@ -3921,7 +4081,7 @@
                 return `
                 <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40" ${dblClickHandler}>
                     <div class="relative aspect-square rounded-lg overflow-hidden mb-3 bg-gray-800 shadow-md cursor-pointer" onclick="${clickHandler}">
-                        <img src="${item.img}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" loading="lazy">
+                        <img src="${item.img}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" decoding="async">
                         <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
                             <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
                         </div>
@@ -3944,7 +4104,7 @@
                 ` : '';
                 return `
                     <div class="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 shadow-md border border-white/20 ml-1 relative">
-                        <img src="${song.img}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover" loading="lazy">
+                        <img src="${song.img}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover" decoding="async">
                         ${isCurrent ? `<div class="absolute inset-0 bg-black/45 flex items-center justify-center">${eqMarkup}</div>` : ''}
                     </div>
                     <div class="flex-1 min-w-0 flex flex-col justify-center ml-3">
@@ -3995,7 +4155,7 @@
                 return `
                 <div class="swipe-song group flex items-center gap-4 p-2 rounded-lg glass-panel hover:bg-white/10 transition hover-pause" data-store-id="${storeId}" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
                     <div class="relative w-12 h-12 flex-shrink-0 cursor-pointer rounded-md overflow-hidden" onclick="playSongById('${storeId}')">
-                        <img src="${song.img}" class="w-full h-full object-cover" loading="lazy">
+                        <img src="${song.img}" class="w-full h-full object-cover" decoding="async">
                         <div class="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
                     </div>
                     <div class="flex-1 min-w-0 cursor-pointer flex flex-col justify-center" onclick="playSongById('${storeId}')">
@@ -4014,7 +4174,7 @@
                 const storeId = songStore.add(song);
                 return `
                 <div class="for-you-card glass-panel rounded-3xl overflow-hidden relative flex-shrink-0 w-64 h-80 group cursor-pointer hover-pause" onclick="playSongById('${storeId}')">
-                    <img src="${song.img}" class="absolute inset-0 w-full h-full object-cover transition duration-700 group-hover:scale-110" loading="lazy">
+                    <img src="${song.img}" class="absolute inset-0 w-full h-full object-cover transition duration-700 group-hover:scale-110" decoding="async">
                     <div class="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent"></div>
                     <button class="absolute top-4 right-4 w-10 h-10 rounded-full bg-[var(--accent-color)] text-black flex items-center justify-center shadow-xl opacity-95 group-hover:scale-110 transition" onclick="event.stopPropagation(); playSongById('${storeId}')">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
@@ -4034,14 +4194,14 @@
                 if (imgs.length >= 3) {
                     collageHtml = `
                     <div class="absolute top-4 right-4 w-28 h-28 pointer-events-none">
-                        <img src="${imgs[0]}" class="absolute top-0 right-0 w-16 h-16 rounded-xl object-cover shadow-2xl border border-white/20 transform rotate-6 z-10">
-                        <img src="${imgs[1]}" class="absolute top-3 right-5 w-14 h-14 rounded-xl object-cover shadow-2xl border border-white/20 transform -rotate-12 z-20">
-                        <img src="${imgs[2]}" class="absolute top-7 right-2 w-14 h-14 rounded-xl object-cover shadow-2xl border border-white/20 transform rotate-3 z-30">
+                        <img src="${imgs[0]}" decoding="async" class="absolute top-0 right-0 w-16 h-16 rounded-xl object-cover shadow-2xl border border-white/20 transform rotate-6 z-10">
+                        <img src="${imgs[1]}" decoding="async" class="absolute top-3 right-5 w-14 h-14 rounded-xl object-cover shadow-2xl border border-white/20 transform -rotate-12 z-20">
+                        <img src="${imgs[2]}" decoding="async" class="absolute top-7 right-2 w-14 h-14 rounded-xl object-cover shadow-2xl border border-white/20 transform rotate-3 z-30">
                     </div>`;
                 } else if (imgs.length > 0) {
                     collageHtml = `
                     <div class="absolute top-4 right-4 w-24 h-24 pointer-events-none">
-                        <img src="${imgs[0]}" class="w-full h-full rounded-2xl object-cover shadow-2xl border border-white/20 transform rotate-3">
+                        <img src="${imgs[0]}" decoding="async" class="w-full h-full rounded-2xl object-cover shadow-2xl border border-white/20 transform rotate-3">
                     </div>`;
                 } else {
                     collageHtml = `
@@ -4330,7 +4490,12 @@
                 const listEl = document.getElementById('queue-list');
                 const clearBtn = document.getElementById('btn-clear-queue');
                 const manualCount = state.userQueue.length;
-                const autoCount = state.shuffle ? state.queue.filter((_, i) => i !== state.idx).length : Math.max(0, state.queue.length - state.idx - 1);
+                if (state.shuffle && (!state.shuffledOrder || state.shuffledOrder.length !== state.queue.length)) {
+                    generateShuffledQueue();
+                }
+                const autoCount = state.shuffle 
+                    ? Math.max(0, state.shuffledOrder.length - state.shufflePointer - 1)
+                    : Math.max(0, state.queue.length - state.idx - 1);
                 if (clearBtn) {
                     clearBtn.disabled = manualCount + autoCount === 0;
                     clearBtn.textContent = manualCount > 0 ? `Clear Queue (${manualCount})` : 'Clear Queue';
@@ -4346,7 +4511,9 @@
                     html += `<div class="text-[10px] text-white font-bold uppercase tracking-wider mb-1 pl-2 mt-1 drop-shadow-md">Queue</div>`;
                     html += state.userQueue.map((song, index) => ui.createQueuePill(song, 'manual', index)).join('');
                 }
-                const upcoming = state.shuffle ? state.queue.filter((_, i) => i !== state.idx).slice(0, 10) : state.queue.slice(state.idx + 1, state.idx + 11);
+                const upcoming = state.shuffle 
+                    ? state.shuffledOrder.slice(state.shufflePointer + 1, state.shufflePointer + 11).map(i => state.queue[i]).filter(Boolean)
+                    : state.queue.slice(state.idx + 1, state.idx + 11);
                 if (upcoming.length > 0) {
                     html += `<div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1 pl-2 mt-3 drop-shadow-md">Autoplay</div>`;
                     html += upcoming.map((song, index) => ui.createQueuePill(song, 'auto', index)).join('');
@@ -4805,6 +4972,7 @@
                         if (trendingSongs && trendingSongs.length) {
                             trendingGrid.innerHTML = trendingSongs.slice(0, 16).map(song => ui.createCard(song)).join('');
                             updateMarquees();
+                            if (window.setupShelfNavButtons) setupShelfNavButtons();
                         }
                     }).catch(() => {});
                 }
@@ -4817,6 +4985,7 @@
                     homeView.loadGeneratedPlaylist('for-you');
                 }
                 updateMarquees();
+                if (window.setupShelfNavButtons) setupShelfNavButtons();
             },
             renderDiscoverSection: async (forceRefresh = false) => {
                 const grid = document.getElementById('discover-grid');
@@ -4894,6 +5063,7 @@
                 grid.innerHTML = renderedCards.join('');
                 stripTouchHoverClasses();
                 updateMarquees();
+                if (window.setupShelfNavButtons) setupShelfNavButtons();
             },
             openDiscoverMix: async (key) => {
                 const DISCOVER_MIX_DEFINITIONS = {
@@ -5377,6 +5547,20 @@
                     seekBar.max = audio.duration; seekBar.value = audio.currentTime;
                     currentProgress = audio.currentTime / audio.duration;
 
+                    // Immediately synchronize visualizer seekbar clip paths
+                    if (vizSeekTrack && Number.isFinite(currentProgress)) {
+                        vizSeekTrack.style.clipPath = `inset(0 0 0 ${currentProgress * 100}%)`;
+                    }
+                    if (vizCanvas && Number.isFinite(currentProgress)) {
+                        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+                        const canvasW = vizCanvas.width / dpr;
+                        const progressWidth = canvasW * currentProgress;
+                        vizCanvas.style.clipPath = `inset(0 ${canvasW - progressWidth}px 0 0)`;
+                    }
+                    if (state.playing && !isVizLoopRunning && typeof viz !== 'undefined' && viz.start) {
+                        viz.start();
+                    }
+
                     const currTimeEl = document.getElementById('seek-current-time');
                     const durTimeEl = document.getElementById('seek-duration-time');
                     if (currTimeEl) currTimeEl.textContent = utils.formatTime(audio.currentTime || 0);
@@ -5399,12 +5583,12 @@
                         persist.save();
                     }
 
-                    // Morphing 10s Preview Logic 
+                    // Morphing 10s Preview Logic (Hardened against duration jitter)
                     const timeRemaining = audio.duration - audio.currentTime;
                     const hasNext = Boolean(getUpcomingTrack());
                     const wrap = document.getElementById('queue-wrapper');
                     
-                    if (timeRemaining <= 10 && timeRemaining > 0 && hasNext) {
+                    if (Number.isFinite(audio.duration) && audio.duration > 20 && audio.currentTime > 5 && timeRemaining <= 10 && timeRemaining > 0 && hasNext) {
                         if (!state.upNextTriggered && !state.queueExpanded) {
                             state.upNextTriggered = true;
                             let nextTrack = getUpcomingTrack();
@@ -5562,7 +5746,7 @@
                 }
             });
 
-            // Strict Scrolling Isolation: Vertical scroll moves page, horizontal gestures move shelf
+            // Strict Scrolling Isolation: Vertical scroll moves page, horizontal gestures/drag move shelf
             document.addEventListener('wheel', (e) => {
                 const scrollShelf = e.target.closest('.horizontal-scroll');
                 if (!scrollShelf) return;
@@ -5574,57 +5758,174 @@
                     const delta = e.shiftKey ? e.deltaY : e.deltaX;
                     if ((delta < 0 && canScrollLeft) || (delta > 0 && canScrollRight)) {
                         e.preventDefault();
+                        scrollShelf.style.scrollBehavior = 'auto';
                         scrollShelf.scrollLeft += delta;
+                        clearTimeout(scrollShelf._wheelTimer);
+                        scrollShelf._wheelTimer = setTimeout(() => {
+                            scrollShelf.style.scrollBehavior = '';
+                        }, 120);
                     }
                 }
                 // When deltaY > deltaX without ShiftKey: Do NOT preventDefault, let vertical document scrolling proceed naturally!
             }, { passive: false });
 
-            // Edge Blur Optimization: compute/render blurs ONLY when scrolling or edge-hovered
-            document.addEventListener('scroll', (e) => {
-                const shelf = e.target;
-                if (!shelf || !shelf.classList || !shelf.classList.contains('horizontal-scroll')) return;
-                const wrapper = shelf.closest('.relative');
-                if (!wrapper) return;
-                const leftBlur = wrapper.querySelector('.row-blur-left');
-                const rightBlur = wrapper.querySelector('.row-blur-right');
-                if (!leftBlur && !rightBlur) return;
+            // Desktop Mouse Drag-to-Scroll & Panning
+            let activeDragShelf = null;
+            let dragStartX = 0;
+            let dragStartScrollLeft = 0;
+            let isDraggingShelf = false;
 
-                const maxScroll = shelf.scrollWidth - shelf.clientWidth;
-                if (leftBlur) leftBlur.classList.toggle('active', shelf.scrollLeft > 4);
-                if (rightBlur) rightBlur.classList.toggle('active', shelf.scrollLeft < maxScroll - 4);
-
-                clearTimeout(shelf._blurTimer);
-                shelf._blurTimer = setTimeout(() => {
-                    if (leftBlur) leftBlur.classList.remove('active');
-                    if (rightBlur) rightBlur.classList.remove('active');
-                }, 220);
-            }, true);
-
-            document.addEventListener('mousemove', (e) => {
+            document.addEventListener('pointerdown', (e) => {
+                if (e.pointerType !== 'mouse' || e.button !== 0) return;
                 const shelf = e.target.closest('.horizontal-scroll');
-                if (!shelf) {
-                    const activeEdgeBlurs = document.querySelectorAll('.row-blur-left.edge-hovered, .row-blur-right.edge-hovered');
-                    if (activeEdgeBlurs.length > 0) {
-                        activeEdgeBlurs.forEach(el => el.classList.remove('edge-hovered'));
-                    }
-                    return;
+                if (!shelf) return;
+                activeDragShelf = shelf;
+                dragStartX = e.clientX;
+                dragStartScrollLeft = shelf.scrollLeft;
+                isDraggingShelf = false;
+            });
+
+            document.addEventListener('pointermove', (e) => {
+                if (!activeDragShelf) return;
+                const deltaX = e.clientX - dragStartX;
+                if (!isDraggingShelf && Math.abs(deltaX) > 4) {
+                    isDraggingShelf = true;
+                    activeDragShelf.classList.add('is-dragging');
+                    activeDragShelf.style.scrollBehavior = 'auto';
                 }
+                if (isDraggingShelf) {
+                    activeDragShelf.scrollLeft = dragStartScrollLeft - deltaX;
+                }
+            });
+
+            const endShelfDrag = () => {
+                if (!activeDragShelf) return;
+                const shelf = activeDragShelf;
+                activeDragShelf = null;
+                shelf.classList.remove('is-dragging');
+                shelf.style.scrollBehavior = '';
+                if (isDraggingShelf) {
+                    isDraggingShelf = false;
+                    // Suppress accidental click on song cards when ending a mouse drag gesture
+                    const captureClick = (clickEvt) => {
+                        clickEvt.stopPropagation();
+                        clickEvt.preventDefault();
+                        window.removeEventListener('click', captureClick, true);
+                    };
+                    window.addEventListener('click', captureClick, true);
+                    setTimeout(() => window.removeEventListener('click', captureClick, true), 60);
+                }
+            };
+
+            document.addEventListener('pointerup', endShelfDrag);
+            document.addEventListener('pointercancel', endShelfDrag);
+
+            // Desktop Shelf Navigation Chevrons (< and >) & Permanent Edge Blur Updates
+            window.setupShelfNavButtons = () => {
+                document.querySelectorAll('.relative.group\\/track').forEach((wrapper) => {
+                    const shelf = wrapper.querySelector('.horizontal-scroll');
+                    if (!shelf) return;
+
+                    let prevBtn = wrapper.querySelector('.shelf-nav-prev');
+                    if (!prevBtn) {
+                        prevBtn = document.createElement('button');
+                        prevBtn.type = 'button';
+                        prevBtn.className = 'shelf-nav-btn shelf-nav-prev';
+                        prevBtn.setAttribute('aria-label', 'Scroll left');
+                        prevBtn.innerHTML = '<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>';
+                        prevBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            shelf.scrollBy({ left: -Math.max(260, shelf.clientWidth * 0.7), behavior: 'smooth' });
+                        });
+                        wrapper.appendChild(prevBtn);
+                    }
+
+                    let nextBtn = wrapper.querySelector('.shelf-nav-next');
+                    if (!nextBtn) {
+                        nextBtn = document.createElement('button');
+                        nextBtn.type = 'button';
+                        nextBtn.className = 'shelf-nav-btn shelf-nav-next';
+                        nextBtn.setAttribute('aria-label', 'Scroll right');
+                        nextBtn.innerHTML = '<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>';
+                        nextBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            shelf.scrollBy({ left: Math.max(260, shelf.clientWidth * 0.7), behavior: 'smooth' });
+                        });
+                        wrapper.appendChild(nextBtn);
+                    }
+
+                    const updateShelfVisuals = () => {
+                        const maxScroll = shelf.scrollWidth - shelf.clientWidth;
+                        const hasScrollableContent = maxScroll > 4;
+                        const leftBlur = wrapper.querySelector('.row-blur-left');
+                        const rightBlur = wrapper.querySelector('.row-blur-right');
+
+                        if (prevBtn) prevBtn.classList.toggle('is-visible', hasScrollableContent && shelf.scrollLeft > 6);
+                        if (nextBtn) nextBtn.classList.toggle('is-visible', hasScrollableContent && shelf.scrollLeft < maxScroll - 6);
+
+                        // Edge blurs are permanently visible by default, only hidden when at boundary extremes
+                        if (leftBlur) leftBlur.classList.toggle('edge-hidden', !hasScrollableContent || shelf.scrollLeft <= 2);
+                        if (rightBlur) rightBlur.classList.toggle('edge-hidden', !hasScrollableContent || shelf.scrollLeft >= maxScroll - 2);
+                    };
+
+                    if (!shelf._navListenerBound) {
+                        shelf._navListenerBound = true;
+                        shelf.addEventListener('scroll', updateShelfVisuals, { passive: true });
+                    }
+                    updateShelfVisuals();
+                });
+            };
+
+            // Dynamic backdrop recalculation when hovering cards that intersect edge blur zones
+            document.addEventListener('mouseover', (e) => {
+                const card = e.target.closest('.scroll-card, .for-you-card, .discover-card');
+                if (!card) return;
+                const shelf = card.closest('.horizontal-scroll');
+                if (!shelf) return;
                 const wrapper = shelf.closest('.relative');
                 if (!wrapper) return;
+
+                const cardRect = card.getBoundingClientRect();
+                const shelfRect = shelf.getBoundingClientRect();
                 const leftBlur = wrapper.querySelector('.row-blur-left');
                 const rightBlur = wrapper.querySelector('.row-blur-right');
-                if (!leftBlur && !rightBlur) return;
 
-                const rect = shelf.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const maxScroll = shelf.scrollWidth - shelf.clientWidth;
+                const nearLeft = cardRect.left < shelfRect.left + 72 && cardRect.right > shelfRect.left;
+                const nearRight = cardRect.right > shelfRect.right - 72 && cardRect.left < shelfRect.right;
 
-                if (leftBlur) {
-                    leftBlur.classList.toggle('edge-hovered', x >= 0 && x <= 56 && shelf.scrollLeft > 4);
+                if (nearLeft && leftBlur) {
+                    leftBlur.style.backdropFilter = 'blur(14.1px)';
+                    setTimeout(() => { if (leftBlur) leftBlur.style.backdropFilter = ''; }, 260);
                 }
-                if (rightBlur) {
-                    rightBlur.classList.toggle('edge-hovered', x >= rect.width - 56 && x <= rect.width && shelf.scrollLeft < maxScroll - 4);
+                if (nearRight && rightBlur) {
+                    rightBlur.style.backdropFilter = 'blur(14.1px)';
+                    setTimeout(() => { if (rightBlur) rightBlur.style.backdropFilter = ''; }, 260);
+                }
+            });
+
+            document.addEventListener('mouseout', (e) => {
+                const card = e.target.closest('.scroll-card, .for-you-card, .discover-card');
+                if (!card) return;
+                const shelf = card.closest('.horizontal-scroll');
+                if (!shelf) return;
+                const wrapper = shelf.closest('.relative');
+                if (!wrapper) return;
+
+                const cardRect = card.getBoundingClientRect();
+                const shelfRect = shelf.getBoundingClientRect();
+                const leftBlur = wrapper.querySelector('.row-blur-left');
+                const rightBlur = wrapper.querySelector('.row-blur-right');
+
+                const nearLeft = cardRect.left < shelfRect.left + 72 && cardRect.right > shelfRect.left;
+                const nearRight = cardRect.right > shelfRect.right - 72 && cardRect.left < shelfRect.right;
+
+                if (nearLeft && leftBlur) {
+                    leftBlur.style.backdropFilter = 'blur(13.9px)';
+                    setTimeout(() => { if (leftBlur) leftBlur.style.backdropFilter = ''; }, 260);
+                }
+                if (nearRight && rightBlur) {
+                    rightBlur.style.backdropFilter = 'blur(13.9px)';
+                    setTimeout(() => { if (rightBlur) rightBlur.style.backdropFilter = ''; }, 260);
                 }
             });
 
@@ -5686,27 +5987,14 @@
 
             ctxMenu.init(); searchManager.init(); persist.load(); ui.updateRepeatBtn(); ui.updateShuffleBtn(); homeView.init(); cloudLibrary.init(); requestAnimationFrame(viz.render);
             deviceMode.apply();
+            setupShelfNavButtons();
 
-            let scrollDebounceTimer = null;
-            const onScrollActivity = () => {
-                if (!document.body.classList.contains('is-scrolling')) {
-                    document.body.classList.add('is-scrolling');
-                }
-                clearTimeout(scrollDebounceTimer);
-                scrollDebounceTimer = setTimeout(() => {
-                    document.body.classList.remove('is-scrolling');
-                }, 120);
-            };
-
-            const mainContainer = document.getElementById('main-container');
-            mainContainer?.addEventListener('scroll', onScrollActivity, { passive: true });
-            window.addEventListener('scroll', (e) => {
-                if (e.target === document || e.target === document.documentElement || e.target === document.body || e.target === window) {
-                    onScrollActivity();
-                }
-            }, { passive: true });
-
-            window.addEventListener('resize', () => { deviceMode.apply(); ui.updateMobileSearchPosition(); updateMarquees(); });
+            window.addEventListener('resize', () => { 
+                deviceMode.apply(); 
+                ui.updateMobileSearchPosition(); 
+                updateMarquees(); 
+                if (window.setupShelfNavButtons) setupShelfNavButtons();
+            });
         }
 
         initApp();

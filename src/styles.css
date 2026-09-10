@@ -195,13 +195,13 @@
             mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
             -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 95%, transparent 100%);
         }
-        .marquee-text { display: inline-block; white-space: nowrap; transform: translateZ(0); }
+        .marquee-text { display: inline-block; white-space: nowrap; transform: translateZ(0); will-change: transform; }
         .marquee-text.is-overflowing { animation: js-slide-text var(--scroll-dur, 5s) linear infinite alternate; }
         .hover-pause:hover .marquee-text { animation-play-state: paused !important; }
         
         @keyframes js-slide-text {
-            0%, 15% { transform: translateX(0); }
-            85%, 100% { transform: translateX(var(--scroll-dist)); }
+            0%, 15% { transform: translate3d(0, 0, 0); }
+            85%, 100% { transform: translate3d(var(--scroll-dist), 0, 0); }
         }
 
         /* --- Unified Song Pill --- */
@@ -238,18 +238,6 @@
             contain-intrinsic-size: auto 280px;
         }
 
-        body.is-scrolling .marquee-text {
-            animation-play-state: paused !important;
-        }
-        body.is-scrolling * {
-            pointer-events: none !important;
-        }
-        body.is-scrolling #main-container,
-        body.is-scrolling .horizontal-scroll,
-        body.is-scrolling #player-footer {
-            pointer-events: auto !important;
-        }
-
         .horizontal-scroll {
             display: flex; gap: 1rem; overflow-x: auto; padding-bottom: 1rem;
             scroll-behavior: smooth; scrollbar-width: none; -ms-overflow-style: none; padding-left: 2rem; padding-right: 2rem;
@@ -257,8 +245,15 @@
             overscroll-behavior-x: contain;
             overscroll-behavior-y: auto;
             touch-action: pan-y pan-x;
-            contain: layout paint;
+            contain: layout style;
+            cursor: grab;
+            user-select: none;
+            -webkit-user-select: none;
             transform: translateZ(0);
+        }
+        .horizontal-scroll.is-dragging {
+            cursor: grabbing !important;
+            scroll-behavior: auto !important;
         }
         .horizontal-scroll::-webkit-scrollbar { display: none; }
         .scroll-card {
@@ -287,36 +282,89 @@
             transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
         }
 
-        /* --- Horizontal Scrolling Localized Edge Blurs (Computed Only When Active/Hovered) --- */
-        .row-blur-left {
-            position: absolute; left: 0; top: -6px; bottom: -6px; width: 44px; z-index: 10; pointer-events: none;
-            mask-image: linear-gradient(to right, black 25%, transparent 100%);
-            -webkit-mask-image: linear-gradient(to right, black 25%, transparent 100%);
+        /* --- Desktop Shelf Navigation Buttons --- */
+        .shelf-nav-btn {
+            position: absolute;
+            top: 42%;
+            transform: translateY(-50%);
+            width: 38px;
+            height: 38px;
+            border-radius: 9999px;
+            background: rgba(15, 15, 20, 0.85);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #ffffff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 30;
+            cursor: pointer;
+            box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.7);
             opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.22s ease, transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.2s ease, border-color 0.2s ease;
+        }
+        .shelf-nav-btn:hover {
+            background: rgba(32, 32, 44, 0.95);
+            border-color: rgba(255, 255, 255, 0.4);
+            transform: translateY(-50%) scale(1.1);
+        }
+        .shelf-nav-btn:active {
+            transform: translateY(-50%) scale(0.94);
+        }
+        .shelf-nav-prev { left: 0.5rem; }
+        .shelf-nav-next { right: 0.5rem; }
+
+        @media (hover: hover) and (pointer: fine) {
+            .group\/track:hover .shelf-nav-btn.is-visible {
+                opacity: 1;
+                pointer-events: auto;
+            }
+        }
+        @media (hover: none) or (pointer: coarse) {
+            .shelf-nav-btn { display: none !important; }
+        }
+
+        /* --- Horizontal Scrolling Localized Edge Blurs (Always Visible, Melt to Black) --- */
+        .row-blur-left {
+            position: absolute; left: 0; top: -16px; bottom: -12px; width: 52px; z-index: 10; pointer-events: none;
+            background: linear-gradient(to right, rgba(5, 5, 5, 0.94) 0%, rgba(5, 5, 5, 0.45) 50%, transparent 100%);
+            mask-image: linear-gradient(to right, black 25%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 14px), transparent 100%);
+            -webkit-mask-image: linear-gradient(to right, black 25%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 14px), transparent 100%);
+            mask-composite: intersect;
+            -webkit-mask-composite: source-in;
+            opacity: 1;
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
             transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1);
             transform: translateZ(0);
-            will-change: opacity;
         }
         .row-blur-right {
-            position: absolute; right: 0; top: -6px; bottom: -6px; width: 44px; z-index: 10; pointer-events: none;
-            mask-image: linear-gradient(to left, black 25%, transparent 100%);
-            -webkit-mask-image: linear-gradient(to left, black 25%, transparent 100%);
-            opacity: 0;
+            position: absolute; right: 0; top: -16px; bottom: -12px; width: 52px; z-index: 10; pointer-events: none;
+            background: linear-gradient(to left, rgba(5, 5, 5, 0.94) 0%, rgba(5, 5, 5, 0.45) 50%, transparent 100%);
+            mask-image: linear-gradient(to left, black 25%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 14px), transparent 100%);
+            -webkit-mask-image: linear-gradient(to left, black 25%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 14px), transparent 100%);
+            mask-composite: intersect;
+            -webkit-mask-composite: source-in;
+            opacity: 1;
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
             transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1);
             transform: translateZ(0);
-            will-change: opacity;
         }
-        .row-blur-left.active,
-        .row-blur-left.edge-hovered {
-            opacity: 1;
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+        .row-blur-left.edge-hidden,
+        .row-blur-right.edge-hidden {
+            opacity: 0;
+            pointer-events: none;
         }
-        .row-blur-right.active,
-        .row-blur-right.edge-hovered {
-            opacity: 1;
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
+
+        /* Section headings immune to edge blur */
+        #main-container h2,
+        #main-container h3,
+        .section-header-row {
+            position: relative;
+            z-index: 20;
         }
 
         /* --- Search Bar & Smooth Dropdown --- */
