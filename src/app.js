@@ -936,6 +936,7 @@
             upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false, nextTrackPreloadId: null,
             wasPlayingBeforeHidden: false, userPaused: false
         };
+        window.state = state;
 
         const deviceMode = {
             detectMobileBrowser: () => {
@@ -1230,14 +1231,21 @@
 
                 if (label) label.textContent = signedIn ? (email || displayName) : "D'Verse Cloud";
                 
-                // When signed in, completely hide / remove the Sign In buttons
+                // When signed in, completely hide / remove the header Sign In button
                 if (headerAuthButton) {
                     headerAuthButton.classList.toggle('hidden', signedIn);
                     headerAuthButton.style.display = signedIn ? 'none' : '';
                 }
+                // In the profile dropdown, provide a clear Sign Out action when signed in
                 if (authButton) {
-                    authButton.classList.toggle('hidden', signedIn);
-                    authButton.style.display = signedIn ? 'none' : '';
+                    authButton.textContent = signedIn ? 'Sign out' : 'Sign in';
+                    if (signedIn) {
+                        authButton.classList.remove('bg-[var(--accent-color)]', 'text-black');
+                        authButton.classList.add('bg-red-500/20', 'text-red-400', 'hover:bg-red-500/30', 'border', 'border-red-500/30');
+                    } else {
+                        authButton.classList.add('bg-[var(--accent-color)]', 'text-black');
+                        authButton.classList.remove('bg-red-500/20', 'text-red-400', 'hover:bg-red-500/30', 'border', 'border-red-500/30');
+                    }
                 }
                 if (settingsButton) {
                     settingsButton.textContent = signedIn ? 'Sign out' : 'Sign in';
@@ -1819,9 +1827,10 @@
             if (audio) {
                 try { audio.currentTime = 0; } catch (_) {}
             }
-            if (seekBar) {
-                seekBar.value = 0;
-                seekBar.max = track?.duration ? track.duration : 100;
+            const seekBarEl = document.getElementById('seek-bar');
+            if (seekBarEl) {
+                seekBarEl.value = 0;
+                seekBarEl.max = track?.duration ? track.duration : 100;
             }
             const currTimeEl = document.getElementById('seek-current-time');
             const durTimeEl = document.getElementById('seek-duration-time');
@@ -1829,13 +1838,15 @@
             if (durTimeEl) durTimeEl.textContent = track?.duration ? utils.formatTime(track.duration) : '0:00';
             const tooltipEl = document.getElementById('seek-tooltip');
             if (tooltipEl) tooltipEl.textContent = '0:00';
-            if (vizSeekTrack) {
-                vizSeekTrack.style.clipPath = 'inset(0 0 0 0%)';
+            const vizTrackEl = document.getElementById('seek-bar-track');
+            if (vizTrackEl) {
+                vizTrackEl.style.clipPath = 'inset(0 0 0 0%)';
             }
-            if (vizCanvas) {
+            const vizCanvasEl = document.getElementById('viz-canvas');
+            if (vizCanvasEl) {
                 const dpr = Math.min(window.devicePixelRatio || 1, 2);
-                const canvasW = (vizCanvas.width || 0) / dpr;
-                vizCanvas.style.clipPath = `inset(0 ${canvasW}px 0 0)`;
+                const canvasW = (vizCanvasEl.width || 0) / dpr;
+                vizCanvasEl.style.clipPath = `inset(0 ${canvasW}px 0 0)`;
             }
         };
 

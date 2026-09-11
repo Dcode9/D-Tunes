@@ -75,7 +75,7 @@
       storageKey: 'dverse_supabase_auth_token',
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: false,
+      detectSessionInUrl: true,
       flowType: 'pkce'
     }
   }) : null;
@@ -86,9 +86,10 @@
   let currentSession = null;
   let checkedUrlHandoff = false;
 
-  if (typeof window !== 'undefined' && window.location && window.location.search && window.location.search.includes('desktop_auth=1')) {
-    try { sessionStorage.setItem('dverse_desktop_auth', '1'); } catch (_) {}
-  }
+  // Purge any legacy sticky desktop auth session flag to prevent web sign-in hijacking
+  try {
+    sessionStorage.removeItem('dverse_desktop_auth');
+  } catch (_) {}
 
   // Immediate Desktop OAuth Return Handler:
   // When returning from Google OAuth in the external system browser with desktop_auth=1,
@@ -101,8 +102,7 @@
     const hashText = window.location.hash ? window.location.hash.slice(1) : '';
     const hashParams = new URLSearchParams(hashText.startsWith('?') ? hashText.slice(1) : hashText);
 
-    const isDesktopAuth = searchParams.get('desktop_auth') === '1' ||
-      (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('dverse_desktop_auth') === '1');
+    const isDesktopAuth = searchParams.get('desktop_auth') === '1';
 
     if (!isDesktopAuth) return;
 
@@ -250,8 +250,7 @@
     const searchParams = new URLSearchParams(window.location.search);
     const code = searchParams.get('code');
     if (code && typeof client.auth.exchangeCodeForSession === 'function') {
-      const isDesktopAuth = searchParams.get('desktop_auth') === '1' ||
-        (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('dverse_desktop_auth') === '1');
+      const isDesktopAuth = searchParams.get('desktop_auth') === '1';
       if (isDesktopAuth) {
         // Handled directly by checkImmediateDesktopAuthHandoff() and Electron mainWindow
         return null;
@@ -272,6 +271,10 @@
           } catch (_) {}
           syncSessionToPortal(currentSession);
           handleDesktopHandoffIfRequested(currentSession);
+          if (typeof window !== 'undefined' && window.cloudLibrary) {
+            window.cloudLibrary.session = currentSession;
+            window.cloudLibrary.updateUI();
+          }
           return currentSession;
         } else if (error) {
           console.warn('[DVerse] Failed to exchange code for session:', error);
@@ -411,7 +414,7 @@
     if (!session || typeof window === 'undefined' || window.electronAPI) return;
 
     const searchParams = new URLSearchParams(window.location.search);
-    const isDesktopAuth = searchParams.get('desktop_auth') === '1' || (typeof sessionStorage !== 'undefined' && sessionStorage.getItem('dverse_desktop_auth') === '1');
+    const isDesktopAuth = searchParams.get('desktop_auth') === '1';
     if (!isDesktopAuth) return;
 
     try { sessionStorage.removeItem('dverse_desktop_auth'); } catch (_) {}
