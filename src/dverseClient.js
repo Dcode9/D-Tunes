@@ -30,7 +30,6 @@
 
   const universalStorage = {
     getItem: (key) => {
-      if (memoryStorage.has(key)) return memoryStorage.get(key);
       try {
         const val = localStorage.getItem(key);
         if (val !== null && val !== undefined) {
@@ -52,6 +51,7 @@
           return val;
         }
       } catch (_) {}
+      if (memoryStorage.has(key)) return memoryStorage.get(key);
       return null;
     },
     setItem: (key, value) => {
@@ -75,7 +75,7 @@
       storageKey: 'dverse_supabase_auth_token',
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true,
+      detectSessionInUrl: false,
       flowType: 'pkce'
     }
   }) : null;
@@ -216,7 +216,7 @@
   async function restoreSessionFromHandoff() {
     if (!client) return null;
 
-    // Check URL query / hash handoffs
+    // 1. Check URL query / hash handoffs
     const session = takeSessionHandoffFromUrl();
     if (session?.access_token && session?.refresh_token) {
       try {
@@ -239,6 +239,13 @@
           } catch (_) {}
           syncSessionToPortal(currentSession);
           handleDesktopHandoffIfRequested(currentSession);
+          if (typeof window !== 'undefined' && window.cloudLibrary) {
+            window.cloudLibrary.session = currentSession;
+            window.cloudLibrary.updateUI();
+            if (typeof window.cloudLibrary.load === 'function') {
+              window.cloudLibrary.load().catch(() => {});
+            }
+          }
           return currentSession;
         }
       } catch (err) {
@@ -246,7 +253,41 @@
       }
     }
 
-    // Check for PKCE authorization code exchange (?code=...)
+    // 2. Check if client already has an active valid session before doing any code exchange
+    try {
+      const { data: existingData } = await client.auth.getSession();
+      if (existingData?.session) {
+        currentSession = existingData.session;
+        // Clean URL if code/state parameters are present so we never re-exchange
+        const searchParams = new URLSearchParams(window.location.search);
+        if (searchParams.has('code') || searchParams.has('state')) {
+          searchParams.delete('code');
+          searchParams.delete('state');
+          const cleanSearch = searchParams.toString();
+          try {
+            window.history.replaceState({}, document.title, `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`);
+          } catch (_) {}
+        }
+        try {
+          universalStorage.setItem('dverse_session_cache', JSON.stringify({
+            access_token: currentSession.access_token,
+            refresh_token: currentSession.refresh_token
+          }));
+        } catch (_) {}
+        syncSessionToPortal(currentSession);
+        handleDesktopHandoffIfRequested(currentSession);
+        if (typeof window !== 'undefined' && window.cloudLibrary) {
+          window.cloudLibrary.session = currentSession;
+          window.cloudLibrary.updateUI();
+          if (typeof window.cloudLibrary.load === 'function') {
+            window.cloudLibrary.load().catch(() => {});
+          }
+        }
+        return currentSession;
+      }
+    } catch (_) {}
+
+    // 3. Check for PKCE authorization code exchange (?code=...)
     const searchParams = new URLSearchParams(window.location.search);
     const code = searchParams.get('code');
     if (code && typeof client.auth.exchangeCodeForSession === 'function') {
@@ -257,11 +298,15 @@
       }
       try {
         const { data, error } = await client.auth.exchangeCodeForSession(code);
+        // Always clean code and state from URL after exchange attempt to avoid infinite retry loops
+        searchParams.delete('code');
+        searchParams.delete('state');
+        const cleanSearch = searchParams.toString();
+        try {
+          window.history.replaceState({}, document.title, `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`);
+        } catch (_) {}
+
         if (!error && data?.session) {
-          searchParams.delete('code');
-          searchParams.delete('state');
-          const cleanSearch = searchParams.toString();
-          try { window.history.replaceState({}, document.title, `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`); } catch (_) {}
           currentSession = data.session;
           try {
             universalStorage.setItem('dverse_session_cache', JSON.stringify({
@@ -274,6 +319,9 @@
           if (typeof window !== 'undefined' && window.cloudLibrary) {
             window.cloudLibrary.session = currentSession;
             window.cloudLibrary.updateUI();
+            if (typeof window.cloudLibrary.load === 'function') {
+              window.cloudLibrary.load().catch(() => {});
+            }
           }
           return currentSession;
         } else if (error) {
@@ -281,6 +329,12 @@
         }
       } catch (err) {
         console.warn('[DVerse] Exception during code exchange:', err);
+        try {
+          searchParams.delete('code');
+          searchParams.delete('state');
+          const cleanSearch = searchParams.toString();
+          window.history.replaceState({}, document.title, `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`);
+        } catch (_) {}
       }
     }
 
@@ -301,7 +355,11 @@
         finished = true;
         window.removeEventListener('message', onMessage);
         clearTimeout(timer);
-        frame.remove();
+        if (typeof frame.remove === 'function') {
+          frame.remove();
+        } else if (frame.parentElement && typeof frame.parentElement.removeChild === 'function') {
+          frame.parentElement.removeChild(frame);
+        }
         resolve(value);
       }
 
@@ -339,7 +397,7 @@
     if (!error && data?.session) {
       currentSession = data.session;
       try {
-        localStorage.setItem('dverse_session_cache', JSON.stringify({
+        universalStorage.setItem('dverse_session_cache', JSON.stringify({
           access_token: data.session.access_token,
           refresh_token: data.session.refresh_token
         }));
@@ -349,7 +407,7 @@
 
     // Check cached session
     try {
-      const cached = localStorage.getItem('dverse_session_cache');
+      const cached = universalStorage.getItem('dverse_session_cache');
       if (cached) {
         const parsed = JSON.parse(cached);
         if (parsed?.access_token && parsed?.refresh_token) {
@@ -378,7 +436,7 @@
         currentSession = restored.session || null;
         if (currentSession) {
           try {
-            localStorage.setItem('dverse_session_cache', JSON.stringify({
+            universalStorage.setItem('dverse_session_cache', JSON.stringify({
               access_token: currentSession.access_token,
               refresh_token: currentSession.refresh_token
             }));
@@ -444,7 +502,13 @@
   function renderDesktopHandoffUI(deepLinkUrl) {
     if (typeof document === 'undefined') return;
     const existing = document.getElementById('dtunes-desktop-handoff-overlay');
-    if (existing) existing.remove();
+    if (existing) {
+      if (typeof existing.remove === 'function') {
+        existing.remove();
+      } else if (existing.parentElement && typeof existing.parentElement.removeChild === 'function') {
+        existing.parentElement.removeChild(existing);
+      }
+    }
 
     const overlay = document.createElement('div');
     overlay.id = 'dtunes-desktop-handoff-overlay';
@@ -468,7 +532,13 @@
 
     const dismissBtn = overlay.querySelector('#dtunes-dismiss-handoff-btn');
     if (dismissBtn) {
-      dismissBtn.addEventListener('click', () => overlay.remove());
+      dismissBtn.addEventListener('click', () => {
+        if (typeof overlay.remove === 'function') {
+          overlay.remove();
+        } else if (overlay.parentElement && typeof overlay.parentElement.removeChild === 'function') {
+          overlay.parentElement.removeChild(overlay);
+        }
+      });
     }
 
     setTimeout(() => {
@@ -479,7 +549,7 @@
   function syncSessionToPortal(session) {
     if (!session?.access_token || !session?.refresh_token) return;
     try {
-      localStorage.setItem('dverse_session_cache', JSON.stringify({
+      universalStorage.setItem('dverse_session_cache', JSON.stringify({
         access_token: session.access_token,
         refresh_token: session.refresh_token
       }));
@@ -507,7 +577,7 @@
         handleDesktopHandoffIfRequested(session);
       }
       if (event === 'SIGNED_OUT') {
-        try { localStorage.removeItem('dverse_session_cache'); } catch (_) {}
+        try { universalStorage.removeItem('dverse_session_cache'); } catch (_) {}
       }
       callback(event, session);
     });
@@ -581,9 +651,11 @@
 
   async function signOut() {
     if (!client) return;
-    try { localStorage.removeItem('dverse_session_cache'); } catch (_) {}
+    try { universalStorage.removeItem('dverse_session_cache'); } catch (_) {}
+    try { universalStorage.removeItem('dverse_supabase_auth_token'); } catch (_) {}
+    currentSession = null;
     const { error } = await client.auth.signOut();
-    if (error) throw error;
+    if (error) console.warn('[DVerse] signOut warning:', error);
     await bridgeRequest({ type: 'dverse-auth:sign-out' }, 1500);
   }
 
@@ -612,7 +684,7 @@
         title: 'Track ' + effectiveId,
         artist: '',
         album: '',
-        img: '',
+        img: 'DTunes.svg',
         source: 'jiosaavn'
       };
     }
@@ -623,7 +695,7 @@
       artist: t.metadata?.artist || t.artist || '',
       album: t.metadata?.album || t.album || '',
       duration: t.metadata?.duration || (t.duration_ms ? Math.round(t.duration_ms / 1000) : undefined),
-      img: t.metadata?.img || t.artwork_url || '',
+      img: t.metadata?.img || t.artwork_url || 'DTunes.svg',
       source: t.source || t.metadata?.source || 'jiosaavn',
       ...(t.metadata || {})
     };
@@ -940,6 +1012,57 @@
     return data || [];
   }
 
+  async function fetchProfile(userId = null) {
+    if (!client) return null;
+    const session = currentSession || await getSession();
+    const effectiveUserId = userId || session?.user?.id;
+    if (!effectiveUserId) return null;
+    try {
+      const { data, error } = await client
+        .from('profiles')
+        .select('id, display_name, avatar_url, email, updated_at')
+        .eq('id', effectiveUserId)
+        .maybeSingle();
+      if (error) {
+        console.warn('[DVerse] fetchProfile select error:', error.message);
+        return null;
+      }
+      return data || null;
+    } catch (err) {
+      console.warn('[DVerse] fetchProfile exception:', err);
+      return null;
+    }
+  }
+
+  async function updateProfile(profilePatch = {}) {
+    if (!client) return null;
+    const session = currentSession || await getSession();
+    if (!session?.user?.id) return null;
+    try {
+      const payload = {
+        id: session.user.id,
+        updated_at: new Date().toISOString()
+      };
+      if (profilePatch.display_name !== undefined) payload.display_name = profilePatch.display_name;
+      if (profilePatch.avatar_url !== undefined) payload.avatar_url = profilePatch.avatar_url;
+      if (profilePatch.email !== undefined) payload.email = profilePatch.email;
+
+      const { data, error } = await client
+        .from('profiles')
+        .upsert(payload, { onConflict: 'id' })
+        .select('id, display_name, avatar_url, email, updated_at')
+        .single();
+      if (error) {
+        console.warn('[DVerse] updateProfile error:', error.message);
+        return null;
+      }
+      return data;
+    } catch (err) {
+      console.warn('[DVerse] updateProfile exception:', err);
+      return null;
+    }
+  }
+
   window.dverse = {
     supabase: client,
     isConfigured: ready,
@@ -963,7 +1086,9 @@
       savePlaybackState,
       savePlaybackStateFast,
       fetchListeningStats,
-      fetchListeningDaily
+      fetchListeningDaily,
+      fetchProfile,
+      updateProfile
     }
   };
   window.dispatchEvent(new CustomEvent('dverse:ready', { detail: { configured: ready } }));

@@ -4,6 +4,9 @@
   const DUPLICATE_WINDOW_MS = 3500;
 
   function getUserId() {
+    if (typeof window !== 'undefined' && window.cloudLibrary?.session?.user?.id) {
+      return window.cloudLibrary.session.user.id;
+    }
     let userId = localStorage.getItem(ANON_USER_KEY);
     if (!userId) {
       userId = `anon_${crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`}`;

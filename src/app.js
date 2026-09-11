@@ -1124,6 +1124,7 @@
 
         const cloudLibrary = {
             session: null,
+            profile: null,
             syncing: false,
             playbackSaveTimer: null,
             ready: () => Boolean(window.dverse?.isConfigured && window.dverse?.dtunes),
@@ -1221,8 +1222,9 @@
                 const email = user?.email || '';
                 const meta = user?.user_metadata || user?.raw_user_meta_data || {};
                 const identityMeta = user?.identities?.[0]?.identity_data || {};
-                const displayName = meta.full_name || meta.name || identityMeta.full_name || identityMeta.name || (email ? email.split('@')[0] : '') || state.username || "D'Verse User";
-                const avatarUrl = meta.avatar_url || meta.picture || identityMeta.avatar_url || identityMeta.picture || meta.avatar || identityMeta.avatar || state.avatarUrl || '';
+                const profile = cloudLibrary.profile || {};
+                const displayName = profile.display_name || meta.full_name || meta.name || identityMeta.full_name || identityMeta.name || (email ? email.split('@')[0] : '') || state.username || "D'Verse User";
+                const avatarUrl = profile.avatar_url || meta.avatar_url || meta.picture || identityMeta.avatar_url || identityMeta.picture || meta.avatar || identityMeta.avatar || state.avatarUrl || '';
 
                 const label = document.getElementById('dverse-account-label');
                 const authButton = document.getElementById('dverse-auth-button');
@@ -1276,26 +1278,52 @@
 
                     cloudLibrary.setStatus(`Signed in as ${email || displayName}. Syncing library...`);
 
-                    // If avatar wasn't included in the initial session JWT, asynchronously fetch full profile from Supabase
-                    if (!avatarUrl && window.dverse?.supabase?.auth && !cloudLibrary._fetchingUserMeta) {
+                    // If profile avatar or name is missing, asynchronously fetch profile from Supabase
+                    if ((!avatarUrl || !profile.display_name) && !cloudLibrary._fetchingUserMeta) {
                         cloudLibrary._fetchingUserMeta = true;
-                        window.dverse.supabase.auth.getUser().then(({ data }) => {
-                            cloudLibrary._fetchingUserMeta = false;
-                            const u = data?.user;
-                            const m = u?.user_metadata || u?.raw_user_meta_data || {};
-                            const im = u?.identities?.[0]?.identity_data || {};
-                            const fetchedAvatar = m.avatar_url || m.picture || im.avatar_url || im.picture || '';
-                            if (fetchedAvatar && fetchedAvatar !== state.avatarUrl) {
-                                state.avatarUrl = fetchedAvatar;
-                                try { localStorage.setItem('avatarUrl', fetchedAvatar); } catch (_) {}
-                                if (cloudLibrary.session && cloudLibrary.session.user) {
-                                    cloudLibrary.session.user.user_metadata = { ...m, avatar_url: fetchedAvatar };
+                        (async () => {
+                            try {
+                                if (window.dverse?.dtunes?.fetchProfile && cloudLibrary.session?.user?.id) {
+                                    const fetchedProfile = await window.dverse.dtunes.fetchProfile(cloudLibrary.session.user.id);
+                                    if (fetchedProfile) {
+                                        cloudLibrary.profile = { ...(cloudLibrary.profile || {}), ...fetchedProfile };
+                                        let updated = false;
+                                        if (fetchedProfile.display_name && fetchedProfile.display_name !== state.username) {
+                                            state.username = fetchedProfile.display_name;
+                                            try { localStorage.setItem('username', fetchedProfile.display_name); } catch (_) {}
+                                            updated = true;
+                                        }
+                                        if (fetchedProfile.avatar_url && fetchedProfile.avatar_url !== state.avatarUrl) {
+                                            state.avatarUrl = fetchedProfile.avatar_url;
+                                            try { localStorage.setItem('avatarUrl', fetchedProfile.avatar_url); } catch (_) {}
+                                            updated = true;
+                                        }
+                                        if (updated) {
+                                            cloudLibrary.updateUI();
+                                            return;
+                                        }
+                                    }
                                 }
-                                cloudLibrary.updateUI();
+                                if (window.dverse?.supabase?.auth) {
+                                    const { data } = await window.dverse.supabase.auth.getUser();
+                                    const u = data?.user;
+                                    const m = u?.user_metadata || u?.raw_user_meta_data || {};
+                                    const im = u?.identities?.[0]?.identity_data || {};
+                                    const fetchedAvatar = m.avatar_url || m.picture || im.avatar_url || im.picture || '';
+                                    if (fetchedAvatar && fetchedAvatar !== state.avatarUrl) {
+                                        state.avatarUrl = fetchedAvatar;
+                                        try { localStorage.setItem('avatarUrl', fetchedAvatar); } catch (_) {}
+                                        if (cloudLibrary.session && cloudLibrary.session.user) {
+                                            cloudLibrary.session.user.user_metadata = { ...m, avatar_url: fetchedAvatar };
+                                        }
+                                        cloudLibrary.updateUI();
+                                    }
+                                }
+                            } catch (_) {}
+                            finally {
+                                cloudLibrary._fetchingUserMeta = false;
                             }
-                        }).catch(() => {
-                            cloudLibrary._fetchingUserMeta = false;
-                        });
+                        })();
                     }
                 } else {
                     state.avatarUrl = '';
@@ -1373,6 +1401,7 @@
 
                 cloudLibrary.session = null;
                 cloudLibrary.user = null;
+                cloudLibrary.profile = null;
 
                 // Reset UI elements
                 document.getElementById('queue-wrapper')?.classList.remove('queue-expanded', 'preview-expanded', 'track-swap-out');
@@ -1452,12 +1481,13 @@
                 try {
                     const localSnapshot = cloudLibrary.captureLocalSnapshot();
                     const shouldImportLocal = cloudLibrary.shouldPushLocalSnapshot(localSnapshot);
-                    const [historyRes, likesRes, libraryRes, playlistsRes, playbackRes] = await Promise.allSettled([
+                    const [historyRes, likesRes, libraryRes, playlistsRes, playbackRes, profileRes] = await Promise.allSettled([
                         window.dverse.dtunes.listHistory(),
                         window.dverse.dtunes.listLikes(),
                         window.dverse.dtunes.listLibrary(),
                         window.dverse.dtunes.listPlaylists(),
-                        window.dverse.dtunes.getPlaybackState()
+                        window.dverse.dtunes.getPlaybackState(),
+                        window.dverse.dtunes.fetchProfile ? window.dverse.dtunes.fetchProfile(cloudLibrary.session?.user?.id) : Promise.resolve(null)
                     ]);
 
                     const history = historyRes.status === 'fulfilled' ? historyRes.value : [];
@@ -1465,6 +1495,19 @@
                     const library = libraryRes.status === 'fulfilled' ? libraryRes.value : [];
                     const playlists = playlistsRes.status === 'fulfilled' ? playlistsRes.value : [];
                     const playbackState = playbackRes.status === 'fulfilled' ? playbackRes.value : null;
+                    const profile = profileRes.status === 'fulfilled' ? profileRes.value : null;
+
+                    if (profile) {
+                        cloudLibrary.profile = profile;
+                        if (profile.display_name) {
+                            state.username = profile.display_name;
+                            try { localStorage.setItem('username', profile.display_name); } catch (_) {}
+                        }
+                        if (profile.avatar_url) {
+                            state.avatarUrl = profile.avatar_url;
+                            try { localStorage.setItem('avatarUrl', profile.avatar_url); } catch (_) {}
+                        }
+                    }
 
                     if (history && history.length > 0) {
                         state.playHistory = cloudLibrary.compactSongs([...(history || []), ...state.playHistory]).slice(0, 100);
@@ -1507,6 +1550,9 @@
                     ui.renderLibraryLists();
                     ui.renderHistory();
                     homeView.renderRecentlyPlayed();
+                    if (homeView.renderDiscoverSection) {
+                        homeView.renderDiscoverSection(true);
+                    }
                     if (typeof statsView !== 'undefined' && statsView.render && document.getElementById('view-stats') && !document.getElementById('view-stats').classList.contains('hidden')) {
                         statsView.render();
                     }
@@ -3349,6 +3395,14 @@
                 const name = document.getElementById('edit-username-input').value.trim() || 'Guest User';
                 state.username = name;
                 localStorage.setItem('username', name);
+                if (window.cloudLibrary?.session && window.dverse?.dtunes?.updateProfile) {
+                    window.dverse.dtunes.updateProfile({ display_name: name }).then((updated) => {
+                        if (updated) {
+                            window.cloudLibrary.profile = { ...(window.cloudLibrary.profile || {}), ...updated };
+                            window.cloudLibrary.updateUI();
+                        }
+                    }).catch(() => {});
+                }
                 ui.updateProfileUI();
                 ui.toggleProfileModal(false);
             },

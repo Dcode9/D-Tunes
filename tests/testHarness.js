@@ -163,6 +163,12 @@ class MockElement {
         return child;
     }
 
+    remove() {
+        if (this.parentElement && typeof this.parentElement.removeChild === 'function') {
+            this.parentElement.removeChild(this);
+        }
+    }
+
     addEventListener(event, handler) {
         if (!this._eventListeners.has(event)) {
             this._eventListeners.set(event, []);
