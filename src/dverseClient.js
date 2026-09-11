@@ -306,9 +306,6 @@
           if (typeof window !== 'undefined' && window.cloudLibrary) {
             window.cloudLibrary.session = currentSession;
             window.cloudLibrary.updateUI();
-            if (typeof window.cloudLibrary.load === 'function') {
-              window.cloudLibrary.load().catch(() => {});
-            }
           }
           return currentSession;
         } else {
@@ -602,6 +599,12 @@
 
   async function getSession() {
     if (!client) return null;
+    if (currentSession) {
+      const expiresAtMs = (currentSession.expires_at || 0) * 1000;
+      if (expiresAtMs === 0 || expiresAtMs > Date.now()) {
+        return currentSession;
+      }
+    }
     return bootstrapFromPortal();
   }
 
@@ -911,7 +914,7 @@
   }
 
   async function findPlaylistByName(name) {
-    const session = await getSession();
+    const session = currentSession || await getSession();
     if (!client || !session || !name) return null;
     const { data, error } = await client
       .from('dtunes_playlists')
@@ -924,7 +927,7 @@
   }
 
   async function savePlaylist(name, songs = [], style = null) {
-    const session = await getSession();
+    const session = currentSession || await getSession();
     if (!client || !session || !name) return null;
     const existing = await findPlaylistByName(name);
     const playlistPatch = {
@@ -973,7 +976,7 @@
   }
 
   async function getPlaybackState() {
-    const session = await getSession();
+    const session = currentSession || await getSession();
     if (!client || !session) return null;
     const { data, error } = await client
       .from('dtunes_playback_state')
@@ -990,7 +993,7 @@
   }
 
   async function savePlaybackState(playbackState = {}) {
-    const session = await getSession();
+    const session = currentSession || await getSession();
     if (!client || !session || !playbackState?.track?.id) return null;
     const track = await upsertTrack(playbackState.track);
     const payload = {
@@ -1038,7 +1041,7 @@
 
   async function fetchListeningStats(limit = 20) {
     if (!client) return [];
-    const session = await getSession();
+    const session = currentSession || await getSession();
     if (!session) return [];
     const { data, error } = await client
       .from('dtunes_listening_stats')
@@ -1052,7 +1055,7 @@
 
   async function fetchListeningDaily(limit = 14) {
     if (!client) return [];
-    const session = await getSession();
+    const session = currentSession || await getSession();
     if (!session) return [];
     const { data, error } = await client
       .from('dtunes_listening_daily')

@@ -932,6 +932,8 @@
             quality: safeStorage.get('audioQuality', 'high'),
             equalizer: normalizeEqualizerSettings(safeStorage.getJSON('equalizerSettings', {})),
             forYouSongs: [],
+            quickPicks: [],
+            discoverMixes: {},
             searchDebounce: null, hoverProgress: -1, lastHoverProgress: 0.5, isDragging: false, 
             upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false, nextTrackPreloadId: null,
             wasPlayingBeforeHidden: false, userPaused: false
@@ -1409,12 +1411,14 @@
                 state.username = 'Guest User';
                 state.avatarUrl = '';
                 state.forYouSongs = [];
+                state.quickPicks = [];
                 state.queueExpanded = false;
                 if (typeof songStore !== 'undefined' && songStore.clear) songStore.clear();
 
                 cloudLibrary.session = null;
                 cloudLibrary.user = null;
                 cloudLibrary.profile = null;
+                cloudLibrary._loadedUserId = null;
 
                 // Reset UI elements
                 document.getElementById('queue-wrapper')?.classList.remove('queue-expanded', 'preview-expanded', 'track-swap-out');
@@ -1462,16 +1466,25 @@
                     cloudLibrary.setStatus('D\'Verse sync is not configured.');
                     return;
                 }
+                const triggerLoadOnce = async (source, userSession) => {
+                    const uid = userSession?.user?.id;
+                    if (!uid) return;
+                    if (cloudLibrary._loadedUserId === uid && source !== 'MANUAL_FORCE') return;
+                    cloudLibrary._loadedUserId = uid;
+                    await cloudLibrary.load();
+                };
+
                 window.dverse.onAuthStateChange(async (_event, session) => {
                     cloudLibrary.session = session;
                     cloudLibrary.updateUI();
-                    if (session) await cloudLibrary.load();
+                    if (session) await triggerLoadOnce(_event, session);
+                    else cloudLibrary._loadedUserId = null;
                 });
                 try {
                     const session = await window.dverse.getSession();
                     cloudLibrary.session = session;
                     cloudLibrary.updateUI();
-                    if (session) await cloudLibrary.load();
+                    if (session) await triggerLoadOnce('SESSION', session);
                 } catch (error) {
                     console.warn('[DVerse] Initial session check warning:', error);
                     cloudLibrary.setStatus(error?.message || 'Could not check D\'Verse session.');
@@ -1639,7 +1652,11 @@
                     cloudLibrary.syncing = false;
                     if (cloudLibrary.pendingSync) {
                         cloudLibrary.pendingSync = false;
-                        cloudLibrary.load();
+                        setTimeout(() => {
+                            if (!cloudLibrary.syncing && cloudLibrary.session) {
+                                cloudLibrary.load().catch(() => {});
+                            }
+                        }, 1200);
                     }
                 }
             },
@@ -5172,32 +5189,60 @@
                 const forYouGrid = document.getElementById('for-you-grid');
                 const forYouActions = document.getElementById('for-you-actions');
                 const forYouCount = document.getElementById('for-you-count');
-                if(status) status.textContent = `Finding ${type.replace(/-/g, ' ')} picks...`;
-                const preferredLanguage = document.getElementById('preferred-language-select')?.value || localStorage.getItem('preferredLanguage') || '';
-                const songs = window.recommendationClient ? await window.recommendationClient.fetchPlaylist(type, { limit: 25, language: preferredLanguage }) : [];
-                if (songs.length === 0) {
-                    if(status) status.textContent = 'Personalized picks are not ready yet. Keep listening or try again later.';
-                    if (type === 'for-you') {
-                        state.forYouSongs = [];
-                        forYouSection?.classList.add('hidden');
-                        forYouActions?.classList.add('hidden');
-                    }
-                    return [];
-                }
-                const tagged = songs.map(song => ({ ...song, source: 'recommendation', playlistType: type }));
-                if (type === 'for-you') {
-                    state.forYouSongs = tagged;
+
+                if (type === 'for-you' && state.forYouSongs?.length > 0 && !options.force && !options.open) {
                     forYouSection?.classList.remove('hidden');
-                    if (forYouGrid) forYouGrid.innerHTML = tagged.slice(0, 18).map(song => ui.createForYouCard(song)).join('');
                     forYouActions?.classList.remove('hidden');
-                    if (forYouCount) forYouCount.textContent = `${tagged.length} songs ready for autoplay`;
-                    if(status) status.textContent = 'For You is ready.';
-                    if (!options.open) return tagged;
+                    if (forYouCount) forYouCount.textContent = `${state.forYouSongs.length} songs ready for autoplay`;
+                    if (forYouGrid && (!forYouGrid.children.length || forYouGrid.querySelector('.animate-pulse'))) {
+                        forYouGrid.innerHTML = state.forYouSongs.slice(0, 18).map(song => ui.createForYouCard(song)).join('');
+                    }
+                    if (status) status.textContent = 'For You is ready.';
+                    return state.forYouSongs;
                 }
-                state.queue = tagged; state.userQueue = []; state.idx = 0; ui.renderQueue();
-                ui.openGeneratedPlaylist(type.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), tagged);
-                if(status) status.textContent = `Generated ${tagged.length} rule-based tracks.`;
-                return tagged;
+
+                if (homeView._forYouLoading && type === 'for-you' && !options.open) {
+                    return homeView._forYouLoading;
+                }
+
+                if (status && (!state.forYouSongs || !state.forYouSongs.length || options.force)) {
+                    status.textContent = `Finding ${type.replace(/-/g, ' ')} picks...`;
+                }
+
+                const loadTask = (async () => {
+                    try {
+                        const preferredLanguage = document.getElementById('preferred-language-select')?.value || localStorage.getItem('preferredLanguage') || '';
+                        const songs = window.recommendationClient ? await window.recommendationClient.fetchPlaylist(type, { limit: 25, language: preferredLanguage }) : [];
+                        if (songs.length === 0) {
+                            if (status) status.textContent = 'Personalized picks are not ready yet. Keep listening or try again later.';
+                            if (type === 'for-you' && (!state.forYouSongs || !state.forYouSongs.length)) {
+                                state.forYouSongs = [];
+                                forYouSection?.classList.add('hidden');
+                                forYouActions?.classList.add('hidden');
+                            }
+                            return state.forYouSongs || [];
+                        }
+                        const tagged = songs.map(song => ({ ...song, source: 'recommendation', playlistType: type }));
+                        if (type === 'for-you') {
+                            state.forYouSongs = tagged;
+                            forYouSection?.classList.remove('hidden');
+                            if (forYouGrid) forYouGrid.innerHTML = tagged.slice(0, 18).map(song => ui.createForYouCard(song)).join('');
+                            forYouActions?.classList.remove('hidden');
+                            if (forYouCount) forYouCount.textContent = `${tagged.length} songs ready for autoplay`;
+                            if (status) status.textContent = 'For You is ready.';
+                            if (!options.open) return tagged;
+                        }
+                        state.queue = tagged; state.userQueue = []; state.idx = 0; ui.renderQueue();
+                        ui.openGeneratedPlaylist(type.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), tagged);
+                        if (status) status.textContent = `Generated ${tagged.length} rule-based tracks.`;
+                        return tagged;
+                    } finally {
+                        if (type === 'for-you') homeView._forYouLoading = null;
+                    }
+                })();
+
+                if (type === 'for-you') homeView._forYouLoading = loadTask;
+                return loadTask;
             },
             playForYou: async () => {
                 const songs = state.forYouSongs.length ? state.forYouSongs : await homeView.loadGeneratedPlaylist('for-you');
@@ -5254,7 +5299,11 @@
                 if (!grid) return;
                 
                 if (!state.discoverMixes) state.discoverMixes = {};
-                
+
+                if (homeView._discoverLoading) {
+                    return homeView._discoverLoading;
+                }
+
                 const DISCOVER_MIX_DEFINITIONS = [
                     {
                         key: 'discover-weekly',
@@ -5306,26 +5355,39 @@
                     }
                 ];
 
-                grid.innerHTML = DISCOVER_MIX_DEFINITIONS.map(() => 
-                    '<div class="scroll-card h-80 w-64 rounded-3xl glass-panel animate-pulse flex-shrink-0"></div>'
-                ).join('');
+                const hasExistingCards = grid.children.length > 0 && !grid.querySelector('.animate-pulse');
+                if (!hasExistingCards) {
+                    grid.innerHTML = DISCOVER_MIX_DEFINITIONS.map(() => 
+                        '<div class="scroll-card h-80 w-64 rounded-3xl glass-panel animate-pulse flex-shrink-0"></div>'
+                    ).join('');
+                }
 
-                const preferredLanguage = document.getElementById('preferred-language-select')?.value || localStorage.getItem('preferredLanguage') || '';
+                homeView._discoverLoading = (async () => {
+                    try {
+                        const preferredLanguage = document.getElementById('preferred-language-select')?.value || localStorage.getItem('preferredLanguage') || '';
 
-                const renderedCards = await Promise.all(DISCOVER_MIX_DEFINITIONS.map(async (def) => {
-                    let songs = state.discoverMixes[def.key];
-                    if (!songs || forceRefresh || songs.length === 0) {
-                        songs = window.recommendationClient ? await window.recommendationClient.fetchPlaylist(def.key, { limit: 20, language: preferredLanguage }) : [];
-                        state.discoverMixes[def.key] = songs;
+                        const renderedCards = await Promise.all(DISCOVER_MIX_DEFINITIONS.map(async (def) => {
+                            let songs = state.discoverMixes[def.key];
+                            if (!songs || (forceRefresh && (!songs.length || !hasExistingCards)) || songs.length === 0) {
+                                songs = window.recommendationClient ? await window.recommendationClient.fetchPlaylist(def.key, { limit: 20, language: preferredLanguage }) : [];
+                                if (songs && songs.length > 0) {
+                                    state.discoverMixes[def.key] = songs;
+                                }
+                            }
+                            const fullMix = { ...def, songs: state.discoverMixes[def.key] || songs || [] };
+                            return ui.createDiscoverCard(fullMix);
+                        }));
+
+                        grid.innerHTML = renderedCards.join('');
+                        stripTouchHoverClasses();
+                        updateMarquees();
+                        if (window.setupShelfNavButtons) setupShelfNavButtons();
+                    } finally {
+                        homeView._discoverLoading = null;
                     }
-                    const fullMix = { ...def, songs };
-                    return ui.createDiscoverCard(fullMix);
-                }));
+                })();
 
-                grid.innerHTML = renderedCards.join('');
-                stripTouchHoverClasses();
-                updateMarquees();
-                if (window.setupShelfNavButtons) setupShelfNavButtons();
+                return homeView._discoverLoading;
             },
             openDiscoverMix: async (key) => {
                 const DISCOVER_MIX_DEFINITIONS = {
@@ -5392,18 +5454,58 @@
                 grid.innerHTML = dedupedHistory.slice(0, 8).map(song => ui.createCard(song)).join('');
                 updateMarquees();
             },
-            generateQuickPicks: async () => {
+            generateQuickPicks: async (forceRefresh = false) => {
                 const grid = document.getElementById('quick-picks-grid');
-                grid.innerHTML = Array(16).fill('<div class="scroll-card h-[200px] rounded-xl glass-panel animate-pulse w-40 flex-shrink-0"></div>').join('');
-                try {
-                    const trending = await jiosaavnAPI.getTrending(); let picks = [...trending.slice(0, 8)]; 
-                    const artists = Object.keys(state.artistPlayCounts || {}).sort((a,b) => state.artistPlayCounts[b] - state.artistPlayCounts[a]).slice(0, 3);
-                    for(const artist of artists) { const artistSongs = await jiosaavnAPI.searchSongs(artist, 6); picks.push(...artistSongs); }
-                    const uniquePicks = utils.deduplicateSongs(picks);
-                    uniquePicks.sort(() => Math.random() - 0.5); const finalPicks = uniquePicks.slice(0, 16);
-                    grid.innerHTML = finalPicks.map(song => ui.createCard(song)).join('');
+                if (!grid) return;
+
+                if (homeView._quickPicksLoading) {
+                    return homeView._quickPicksLoading;
+                }
+
+                if (!state.quickPicks) state.quickPicks = [];
+
+                const hasExistingCards = grid.children.length > 0 && !grid.querySelector('.animate-pulse');
+                if (state.quickPicks.length > 0 && !forceRefresh) {
+                    grid.innerHTML = state.quickPicks.map(song => ui.createCard(song)).join('');
                     updateMarquees();
-                } catch(e) { grid.innerHTML = '<p class="text-red-400 pl-8">Could not load Quick Picks.</p>'; }
+                    return;
+                }
+
+                if (!hasExistingCards && state.quickPicks.length === 0) {
+                    grid.innerHTML = Array(16).fill('<div class="scroll-card h-[200px] rounded-xl glass-panel animate-pulse w-40 flex-shrink-0"></div>').join('');
+                }
+
+                homeView._quickPicksLoading = (async () => {
+                    try {
+                        const trending = await jiosaavnAPI.getTrending();
+                        let picks = [...(trending || []).slice(0, 8)];
+                        const artists = Object.keys(state.artistPlayCounts || {})
+                            .sort((a, b) => state.artistPlayCounts[b] - state.artistPlayCounts[a])
+                            .slice(0, 3);
+                        for (const artist of artists) {
+                            const artistSongs = await jiosaavnAPI.searchSongs(artist, 6);
+                            picks.push(...(artistSongs || []));
+                        }
+                        const uniquePicks = utils.deduplicateSongs(picks);
+                        if (!state.quickPicks.length || forceRefresh) {
+                            uniquePicks.sort(() => Math.random() - 0.5);
+                        }
+                        const finalPicks = uniquePicks.slice(0, 16);
+                        if (finalPicks.length > 0) {
+                            state.quickPicks = finalPicks;
+                            grid.innerHTML = finalPicks.map(song => ui.createCard(song)).join('');
+                            updateMarquees();
+                        }
+                    } catch (e) {
+                        if (!hasExistingCards && state.quickPicks.length === 0) {
+                            grid.innerHTML = '<p class="text-red-400 pl-8">Could not load Quick Picks.</p>';
+                        }
+                    } finally {
+                        homeView._quickPicksLoading = null;
+                    }
+                })();
+
+                return homeView._quickPicksLoading;
             }
         };
 
