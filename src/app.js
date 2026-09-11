@@ -1277,6 +1277,7 @@
                     }
 
                     cloudLibrary.setStatus(`Signed in as ${email || displayName}. Syncing library...`);
+                    ui.updateProfileUI();
 
                     // If profile avatar or name is missing, asynchronously fetch profile from Supabase
                     if ((!avatarUrl || !profile.display_name) && !cloudLibrary._fetchingUserMeta) {
@@ -1299,6 +1300,7 @@
                                             updated = true;
                                         }
                                         if (updated) {
+                                            ui.updateProfileUI();
                                             cloudLibrary.updateUI();
                                             return;
                                         }
@@ -1310,12 +1312,23 @@
                                     const m = u?.user_metadata || u?.raw_user_meta_data || {};
                                     const im = u?.identities?.[0]?.identity_data || {};
                                     const fetchedAvatar = m.avatar_url || m.picture || im.avatar_url || im.picture || '';
+                                    const fetchedName = m.full_name || m.name || im.full_name || im.name || '';
+                                    let metaUpdated = false;
                                     if (fetchedAvatar && fetchedAvatar !== state.avatarUrl) {
                                         state.avatarUrl = fetchedAvatar;
                                         try { localStorage.setItem('avatarUrl', fetchedAvatar); } catch (_) {}
                                         if (cloudLibrary.session && cloudLibrary.session.user) {
                                             cloudLibrary.session.user.user_metadata = { ...m, avatar_url: fetchedAvatar };
                                         }
+                                        metaUpdated = true;
+                                    }
+                                    if (fetchedName && (state.username === 'Guest User' || !state.username)) {
+                                        state.username = fetchedName;
+                                        try { localStorage.setItem('username', fetchedName); } catch (_) {}
+                                        metaUpdated = true;
+                                    }
+                                    if (metaUpdated) {
+                                        ui.updateProfileUI();
                                         cloudLibrary.updateUI();
                                     }
                                 }
@@ -1497,20 +1510,64 @@
                     const playbackState = playbackRes.status === 'fulfilled' ? playbackRes.value : null;
                     const profile = profileRes.status === 'fulfilled' ? profileRes.value : null;
 
-                    if (profile) {
-                        cloudLibrary.profile = profile;
-                        if (profile.display_name) {
-                            state.username = profile.display_name;
-                            try { localStorage.setItem('username', profile.display_name); } catch (_) {}
-                        }
-                        if (profile.avatar_url) {
-                            state.avatarUrl = profile.avatar_url;
-                            try { localStorage.setItem('avatarUrl', profile.avatar_url); } catch (_) {}
-                        }
+                    const user = cloudLibrary.session?.user;
+                    const meta = user?.user_metadata || user?.raw_user_meta_data || {};
+                    const identityMeta = user?.identities?.[0]?.identity_data || {};
+                    const email = user?.email || '';
+
+                    const effectiveName = profile?.display_name 
+                        || meta.full_name 
+                        || meta.name 
+                        || identityMeta.full_name 
+                        || identityMeta.name 
+                        || (email ? email.split('@')[0] : '') 
+                        || state.username 
+                        || "D'Verse User";
+
+                    const effectiveAvatar = profile?.avatar_url 
+                        || meta.avatar_url 
+                        || meta.picture 
+                        || identityMeta.avatar_url 
+                        || identityMeta.picture 
+                        || meta.avatar 
+                        || identityMeta.avatar 
+                        || state.avatarUrl 
+                        || '';
+
+                    cloudLibrary.profile = profile || {
+                        id: user?.id,
+                        display_name: effectiveName,
+                        avatar_url: effectiveAvatar
+                    };
+                    if (cloudLibrary.profile && !cloudLibrary.profile.display_name) {
+                        cloudLibrary.profile.display_name = effectiveName;
+                    }
+                    if (cloudLibrary.profile && !cloudLibrary.profile.avatar_url && effectiveAvatar) {
+                        cloudLibrary.profile.avatar_url = effectiveAvatar;
+                    }
+
+                    if (effectiveName) {
+                        state.username = effectiveName;
+                        try { localStorage.setItem('username', effectiveName); } catch (_) {}
+                    }
+                    if (effectiveAvatar) {
+                        state.avatarUrl = effectiveAvatar;
+                        try { localStorage.setItem('avatarUrl', effectiveAvatar); } catch (_) {}
+                    }
+
+                    // Auto-sync profile to Supabase if missing from public.profiles
+                    if ((!profile || !profile.display_name || !profile.avatar_url) && window.dverse?.dtunes?.updateProfile) {
+                        window.dverse.dtunes.updateProfile({
+                            display_name: effectiveName,
+                            avatar_url: effectiveAvatar
+                        }).catch(e => console.warn('[DVerse] Auto-upsert profile warning:', e));
                     }
 
                     if (history && history.length > 0) {
                         state.playHistory = cloudLibrary.compactSongs([...(history || []), ...state.playHistory]).slice(0, 100);
+                        document.getElementById('section-recent')?.classList.remove('hidden');
+                        document.getElementById('section-quick-picks')?.classList.remove('hidden');
+                        document.getElementById('section-for-you')?.classList.remove('hidden');
                     }
                     if (likes && likes.length > 0) {
                         state.likedIds = cloudLibrary.compactSongs([...(likes || []), ...state.likedIds]);
@@ -1549,7 +1606,16 @@
                     ui.renderPlaylists();
                     ui.renderLibraryLists();
                     ui.renderHistory();
-                    homeView.renderRecentlyPlayed();
+                    if (state.playHistory.length > 0) {
+                        document.getElementById('section-recent')?.classList.remove('hidden');
+                        document.getElementById('section-quick-picks')?.classList.remove('hidden');
+                        document.getElementById('section-for-you')?.classList.remove('hidden');
+                        homeView.renderRecentlyPlayed();
+                        if (homeView.generateQuickPicks) homeView.generateQuickPicks();
+                        if (homeView.loadGeneratedPlaylist) homeView.loadGeneratedPlaylist('for-you');
+                    } else {
+                        homeView.renderRecentlyPlayed();
+                    }
                     if (homeView.renderDiscoverSection) {
                         homeView.renderDiscoverSection(true);
                     }
@@ -1564,6 +1630,7 @@
                         cloudLibrary.markLocalSnapshotSynced(cloudLibrary.captureLocalSnapshot());
                         cloudLibrary.setStatus('Synced with D\'Verse Cloud.');
                     }
+                    ui.updateProfileUI();
                     cloudLibrary.updateUI();
                 } catch (error) {
                     console.error('[DVerse] DTunes sync failed:', error);
@@ -1899,6 +1966,10 @@
         const requestPlay = async () => {
             if (!state.loaded && !state.currentTrack) return;
             state.userPaused = false;
+            if (state.currentTrack && (!audio.src || !jiosaavnAPI.isStreamingUrl(audio.src))) {
+                await player.playDirect(state.currentTrack);
+                return;
+            }
             try {
                 if (!isAudioContextInitialized) setupAudioContext();
                 if (audioContext && audioContext.state === 'suspended') {
@@ -2077,7 +2148,18 @@
                     ui.enableControls();
                     audio.loop = (state.repeat === 2);
 
-                    await audio.play();
+                    try {
+                        await audio.play();
+                    } catch (playErr) {
+                        if (audio.crossOrigin) {
+                            console.warn('[DTunes] Retrying audio play without crossOrigin:', playErr);
+                            audio.removeAttribute('crossorigin');
+                            audio.load();
+                            await audio.play();
+                        } else {
+                            throw playErr;
+                        }
+                    }
                     if (currentRequestId !== playRequestId) return false;
 
                     state.playing = true;
@@ -2134,10 +2216,22 @@
                         }).catch(() => {});
                     } else {
                         // URL not in memory; fetch before playing
-                        const freshDetails = await jiosaavnAPI.getSong(track.id);
+                        let freshDetails = await jiosaavnAPI.getSong(track.id);
                         if (currentRequestId !== playRequestId) return;
 
-                        const playUrl = freshDetails?.url || track.url;
+                        let playUrl = freshDetails?.url || track.url;
+                        if (!playUrl) {
+                            const searchQuery = `${track.name || track.title || ''} ${track.artist || ''}`.trim();
+                            if (searchQuery) {
+                                try {
+                                    const searchResults = await jiosaavnAPI.searchSongs(searchQuery, 1);
+                                    if (searchResults && searchResults.length > 0 && searchResults[0].url) {
+                                        freshDetails = searchResults[0];
+                                        playUrl = searchResults[0].url;
+                                    }
+                                } catch (_) {}
+                            }
+                        }
                         if (!playUrl) throw new Error('No audio URL found');
                         
                         track = { ...track, ...freshDetails, url: playUrl };

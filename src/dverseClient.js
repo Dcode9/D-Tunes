@@ -58,7 +58,9 @@
       memoryStorage.set(key, value);
       try { localStorage.setItem(key, value); } catch (_) {}
       try { sessionStorage.setItem(key, value); } catch (_) {}
-      try { setCookie(key, value); } catch (_) {}
+      if (!key.includes('code-verifier')) {
+        try { setCookie(key, value); } catch (_) {}
+      }
     },
     removeItem: (key) => {
       memoryStorage.delete(key);
@@ -89,6 +91,21 @@
   // Purge any legacy sticky desktop auth session flag to prevent web sign-in hijacking
   try {
     sessionStorage.removeItem('dverse_desktop_auth');
+  } catch (_) {}
+
+  // Purge any bloated code-verifier cookies to keep headers lean and prevent HTTP 431/400 errors
+  try {
+    if (typeof document !== 'undefined' && document.cookie) {
+      document.cookie.split(';').forEach(c => {
+        const name = c.split('=')[0].trim();
+        if (name.includes('code-verifier')) {
+          deleteCookie(name);
+          try {
+            document.cookie = `${encodeURIComponent(name)}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax; Secure`;
+          } catch (_) {}
+        }
+      });
+    }
   } catch (_) {}
 
   // Immediate Desktop OAuth Return Handler:
@@ -226,6 +243,9 @@
         });
         if (!error && data?.session) {
           currentSession = data.session;
+          if (client?.rest?.headers && currentSession?.access_token) {
+            client.rest.headers['Authorization'] = `Bearer ${currentSession.access_token}`;
+          }
           try {
             universalStorage.setItem('dverse_session_cache', JSON.stringify({
               access_token: data.session.access_token,
@@ -257,33 +277,43 @@
     try {
       const { data: existingData } = await client.auth.getSession();
       if (existingData?.session) {
-        currentSession = existingData.session;
-        // Clean URL if code/state parameters are present so we never re-exchange
-        const searchParams = new URLSearchParams(window.location.search);
-        if (searchParams.has('code') || searchParams.has('state')) {
-          searchParams.delete('code');
-          searchParams.delete('state');
-          const cleanSearch = searchParams.toString();
-          try {
-            window.history.replaceState({}, document.title, `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`);
-          } catch (_) {}
-        }
-        try {
-          universalStorage.setItem('dverse_session_cache', JSON.stringify({
-            access_token: currentSession.access_token,
-            refresh_token: currentSession.refresh_token
-          }));
-        } catch (_) {}
-        syncSessionToPortal(currentSession);
-        handleDesktopHandoffIfRequested(currentSession);
-        if (typeof window !== 'undefined' && window.cloudLibrary) {
-          window.cloudLibrary.session = currentSession;
-          window.cloudLibrary.updateUI();
-          if (typeof window.cloudLibrary.load === 'function') {
-            window.cloudLibrary.load().catch(() => {});
+        const expiresAtMs = (existingData.session.expires_at || 0) * 1000;
+        const isExpired = expiresAtMs > 0 && expiresAtMs <= Date.now();
+        if (!isExpired) {
+          currentSession = existingData.session;
+          if (client?.rest?.headers && currentSession?.access_token) {
+            client.rest.headers['Authorization'] = `Bearer ${currentSession.access_token}`;
           }
+          // Clean URL if code/state parameters are present so we never re-exchange
+          const searchParams = new URLSearchParams(window.location.search);
+          if (searchParams.has('code') || searchParams.has('state')) {
+            searchParams.delete('code');
+            searchParams.delete('state');
+            const cleanSearch = searchParams.toString();
+            try {
+              window.history.replaceState({}, document.title, `${window.location.pathname}${cleanSearch ? `?${cleanSearch}` : ''}${window.location.hash}`);
+            } catch (_) {}
+          }
+          try {
+            universalStorage.setItem('dverse_session_cache', JSON.stringify({
+              access_token: currentSession.access_token,
+              refresh_token: currentSession.refresh_token
+            }));
+          } catch (_) {}
+          syncSessionToPortal(currentSession);
+          handleDesktopHandoffIfRequested(currentSession);
+          if (typeof window !== 'undefined' && window.cloudLibrary) {
+            window.cloudLibrary.session = currentSession;
+            window.cloudLibrary.updateUI();
+            if (typeof window.cloudLibrary.load === 'function') {
+              window.cloudLibrary.load().catch(() => {});
+            }
+          }
+          return currentSession;
+        } else {
+          currentSession = null;
+          try { universalStorage.removeItem('dverse_session_cache'); } catch (_) {}
         }
-        return currentSession;
       }
     } catch (_) {}
 
@@ -308,6 +338,9 @@
 
         if (!error && data?.session) {
           currentSession = data.session;
+          if (client?.rest?.headers && currentSession?.access_token) {
+            client.rest.headers['Authorization'] = `Bearer ${currentSession.access_token}`;
+          }
           try {
             universalStorage.setItem('dverse_session_cache', JSON.stringify({
               access_token: data.session.access_token,
@@ -396,6 +429,9 @@
     const { data, error } = await client.auth.getSession();
     if (!error && data?.session) {
       currentSession = data.session;
+      if (client?.rest?.headers && currentSession?.access_token) {
+        client.rest.headers['Authorization'] = `Bearer ${currentSession.access_token}`;
+      }
       try {
         universalStorage.setItem('dverse_session_cache', JSON.stringify({
           access_token: data.session.access_token,
@@ -572,6 +608,9 @@
     if (!client || typeof callback !== 'function') return { unsubscribe() {} };
     const { data } = client.auth.onAuthStateChange((event, session) => {
       currentSession = session || null;
+      if (session && client?.rest?.headers && session.access_token) {
+        client.rest.headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
       if (session && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
         syncSessionToPortal(session);
         handleDesktopHandoffIfRequested(session);
