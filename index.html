@@ -464,7 +464,7 @@
 
             <button id="dverse-header-auth-button" class="desktop-auth-button hidden rounded-full bg-[var(--accent-color)] px-4 py-2 text-sm font-black text-black shadow-lg shadow-cyan-500/20 hover:scale-105 transition" onclick="cloudLibrary.toggleAuth()">Sign in</button>
             <button class="w-8 h-8 md:w-10 md:h-10 rounded-full border border-white/20 overflow-hidden hover:border-[var(--accent-color)] transition cursor-pointer" onclick="document.getElementById('profile-dropdown').classList.toggle('hidden')">
-                <img src="https://placehold.co/100x100/111/fff?text=U" id="header-avatar" class="w-full h-full object-cover">
+                <img src="https://placehold.co/100x100/111/fff?text=U" id="header-avatar" class="w-full h-full object-cover" referrerpolicy="no-referrer" onerror="this.onerror=null; if(window.ui?.avatarFallback) this.src=window.ui.avatarFallback();">
             </button>
             
             <div id="profile-dropdown" class="absolute top-12 right-0 w-52 glass-panel rounded-xl shadow-2xl border border-white/10 hidden flex flex-col p-2 z-[200]">
@@ -1061,7 +1061,7 @@
         </button>
         <button data-nav="profile" class="flex flex-col items-center gap-1 p-2 text-gray-400 hover:text-white transition-colors" onclick="ui.switchView('settings'); ui.closeMobileSearch();">
             <div class="w-6 h-6 rounded-full border-2 border-current flex items-center justify-center overflow-hidden">
-                <img src="https://placehold.co/100x100/111/fff?text=U" id="mobile-nav-avatar" class="w-full h-full object-cover">
+                <img src="https://placehold.co/100x100/111/fff?text=U" id="mobile-nav-avatar" class="w-full h-full object-cover" referrerpolicy="no-referrer" onerror="this.onerror=null; if(window.ui?.avatarFallback) this.src=window.ui.avatarFallback();">
             </div>
             <span class="mobile-nav-label">Settings</span>
         </button>

@@ -515,17 +515,17 @@
     if (!client) throw new Error('D\'Verse Supabase client is not configured.');
 
     // 1. Electron Desktop App handling:
-    // Route OAuth through Site URL with desktop_auth=1 to satisfy Supabase redirect whitelist
-    // and hand the session directly back to the Windows app via loopback and dtunes:// protocol.
+    // Route OAuth directly to local loopback server (http://127.0.0.1:49200/callback)
+    // so the native Windows app receives the auth code/tokens without redirecting to the web app.
     const isDesktop = Boolean(window.electronAPI || window.isDTunesDesktop);
     if (isDesktop) {
-      console.log('[DVerse] Desktop app detected: initiating OAuth with system browser...');
+      console.log('[DVerse] Desktop app detected: initiating OAuth with loopback redirect to Windows app...');
       try {
-        const desktopRedirect = `${window.location.origin}/?desktop_auth=1`;
+        const loopbackRedirect = 'http://127.0.0.1:49200/callback';
         const { data, error } = await client.auth.signInWithOAuth({
           provider: 'google',
           options: {
-            redirectTo: desktopRedirect,
+            redirectTo: loopbackRedirect,
             skipBrowserRedirect: true
           }
         });
@@ -542,6 +542,10 @@
         }
       } catch (e) {
         console.warn('[DVerse] Desktop OAuth error, falling back:', e);
+        if (window.electronAPI && typeof window.electronAPI.startGoogleLogin === 'function') {
+          await window.electronAPI.startGoogleLogin();
+          return;
+        }
       }
     }
     

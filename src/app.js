@@ -928,6 +928,7 @@
             playlists: safeStorage.getJSON('playlists', {}),
             playlistStyles: safeStorage.getJSON('playlistStyles', {}),
             username: safeStorage.get('username', 'Guest User'),
+            avatarUrl: safeStorage.get('avatarUrl', ''),
             quality: safeStorage.get('audioQuality', 'high'),
             equalizer: normalizeEqualizerSettings(safeStorage.getJSON('equalizerSettings', {})),
             forYouSongs: [],
@@ -1215,29 +1216,82 @@
             },
             updateUI: () => {
                 const signedIn = Boolean(cloudLibrary.session);
-                const email = cloudLibrary.session?.user?.email || '';
-                const meta = cloudLibrary.session?.user?.user_metadata || {};
-                const displayName = meta.full_name || meta.name || email || state.username || "D'Verse User";
-                const avatarUrl = meta.avatar_url || meta.picture || `https://placehold.co/100x100/111/fff?text=${encodeURIComponent(displayName.charAt(0).toUpperCase())}`;
+                const user = cloudLibrary.session?.user;
+                const email = user?.email || '';
+                const meta = user?.user_metadata || user?.raw_user_meta_data || {};
+                const identityMeta = user?.identities?.[0]?.identity_data || {};
+                const displayName = meta.full_name || meta.name || identityMeta.full_name || identityMeta.name || (email ? email.split('@')[0] : '') || state.username || "D'Verse User";
+                const avatarUrl = meta.avatar_url || meta.picture || identityMeta.avatar_url || identityMeta.picture || meta.avatar || identityMeta.avatar || state.avatarUrl || '';
+
                 const label = document.getElementById('dverse-account-label');
                 const authButton = document.getElementById('dverse-auth-button');
                 const headerAuthButton = document.getElementById('dverse-header-auth-button');
                 const settingsButton = document.getElementById('dverse-settings-auth-button');
-                if (label) label.textContent = signedIn ? email : "D'Verse Cloud";
-                if (authButton) authButton.textContent = signedIn ? 'Sign out' : 'Sign in';
-                if (headerAuthButton) headerAuthButton.classList.toggle('hidden', signedIn);
-                if (settingsButton) settingsButton.textContent = signedIn ? 'Sign out' : 'Sign in';
+
+                if (label) label.textContent = signedIn ? (email || displayName) : "D'Verse Cloud";
+                
+                // When signed in, completely hide / remove the Sign In buttons
+                if (headerAuthButton) {
+                    headerAuthButton.classList.toggle('hidden', signedIn);
+                    headerAuthButton.style.display = signedIn ? 'none' : '';
+                }
+                if (authButton) {
+                    authButton.classList.toggle('hidden', signedIn);
+                    authButton.style.display = signedIn ? 'none' : '';
+                }
+                if (settingsButton) {
+                    settingsButton.textContent = signedIn ? 'Sign out' : 'Sign in';
+                }
+
                 if (signedIn) {
+                    state.username = displayName;
+                    if (avatarUrl) state.avatarUrl = avatarUrl;
+                    try {
+                        localStorage.setItem('username', displayName);
+                        if (avatarUrl) localStorage.setItem('avatarUrl', avatarUrl);
+                    } catch (_) {}
+
                     const username = document.getElementById('dd-username');
+                    if (username) username.textContent = displayName;
+
                     const headerAvatar = document.getElementById('header-avatar');
                     const mobileAvatar = document.getElementById('mobile-nav-avatar');
-                    state.username = displayName;
-                    localStorage.setItem('username', displayName);
-                    if (username) username.textContent = displayName;
-                    if (headerAvatar) headerAvatar.src = avatarUrl;
-                    if (mobileAvatar) mobileAvatar.src = avatarUrl;
+                    const effectiveAvatar = avatarUrl || (ui.avatarFallback ? ui.avatarFallback() : `https://placehold.co/100x100/111/fff?text=${encodeURIComponent(displayName.charAt(0).toUpperCase())}`);
+                    if (headerAvatar) {
+                        headerAvatar.referrerPolicy = 'no-referrer';
+                        headerAvatar.src = effectiveAvatar;
+                    }
+                    if (mobileAvatar) {
+                        mobileAvatar.referrerPolicy = 'no-referrer';
+                        mobileAvatar.src = effectiveAvatar;
+                    }
+
                     cloudLibrary.setStatus(`Signed in as ${email || displayName}. Syncing library...`);
+
+                    // If avatar wasn't included in the initial session JWT, asynchronously fetch full profile from Supabase
+                    if (!avatarUrl && window.dverse?.supabase?.auth && !cloudLibrary._fetchingUserMeta) {
+                        cloudLibrary._fetchingUserMeta = true;
+                        window.dverse.supabase.auth.getUser().then(({ data }) => {
+                            cloudLibrary._fetchingUserMeta = false;
+                            const u = data?.user;
+                            const m = u?.user_metadata || u?.raw_user_meta_data || {};
+                            const im = u?.identities?.[0]?.identity_data || {};
+                            const fetchedAvatar = m.avatar_url || m.picture || im.avatar_url || im.picture || '';
+                            if (fetchedAvatar && fetchedAvatar !== state.avatarUrl) {
+                                state.avatarUrl = fetchedAvatar;
+                                try { localStorage.setItem('avatarUrl', fetchedAvatar); } catch (_) {}
+                                if (cloudLibrary.session && cloudLibrary.session.user) {
+                                    cloudLibrary.session.user.user_metadata = { ...m, avatar_url: fetchedAvatar };
+                                }
+                                cloudLibrary.updateUI();
+                            }
+                        }).catch(() => {
+                            cloudLibrary._fetchingUserMeta = false;
+                        });
+                    }
                 } else {
+                    state.avatarUrl = '';
+                    try { localStorage.removeItem('avatarUrl'); } catch (_) {}
                     ui.updateProfileUI();
                     cloudLibrary.setStatus('Sign in to sync history, library, likes, and playlists.');
                 }
@@ -1275,7 +1329,7 @@
                 // Completely purge all local storage keys
                 const targetKeys = [
                     'likedIds', 'libraryIds', 'likedArtists', 'playlists', 'playlistStyles',
-                    'playHistory', 'artistPlayCounts', 'recentSearches', 'username',
+                    'playHistory', 'artistPlayCounts', 'recentSearches', 'username', 'avatarUrl',
                     'songStore', 'dtunes_tester_streak', 'savedQueue', 'lastActiveTrack',
                     'playbackState', 'equalizerSettings', 'audioQuality', 'preferredLanguage',
                     'dverse_session_cache', 'dverse_supabase_auth_token', 'sb-supabase-auth-token',
@@ -1304,6 +1358,7 @@
                 state.playlists = {};
                 state.playlistStyles = {};
                 state.username = 'Guest User';
+                state.avatarUrl = '';
                 state.forYouSongs = [];
                 state.queueExpanded = false;
                 if (typeof songStore !== 'undefined' && songStore.clear) songStore.clear();
@@ -1455,6 +1510,7 @@
                         cloudLibrary.markLocalSnapshotSynced(cloudLibrary.captureLocalSnapshot());
                         cloudLibrary.setStatus('Synced with D\'Verse Cloud.');
                     }
+                    cloudLibrary.updateUI();
                 } catch (error) {
                     console.error('[DVerse] DTunes sync failed:', error);
                     cloudLibrary.setStatus(error?.message || 'Could not sync D\'Tunes library.');
@@ -3285,11 +3341,24 @@
                 ui.updateProfileUI();
                 ui.toggleProfileModal(false);
             },
+            avatarFallback: () => {
+                const initial = (state.username || 'U').charAt(0).toUpperCase();
+                return `https://placehold.co/100x100/111/fff?text=${encodeURIComponent(initial)}`;
+            },
             updateProfileUI: () => {
-                document.getElementById('dd-username').textContent = state.username;
-                const initial = state.username.charAt(0).toUpperCase();
-                document.getElementById('header-avatar').src = `https://placehold.co/100x100/111/fff?text=${initial}`;
-                document.getElementById('mobile-nav-avatar').src = `https://placehold.co/100x100/111/fff?text=${initial}`;
+                const usernameEl = document.getElementById('dd-username');
+                if (usernameEl) usernameEl.textContent = state.username || 'Guest User';
+                const avatar = state.avatarUrl || (ui.avatarFallback ? ui.avatarFallback() : 'https://placehold.co/100x100/111/fff?text=U');
+                const headerAvatar = document.getElementById('header-avatar');
+                const mobileAvatar = document.getElementById('mobile-nav-avatar');
+                if (headerAvatar) {
+                    headerAvatar.referrerPolicy = 'no-referrer';
+                    headerAvatar.src = avatar;
+                }
+                if (mobileAvatar) {
+                    mobileAvatar.referrerPolicy = 'no-referrer';
+                    mobileAvatar.src = avatar;
+                }
             },
             updateSettings: (key, val) => {
                 if(key === 'quality') {

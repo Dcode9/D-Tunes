@@ -21,6 +21,7 @@
         ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.2); }
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .desktop-auth-button { display: none; }
+        .desktop-auth-button.hidden { display: none !important; }
         @media (min-width: 768px) { .desktop-auth-button:not(.hidden) { display: inline-flex; } }
 
         .accent-panel { border: 1px solid color-mix(in srgb, var(--accent-color) 20%, transparent); background: color-mix(in srgb, var(--accent-color) 10%, transparent); }

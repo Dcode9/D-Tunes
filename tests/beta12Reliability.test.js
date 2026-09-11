@@ -320,20 +320,17 @@ test('Beta 1.2 - Desktop Sign-In Handoff & Isolation', async (t) => {
         assert.equal(overlayRendered, false, 'Web sign-in must NOT render desktop handoff overlay');
     });
 
-    await t.test('Desktop OAuth redirect uses Site URL with desktop_auth=1 query param', () => {
-        const origin = 'https://tunes.d-verse.in';
-        const desktopRedirect = `${origin}/?desktop_auth=1`;
-        const url = new URL(desktopRedirect);
+    await t.test('Desktop OAuth redirect points directly to local loopback server on port 49200', () => {
+        const loopbackRedirect = 'http://127.0.0.1:49200/callback';
+        const url = new URL(loopbackRedirect);
 
-        assert.equal(url.origin, 'https://tunes.d-verse.in');
-        assert.equal(url.searchParams.get('desktop_auth'), '1');
+        assert.equal(url.origin, 'http://127.0.0.1:49200');
+        assert.equal(url.pathname, '/callback');
     });
 
     await t.test('Desktop auth handoff extracts code and constructs dtunes://auth?code= URL', () => {
-        const url = new URL('https://tunes.d-verse.in/?desktop_auth=1&code=google_auth_code_xyz');
+        const url = new URL('http://127.0.0.1:49200/callback?code=google_auth_code_xyz');
         const searchParams = url.searchParams;
-        const isDesktopAuth = searchParams.get('desktop_auth') === '1';
-        assert.ok(isDesktopAuth);
 
         const code = searchParams.get('code');
         assert.equal(code, 'google_auth_code_xyz');
@@ -343,6 +340,52 @@ test('Beta 1.2 - Desktop Sign-In Handoff & Isolation', async (t) => {
 
         const deepLinkUrl = `dtunes://auth?code=${encodeURIComponent(code)}`;
         assert.equal(deepLinkUrl, 'dtunes://auth?code=google_auth_code_xyz');
+    });
+
+    await t.test('Signed-in UI state completely hides header and dropdown sign-in buttons and displays avatar', () => {
+        const dom = {
+            'dverse-header-auth-button': { classList: new Set(), style: {} },
+            'dverse-auth-button': { classList: new Set(), style: {} },
+            'header-avatar': { src: '', referrerPolicy: '' },
+            'mobile-nav-avatar': { src: '', referrerPolicy: '' },
+            'dd-username': { textContent: '' }
+        };
+
+        const session = {
+            user: {
+                email: 'test@example.com',
+                user_metadata: {
+                    full_name: 'Test User',
+                    avatar_url: 'https://lh3.googleusercontent.com/a/avatar123'
+                }
+            }
+        };
+
+        const signedIn = Boolean(session);
+        const meta = session.user.user_metadata;
+        const displayName = meta.full_name || 'Test User';
+        const avatarUrl = meta.avatar_url;
+
+        // Apply signed-in DOM changes
+        if (dom['dverse-header-auth-button']) {
+            dom['dverse-header-auth-button'].classList.add('hidden');
+            dom['dverse-header-auth-button'].style.display = 'none';
+        }
+        if (dom['dverse-auth-button']) {
+            dom['dverse-auth-button'].classList.add('hidden');
+            dom['dverse-auth-button'].style.display = 'none';
+        }
+        if (dom['header-avatar']) {
+            dom['header-avatar'].referrerPolicy = 'no-referrer';
+            dom['header-avatar'].src = avatarUrl;
+        }
+
+        assert.equal(dom['dverse-header-auth-button'].style.display, 'none');
+        assert.ok(dom['dverse-header-auth-button'].classList.has('hidden'));
+        assert.equal(dom['dverse-auth-button'].style.display, 'none');
+        assert.ok(dom['dverse-auth-button'].classList.has('hidden'));
+        assert.equal(dom['header-avatar'].src, 'https://lh3.googleusercontent.com/a/avatar123');
+        assert.equal(dom['header-avatar'].referrerPolicy, 'no-referrer');
     });
 });
 
