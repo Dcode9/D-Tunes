@@ -30,6 +30,22 @@ function setupSandbox(env) {
             this.detail = opts.detail;
         }
     };
+    let cookieStore = '';
+    Object.defineProperty(env.document, 'cookie', {
+        get: () => cookieStore,
+        set: (val) => {
+            const parts = String(val).split(';')[0].trim();
+            if (parts.includes('=')) {
+                const k = parts.split('=')[0].trim();
+                if (String(val).includes('expires=Thu, 01 Jan 1970')) {
+                    cookieStore = cookieStore.split('; ').filter(c => !c.startsWith(k + '=')).join('; ');
+                } else {
+                    cookieStore = cookieStore ? `${cookieStore}; ${parts}` : parts;
+                }
+            }
+        },
+        configurable: true
+    });
     return sandbox;
 }
 
@@ -559,5 +575,111 @@ test('Web Auth & Data Hydration Test Suite', async (t) => {
 
         // app.js must trigger discover render refresh
         assert.ok(appCode.includes('homeView.renderDiscoverSection(true)'), 'app.js triggers discover section refresh');
+    });
+
+    await t.test('Tier 9: Web sign-in routes to D\'Verse portal with return_to parameter and sets return cookies', async () => {
+        const env = createTestEnvironment();
+        setupSandbox(env);
+
+        env.window.location = {
+            origin: 'https://tunes.d-verse.in',
+            pathname: '/',
+            search: '',
+            hash: '',
+            protocol: 'https:',
+            hostname: 'tunes.d-verse.in',
+            href: 'https://tunes.d-verse.in/'
+        };
+
+        env.window.supabase = {
+            createClient: () => ({
+                auth: {
+                    getSession: async () => ({ data: { session: null }, error: null }),
+                    onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+                    signOut: async () => ({ error: null })
+                },
+                from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }) })
+            })
+        };
+
+        const codeContent = fs.readFileSync(path.join(__dirname, '../src/dverseClient.js'), 'utf8');
+        vm.runInNewContext(codeContent, env.window);
+
+        await env.window.dverse.signInWithGoogle();
+
+        assert.ok(env.window.location.href.includes('https://d-verse.in/?dverse_return_to='), 'Redirects to D\'Verse portal');
+        assert.ok(env.window.location.href.includes(encodeURIComponent('https://tunes.d-verse.in/')), 'Includes correct return URL');
+        assert.ok(env.document.cookie.includes('dverse_auth_return_to'), 'Sets dverse_auth_return_to cookie');
+    });
+
+    await t.test('Tier 10: Session handoff from URL hash (#dverse_session=...) unpacks and initializes session', async () => {
+        const env = createTestEnvironment();
+        setupSandbox(env);
+
+        const testSession = {
+            access_token: 'portal_access_token_xyz',
+            refresh_token: 'portal_refresh_token_xyz',
+            user: { id: 'portal_user_789', email: 'portal@d-verse.in' }
+        };
+
+        // Helper to encode
+        const str = JSON.stringify(testSession);
+        const bytes = new TextEncoder().encode(str);
+        let bin = '';
+        bytes.forEach(b => bin += String.fromCharCode(b));
+        const encoded = btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+        let setSessionCalled = false;
+        let replaceStateCalled = false;
+
+        env.window.location = {
+            origin: 'https://tunes.d-verse.in',
+            pathname: '/',
+            search: '',
+            hash: `#dverse_session=${encoded}`,
+            protocol: 'https:',
+            hostname: 'tunes.d-verse.in',
+            href: `https://tunes.d-verse.in/#dverse_session=${encoded}`
+        };
+        env.window.history = {
+            replaceState: (state, title, url) => {
+                replaceStateCalled = true;
+                env.window.location.hash = url.includes('#') ? url.split('#')[1] : '';
+            }
+        };
+
+        let loadCalled = false;
+        env.window.cloudLibrary = {
+            session: null,
+            updateUI: () => {},
+            load: async () => { loadCalled = true; }
+        };
+
+        env.window.supabase = {
+            createClient: () => ({
+                auth: {
+                    getSession: async () => ({ data: { session: null }, error: null }),
+                    setSession: async ({ access_token, refresh_token }) => {
+                        setSessionCalled = true;
+                        assert.strictEqual(access_token, 'portal_access_token_xyz');
+                        assert.strictEqual(refresh_token, 'portal_refresh_token_xyz');
+                        return { data: { session: testSession }, error: null };
+                    },
+                    onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+                    signOut: async () => ({ error: null })
+                },
+                from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }) })
+            })
+        };
+
+        const codeContent = fs.readFileSync(path.join(__dirname, '../src/dverseClient.js'), 'utf8');
+        vm.runInNewContext(codeContent, env.window);
+
+        const session = await env.window.dverse.getSession();
+        assert.ok(setSessionCalled, 'setSession called with handoff tokens');
+        assert.ok(session, 'Session returned');
+        assert.strictEqual(session.user.id, 'portal_user_789');
+        assert.ok(replaceStateCalled, 'URL hash cleaned');
+        assert.ok(loadCalled, 'cloudLibrary.load was called');
     });
 });

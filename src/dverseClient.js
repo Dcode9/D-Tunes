@@ -13,7 +13,7 @@
 
   function setCookie(name, value, days = 365) {
     if (typeof document === 'undefined') return;
-    if (typeof value === 'string' && value.length > 3500) return;
+    if (typeof value === 'string' && value.length > 500) return;
     const expires = new Date(Date.now() + days * 864e5).toUTCString();
     const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
     const isDverse = typeof window !== 'undefined' && window.location.hostname.endsWith('d-verse.in');
@@ -58,7 +58,8 @@
       memoryStorage.set(key, value);
       try { localStorage.setItem(key, value); } catch (_) {}
       try { sessionStorage.setItem(key, value); } catch (_) {}
-      if (!key.includes('code-verifier')) {
+      // Never store full auth tokens, sessions, or verifiers in cookies to prevent 431/400 header bloat
+      if (!key.includes('code-verifier') && !key.includes('auth_token') && !key.includes('session') && !key.includes('supabase') && !key.includes('cache')) {
         try { setCookie(key, value); } catch (_) {}
       }
     },
@@ -93,12 +94,12 @@
     sessionStorage.removeItem('dverse_desktop_auth');
   } catch (_) {}
 
-  // Purge any bloated code-verifier cookies to keep headers lean and prevent HTTP 431/400 errors
+  // Purge any bloated auth/verifier cookies to keep headers lean and prevent HTTP 431/400 errors
   try {
     if (typeof document !== 'undefined' && document.cookie) {
       document.cookie.split(';').forEach(c => {
         const name = c.split('=')[0].trim();
-        if (name.includes('code-verifier')) {
+        if (name.includes('code-verifier') || name.includes('auth_token') || name.includes('session') || name.includes('supabase')) {
           deleteCookie(name);
           try {
             document.cookie = `${encodeURIComponent(name)}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax; Secure`;
@@ -374,7 +375,7 @@
     return null;
   }
 
-  function bridgeRequest(message, timeoutMs = 2500) {
+  function bridgeRequest(message, timeoutMs = 400) {
     if (!PORTAL_ORIGIN || window.location.origin === PORTAL_ORIGIN || typeof document === 'undefined') {
       return Promise.resolve(null);
     }
@@ -661,31 +662,43 @@
       }
     }
     
-    // 2. Standard Web Browser flow
-    try {
-      const redirectUrl = `${window.location.origin}${window.location.pathname}`;
-      setCookie('dverse_auth_return_to', `${window.location.origin}/`, 1);
-      setCookie('dverse.auth.returnTo', `${window.location.origin}/`, 1);
+    // 2. Localhost web dev flow:
+    const isLocalhost = Boolean(
+      typeof window !== 'undefined' &&
+      window.location &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    );
+    if (isLocalhost) {
       try {
-        localStorage.setItem('dverse.auth.returnTo', `${window.location.origin}/`);
-        sessionStorage.setItem('dverse.auth.returnTo', `${window.location.origin}/`);
-      } catch (_) {}
-      const { data, error } = await client.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: redirectUrl
+        const redirectUrl = `${window.location.origin}${window.location.pathname}`;
+        const { data, error } = await client.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: redirectUrl
+          }
+        });
+        if (error) throw error;
+        if (data?.url) {
+          window.location.href = data.url;
+          return;
         }
-      });
-      if (error) throw error;
-      if (data?.url) {
-        window.location.href = data.url;
-        return;
+      } catch (err) {
+        console.warn('[DVerse] Localhost OAuth error, falling back to portal:', err);
       }
-    } catch (err) {
-      console.warn('[DVerse] Direct OAuth sign in error, falling back to portal:', err);
-      // Fallback: direct to D'Verse portal auth path
-      window.location.href = `${PORTAL_ORIGIN}/?dverse_return_to=${encodeURIComponent(window.location.href)}`;
     }
+
+    // 3. Production Web Browser flow:
+    // Route sign-in through the central D'Verse portal (https://d-verse.in/?dverse_return_to=...).
+    // The portal initiates Google OAuth with the whitelisted Site URL (https://d-verse.in/),
+    // exchanges the code on return, and hands back the session via #dverse_session=<base64url>.
+    const returnUrl = `${window.location.origin}${window.location.pathname}`;
+    setCookie('dverse_auth_return_to', returnUrl, 1);
+    setCookie('dverse.auth.returnTo', returnUrl, 1);
+    try {
+      localStorage.setItem('dverse.auth.returnTo', returnUrl);
+      sessionStorage.setItem('dverse.auth.returnTo', returnUrl);
+    } catch (_) {}
+    window.location.href = `${PORTAL_ORIGIN}/?dverse_return_to=${encodeURIComponent(returnUrl)}`;
   }
 
   async function signOut() {
