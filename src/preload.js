@@ -34,4 +34,26 @@
             document.documentElement.setAttribute('data-ui-mode', initialUiMode.mode);
             document.documentElement.setAttribute('data-ui-preference', initialUiMode.preference);
             document.documentElement.setAttribute('data-ui-detected-mobile', initialUiMode.detectedMobile ? '1' : '0');
+
+            // Dynamically load Real Aave Glass + Web Haptics after the main app scripts
+            function loadScript(src) {
+                return new Promise(function(resolve, reject) {
+                    var s = document.createElement('script');
+                    s.src = src;
+                    s.async = false;
+                    s.onload = resolve;
+                    s.onerror = reject;
+                    document.head.appendChild(s);
+                });
+            }
+
+            window.addEventListener('DOMContentLoaded', function() {
+                // Wait for app.js etc to be present, then load glass
+                setTimeout(function() {
+                    loadScript('src/aave-glass.js')
+                        .then(function() { return loadScript('src/ios-enhancements.js'); })
+                        .then(function() { console.info('[D-Tunes] Aave Glass + Haptics loaded'); })
+                        .catch(function(e) { console.warn('[D-Tunes] Glass load failed', e); });
+                }, 300);
+            });
         })();
