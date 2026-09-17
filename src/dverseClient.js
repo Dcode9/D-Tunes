@@ -13,7 +13,7 @@
 
   function setCookie(name, value, days = 365) {
     if (typeof document === 'undefined') return;
-    if (typeof value === 'string' && value.length > 500) return;
+    if (typeof value === 'string' && value.length > 3500) return;
     const expires = new Date(Date.now() + days * 864e5).toUTCString();
     const isSecure = typeof window !== 'undefined' && window.location.protocol === 'https:';
     const isDverse = typeof window !== 'undefined' && window.location.hostname.endsWith('d-verse.in');
@@ -71,6 +71,104 @@
     }
   };
 
+  const DVERSE_TOKENS_COOKIE = 'dverse_auth_tokens';
+  const DVERSE_SESSION_CACHE = 'dverse_session_cache';
+  let isExplicitSignOut = false;
+
+  function persistTokens(session) {
+    if (!session?.refresh_token) return;
+    try {
+      const tokens = {
+        access_token: session.access_token || '',
+        refresh_token: session.refresh_token,
+        expires_at: session.expires_at || null,
+        user_id: session.user?.id || null,
+        email: session.user?.email || null
+      };
+      const serialized = JSON.stringify(tokens);
+      try { localStorage.setItem(DVERSE_SESSION_CACHE, serialized); } catch (_) {}
+      try { localStorage.setItem(DVERSE_TOKENS_COOKIE, serialized); } catch (_) {}
+      try { sessionStorage.setItem(DVERSE_SESSION_CACHE, serialized); } catch (_) {}
+      // Persist across all *.d-verse.in subdomains for 365 days
+      setCookie(DVERSE_TOKENS_COOKIE, serialized, 365);
+    } catch (e) {
+      console.warn('[DVerse] Failed to persist auth tokens:', e);
+    }
+  }
+
+  function readPersistedTokens() {
+    // 1. Try cross-subdomain memory cookie first (.d-verse.in)
+    try {
+      const rawCookie = getCookie(DVERSE_TOKENS_COOKIE);
+      if (rawCookie) {
+        const parsed = JSON.parse(rawCookie);
+        if (parsed?.refresh_token) return parsed;
+      }
+    } catch (_) {}
+
+    // 2. Try localStorage caches
+    try {
+      const raw = localStorage.getItem(DVERSE_SESSION_CACHE) || localStorage.getItem(DVERSE_TOKENS_COOKIE);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.refresh_token) return parsed;
+      }
+    } catch (_) {}
+
+    // 3. Try sessionStorage
+    try {
+      const raw = sessionStorage.getItem(DVERSE_SESSION_CACHE);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed?.refresh_token) return parsed;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  function clearPersistedTokens() {
+    deleteCookie(DVERSE_TOKENS_COOKIE);
+    try { localStorage.removeItem(DVERSE_SESSION_CACHE); } catch (_) {}
+    try { localStorage.removeItem(DVERSE_TOKENS_COOKIE); } catch (_) {}
+    try { sessionStorage.removeItem(DVERSE_SESSION_CACHE); } catch (_) {}
+  }
+
+  async function restoreOrRefreshSession(tokens) {
+    if (!client || !tokens?.refresh_token) return null;
+
+    // 1. If access_token exists, attempt setSession
+    if (tokens.access_token) {
+      try {
+        const { data, error } = await client.auth.setSession({
+          access_token: tokens.access_token,
+          refresh_token: tokens.refresh_token
+        });
+        if (!error && data?.session) {
+          currentSession = data.session;
+          persistTokens(currentSession);
+          return currentSession;
+        }
+      } catch (_) {}
+    }
+
+    // 2. If access_token was expired or setSession failed, refresh using refresh_token!
+    try {
+      const { data: refreshed, error: refreshErr } = await client.auth.refreshSession({
+        refresh_token: tokens.refresh_token
+      });
+      if (!refreshErr && refreshed?.session) {
+        currentSession = refreshed.session;
+        persistTokens(currentSession);
+        return currentSession;
+      }
+    } catch (err) {
+      console.warn('[DVerse] Failed to refresh session from persistent memory:', err);
+    }
+
+    return null;
+  }
+
   const ready = Boolean(window.supabase && SUPABASE_ANON_KEY);
   const client = ready ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     auth: {
@@ -94,12 +192,12 @@
     sessionStorage.removeItem('dverse_desktop_auth');
   } catch (_) {}
 
-  // Purge any bloated auth/verifier cookies to keep headers lean and prevent HTTP 431/400 errors
+  // Purge any bloated legacy auth/verifier cookies to keep headers lean and prevent HTTP 431/400 errors
   try {
     if (typeof document !== 'undefined' && document.cookie) {
       document.cookie.split(';').forEach(c => {
         const name = c.split('=')[0].trim();
-        if (name.includes('code-verifier') || name.includes('auth_token') || name.includes('session') || name.includes('supabase')) {
+        if (name && name !== DVERSE_TOKENS_COOKIE && (name.includes('code-verifier') || name.startsWith('sb-') || name.includes('supabase-auth-token'))) {
           deleteCookie(name);
           try {
             document.cookie = `${encodeURIComponent(name)}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax; Secure`;
@@ -247,12 +345,7 @@
           if (client?.rest?.headers && currentSession?.access_token) {
             client.rest.headers['Authorization'] = `Bearer ${currentSession.access_token}`;
           }
-          try {
-            universalStorage.setItem('dverse_session_cache', JSON.stringify({
-              access_token: data.session.access_token,
-              refresh_token: data.session.refresh_token
-            }));
-          } catch (_) {}
+          persistTokens(currentSession);
           try {
             if (window.location.hash && (window.location.hash.includes('access_token=') || window.location.hash.includes('dverse_session='))) {
               window.history.replaceState({}, document.title, `${window.location.pathname}${window.location.search}`);
@@ -339,12 +432,7 @@
           if (client?.rest?.headers && currentSession?.access_token) {
             client.rest.headers['Authorization'] = `Bearer ${currentSession.access_token}`;
           }
-          try {
-            universalStorage.setItem('dverse_session_cache', JSON.stringify({
-              access_token: data.session.access_token,
-              refresh_token: data.session.refresh_token
-            }));
-          } catch (_) {}
+          persistTokens(currentSession);
           syncSessionToPortal(currentSession);
           handleDesktopHandoffIfRequested(currentSession);
           if (typeof window !== 'undefined' && window.cloudLibrary) {
@@ -421,62 +509,55 @@
 
   async function bootstrapFromPortal() {
     if (!client) return null;
-    const handedOffSession = await restoreSessionFromHandoff();
-    if (handedOffSession) return handedOffSession;
 
-    const { data, error } = await client.auth.getSession();
-    if (!error && data?.session) {
-      currentSession = data.session;
-      if (client?.rest?.headers && currentSession?.access_token) {
-        client.rest.headers['Authorization'] = `Bearer ${currentSession.access_token}`;
+    // 1. Check URL query / hash handoffs from recent redirect
+    const handedOffSession = await restoreSessionFromHandoff();
+    if (handedOffSession) {
+      if (client?.rest?.headers && handedOffSession.access_token) {
+        client.rest.headers['Authorization'] = `Bearer ${handedOffSession.access_token}`;
       }
-      try {
-        universalStorage.setItem('dverse_session_cache', JSON.stringify({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token
-        }));
-      } catch (_) {}
-      return data.session;
+      persistTokens(handedOffSession);
+      return handedOffSession;
     }
 
-    // Check cached session
+    // 2. Check active Supabase client session
     try {
-      const cached = universalStorage.getItem('dverse_session_cache');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (parsed?.access_token && parsed?.refresh_token) {
-          const { data: restored, error: restoreError } = await client.auth.setSession({
-            access_token: parsed.access_token,
-            refresh_token: parsed.refresh_token
-          });
-          if (!restoreError && restored?.session) {
-            currentSession = restored.session;
-            return currentSession;
-          }
+      const { data, error } = await client.auth.getSession();
+      if (!error && data?.session) {
+        currentSession = data.session;
+        if (client?.rest?.headers && currentSession?.access_token) {
+          client.rest.headers['Authorization'] = `Bearer ${currentSession.access_token}`;
         }
+        persistTokens(currentSession);
+        return currentSession;
       }
     } catch (_) {}
 
+    // 3. Check persistent memory (cross-domain cookie on .d-verse.in + localStorage)
+    const persisted = readPersistedTokens();
+    if (persisted?.refresh_token) {
+      const restored = await restoreOrRefreshSession(persisted);
+      if (restored) {
+        if (client?.rest?.headers && restored.access_token) {
+          client.rest.headers['Authorization'] = `Bearer ${restored.access_token}`;
+        }
+        syncSessionToPortal(restored);
+        handleDesktopHandoffIfRequested(restored);
+        return restored;
+      }
+    }
+
+    // 4. Fallback to auth bridge iframe on portal
     if (!portalSessionPromise) {
       portalSessionPromise = (async () => {
         const response = await bridgeRequest({ type: 'dverse-auth:get-session' });
         const session = response?.session;
-        if (!session?.access_token || !session?.refresh_token) return null;
-        const { data: restored, error: restoreError } = await client.auth.setSession({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token
-        });
-        if (restoreError) throw restoreError;
-        currentSession = restored.session || null;
-        if (currentSession) {
-          try {
-            universalStorage.setItem('dverse_session_cache', JSON.stringify({
-              access_token: currentSession.access_token,
-              refresh_token: currentSession.refresh_token
-            }));
-          } catch (_) {}
+        if (!session?.refresh_token) return null;
+        const restored = await restoreOrRefreshSession(session);
+        if (restored && client?.rest?.headers && restored.access_token) {
+          client.rest.headers['Authorization'] = `Bearer ${restored.access_token}`;
         }
-        return restored.session || null;
+        return restored || null;
       })().finally(() => {
         portalSessionPromise = null;
       });
@@ -582,12 +663,7 @@
 
   function syncSessionToPortal(session) {
     if (!session?.access_token || !session?.refresh_token) return;
-    try {
-      universalStorage.setItem('dverse_session_cache', JSON.stringify({
-        access_token: session.access_token,
-        refresh_token: session.refresh_token
-      }));
-    } catch (_) {}
+    persistTokens(session);
     bridgeRequest({
       type: 'dverse-auth:set-session',
       session: {
@@ -616,11 +692,12 @@
         client.rest.headers['Authorization'] = `Bearer ${session.access_token}`;
       }
       if (session && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+        persistTokens(session);
         syncSessionToPortal(session);
         handleDesktopHandoffIfRequested(session);
       }
-      if (event === 'SIGNED_OUT') {
-        try { universalStorage.removeItem('dverse_session_cache'); } catch (_) {}
+      if (event === 'SIGNED_OUT' && isExplicitSignOut) {
+        clearPersistedTokens();
       }
       callback(event, session);
     });
@@ -706,7 +783,8 @@
 
   async function signOut() {
     if (!client) return;
-    try { universalStorage.removeItem('dverse_session_cache'); } catch (_) {}
+    isExplicitSignOut = true;
+    clearPersistedTokens();
     try { universalStorage.removeItem('dverse_supabase_auth_token'); } catch (_) {}
     currentSession = null;
     const { error } = await client.auth.signOut();
