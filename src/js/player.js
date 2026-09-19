@@ -581,6 +581,46 @@
             },
             toggleLike: () => { player.likeSong(); },
             isLiked: (songId) => state.likedIds.some(item => (typeof item === 'object' ? item.id : item) === songId),
+            isDisliked: (songId) => {
+                if (!state.dislikedSongs) return false;
+                return state.dislikedSongs.some(item => (typeof item === 'object' ? item.id : item) === songId);
+            },
+            dislikeSong: (songId = null) => {
+                let song = null;
+                if (!songId) {
+                    if (!state.currentTrack) return;
+                    song = state.currentTrack;
+                } else {
+                    song = (songStore && songStore.get) ? songStore.get(songId) : null;
+                    if (!song) {
+                        song = state.currentTrack?.id === songId ? state.currentTrack :
+                            state.queue.find(s => s.id === songId) ||
+                            state.userQueue.find(s => s.id === songId) ||
+                            state.playHistory.find(s => s.id === songId);
+                    }
+                }
+                if (!song) return;
+
+                if (!state.dislikedSongs) state.dislikedSongs = [];
+                const sId = song.id;
+                const sName = song.name || song.title || 'Unknown';
+                const sArtist = song.artist || song.primary_artists || '';
+
+                const idx = state.dislikedSongs.findIndex(item => {
+                    const id = typeof item === 'object' ? item.id : item;
+                    return id === sId || (item.name === sName && item.artist === sArtist);
+                });
+
+                if (idx === -1) {
+                    state.dislikedSongs.push({ id: sId, name: sName, artist: sArtist });
+                    if (ui.showToast) ui.showToast(`We won't recommend "${sName}" anymore`);
+                } else {
+                    state.dislikedSongs.splice(idx, 1);
+                    if (ui.showToast) ui.showToast(`Removed "${sName}" from hidden songs`);
+                }
+
+                localStorage.setItem('dislikedSongs', JSON.stringify(state.dislikedSongs));
+            },
             isInLibrary: (songId) => state.libraryIds.some(item => (typeof item === 'object' ? item.id : item) === songId),
             addToLibrary: (songId = null) => {
                 let songToAdd = null;

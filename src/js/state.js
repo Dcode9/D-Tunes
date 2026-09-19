@@ -142,6 +142,7 @@
             shuffledOrder: [], shufflePointer: 0, _audioRetryCount: 0,
             currentTrack: null,
             likedIds: safeStorage.getJSON('likedIds', []),
+            dislikedSongs: safeStorage.getJSON('dislikedSongs', []),
             libraryIds: safeStorage.getJSON('libraryIds', []),
             likedArtists: safeStorage.getJSON('likedArtists', []),
             playHistory: safeStorage.getJSON('playHistory', []),

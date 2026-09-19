@@ -16,6 +16,14 @@
                 document.getElementById('cm-add-playlist').onclick = (e) => { e.stopPropagation(); menu.classList.add('hidden'); ctxMenu.showPlaylistSelector(); };
                 document.getElementById('cm-like-song').onclick = () => { const s = songStore.get(ctxMenu.activeStoreId); if(s) player.likeSong(s.id); menu.classList.add('hidden'); };
                 document.getElementById('cm-add-library').onclick = () => { const s = songStore.get(ctxMenu.activeStoreId); if(s) player.addToLibrary(s.id); menu.classList.add('hidden'); };
+                const cmDislike = document.getElementById('cm-dislike-song');
+                if (cmDislike) {
+                    cmDislike.onclick = () => {
+                        const s = songStore.get(ctxMenu.activeStoreId);
+                        if (s && player.dislikeSong) player.dislikeSong(s.id);
+                        menu.classList.add('hidden');
+                    };
+                }
                 document.getElementById('cm-pl-play').onclick = () => { ui.playPlaylist(ctxMenu.activePlaylistName); };
                 const cmPlNext = document.getElementById('cm-pl-play-next');
                 if (cmPlNext) cmPlNext.onclick = () => { player.addPlaylistNext(ctxMenu.activePlaylistName); };
@@ -32,6 +40,10 @@
                 const libraryLabel = document.getElementById('cm-add-library-label');
                 if (likeLabel && song) likeLabel.textContent = player.isLiked(song.id) ? 'Unlike song' : 'Like song';
                 if (libraryLabel && song) libraryLabel.textContent = player.isInLibrary(song.id) ? 'Remove from Library' : 'Add to Library';
+                const dislikeLabel = document.getElementById('cm-dislike-song-label');
+                if (dislikeLabel && song) {
+                    dislikeLabel.textContent = (player.isDisliked && player.isDisliked(song.id)) ? 'Remove from hidden' : "Don't recommend this";
+                }
                 document.getElementById('cm-song-options').classList.remove('hidden'); document.getElementById('cm-playlist-options').classList.add('hidden');
                 menu.classList.remove('hidden'); const x = Math.min(event.clientX, window.innerWidth - 200); const y = Math.min(event.clientY, window.innerHeight - 150);
                 menu.style.left = `${x}px`; menu.style.top = `${y}px`;

@@ -1,54 +1,19 @@
 (function () {
     const DEFAULT_ENDPOINT = "https://ai.d-verse.in/api/chat";
     const DEFAULT_MODEL = "mercury-2.5";
-    const CONFIG_KEY = "dtunes_ai_config";
-    const CACHE_KEY = "dtunes_ai_playlists_cache";
+    const CACHE_KEY = "dtunes_ai_playlists_cache_v2";
 
-    function getConfig() {
-        try {
-            const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || '{}');
-            return {
-                endpoint: saved.endpoint || DEFAULT_ENDPOINT,
-                model: saved.model || DEFAULT_MODEL,
-                apiKey: saved.apiKey || '',
-                provider: saved.provider || 'inception',
-                autoPlayEnabled: saved.autoPlayEnabled !== false
-            };
-        } catch (e) {
-            return {
-                endpoint: DEFAULT_ENDPOINT,
-                model: DEFAULT_MODEL,
-                apiKey: '',
-                provider: 'inception',
-                autoPlayEnabled: true
-            };
-        }
-    }
+    // Curated seed taste profile when user is brand new with 0 history
+    const SEED_PROFILE = [
+        { title: "Starboy", artist: "The Weeknd" },
+        { title: "Blinding Lights", artist: "The Weeknd" },
+        { title: "Levitating", artist: "Dua Lipa" },
+        { title: "Kesariya", artist: "Arijit Singh" },
+        { title: "Get Lucky", artist: "Daft Punk" },
+        { title: "Cruel Summer", artist: "Taylor Swift" }
+    ];
 
-    function saveConfig(cfg) {
-        localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
-    }
-
-    const state = {
-        lastPrompt: '',
-        lastResponse: '',
-        lastError: null,
-        isGenerating: false,
-        debugLogs: []
-    };
-
-    function log(msg, type = 'info') {
-        const time = new Date().toLocaleTimeString();
-        const entry = { time, msg, type };
-        state.debugLogs.unshift(entry);
-        if (state.debugLogs.length > 100) state.debugLogs.pop();
-        console.log(`[D-Tunes AI ${type.toUpperCase()}] ${msg}`);
-        if (window.devOptions && window.devOptions.updateUI) {
-            window.devOptions.updateUI();
-        }
-    }
-
-    async function fetchWithRetry(url, options, retries = 2, delay = 1000) {
+    async function fetchWithRetry(url, options, retries = 2, delay = 800) {
         for (let i = 0; i <= retries; i++) {
             try {
                 const res = await fetch(url, options);
@@ -59,26 +24,15 @@
                 return res;
             } catch (e) {
                 if (i === retries) throw e;
-                log(`Attempt ${i + 1} failed (${e.message}), retrying in ${delay * (i + 1)}ms...`, 'warn');
-                await new Promise(res => setTimeout(res, delay * Math.pow(1.5, i)));
+                await new Promise(res => setTimeout(res, delay * (i + 1)));
             }
         }
     }
 
-    async function callLLM(prompt, systemPrompt = "You are an expert music AI that outputs strictly raw JSON without markdown formatting.") {
-        const cfg = getConfig();
-        state.lastPrompt = prompt;
-        state.lastError = null;
-        log(`Sending request to ${cfg.endpoint} (Provider: ${cfg.provider}, Model: ${cfg.model})`, 'info');
-
-        const headers = { 'Content-Type': 'application/json' };
-        if (cfg.apiKey) {
-            headers['Authorization'] = `Bearer ${cfg.apiKey}`;
-        }
-
+    async function callLLM(prompt, systemPrompt = "You are an elite music curation director that outputs strictly raw JSON without markdown formatting.") {
         const payload = {
-            model: cfg.model,
-            provider: cfg.provider,
+            model: DEFAULT_MODEL,
+            provider: "inception",
             stream: false,
             messages: [
                 { role: "system", content: systemPrompt },
@@ -86,109 +40,94 @@
             ]
         };
 
-        try {
-            const res = await fetchWithRetry(cfg.endpoint, {
-                method: 'POST',
-                headers,
-                body: JSON.stringify(payload)
-            });
+        const res = await fetchWithRetry(DEFAULT_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
 
-            const data = await res.json();
-            state.lastResponse = JSON.stringify(data, null, 2);
-
-            let content = '';
-            if (data.choices && data.choices[0] && data.choices[0].message) {
-                content = data.choices[0].message.content || '';
-            } else if (data.content) {
-                content = data.content;
-            } else if (typeof data === 'string') {
-                content = data;
-            } else {
-                throw new Error("Unexpected LLM response format: " + JSON.stringify(data));
-            }
-
-            // Clean any potential markdown wrapping
-            let clean = content.trim();
-            if (clean.startsWith('```json')) {
-                clean = clean.replace(/^```json\s*/i, '').replace(/\s*```$/, '');
-            } else if (clean.startsWith('```')) {
-                clean = clean.replace(/^```\s*/, '').replace(/\s*```$/, '');
-            }
-
-            log("LLM successfully returned response (" + clean.length + " chars)", 'info');
-            return JSON.parse(clean);
-        } catch (err) {
-            state.lastError = err.message;
-            log(`LLM Error: ${err.message}`, 'error');
-            throw err;
+        const data = await res.json();
+        let content = '';
+        if (data.choices && data.choices[0] && data.choices[0].message) {
+            content = data.choices[0].message.content || '';
+        } else if (data.content) {
+            content = data.content;
+        } else if (typeof data === 'string') {
+            content = data;
+        } else {
+            throw new Error("Unexpected LLM response");
         }
+
+        // Clean any markdown backticks
+        let clean = content.trim();
+        if (clean.startsWith('```json')) {
+            clean = clean.replace(/^```json\s*/i, '').replace(/\s*```$/, '');
+        } else if (clean.startsWith('```')) {
+            clean = clean.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+
+        return JSON.parse(clean);
     }
 
-    // High quality sample profile when user is brand new
-    const SAMPLE_PROFILE = [
-        { title: "Starboy", artist: "The Weeknd" },
-        { title: "Blinding Lights", artist: "The Weeknd" },
-        { title: "Levitating", artist: "Dua Lipa" },
-        { title: "Kesariya", artist: "Arijit Singh" },
-        { title: "Get Lucky", artist: "Daft Punk" },
-        { title: "Cruel Summer", artist: "Taylor Swift" }
-    ];
-
-    async function generateCustomPlaylists(history = [], likedSongs = [], librarySongs = [], force = false) {
-        // Check cache if not forcing refresh
+    async function generateCustomPlaylists(history = [], likedSongs = [], librarySongs = [], dislikedSongs = [], force = false) {
         if (!force) {
             try {
                 const cached = localStorage.getItem(CACHE_KEY);
                 if (cached) {
-                    const parsedCache = JSON.parse(cached);
-                    if (parsedCache.timestamp && (Date.now() - parsedCache.timestamp < 3600000) && Array.isArray(parsedCache.playlists) && parsedCache.playlists.length > 0) {
-                        log("Loaded playlists from cache (" + parsedCache.playlists.length + " mixes)", 'info');
-                        return parsedCache.playlists;
+                    const parsed = JSON.parse(cached);
+                    if (parsed.timestamp && (Date.now() - parsed.timestamp < 3600000) && Array.isArray(parsed.playlists) && parsed.playlists.length > 0) {
+                        return parsed.playlists;
                     }
                 }
             } catch (e) {}
         }
 
-        state.isGenerating = true;
-
-        // Build taste profile representation
         let effectiveHistory = history;
         let effectiveLiked = likedSongs;
         let effectiveLib = librarySongs;
+        let effectiveDisliked = dislikedSongs;
 
-        const totalTracks = (effectiveHistory.length || 0) + (effectiveLiked.length || 0) + (effectiveLib.length || 0);
-        if (totalTracks === 0) {
-            log("No user history detected. Using curated taste seed for initial generation.", 'warn');
-            effectiveLiked = SAMPLE_PROFILE;
+        const totalPositive = (effectiveHistory.length || 0) + (effectiveLiked.length || 0) + (effectiveLib.length || 0);
+        if (totalPositive === 0) {
+            effectiveLiked = SEED_PROFILE;
         }
 
-        const historyStr = (effectiveHistory || []).slice(-15).map(h => `"${h.name || h.title}" by ${h.artist || 'Artist'}`).join(" | ");
-        const likedStr = (effectiveLiked || []).slice(-15).map(l => `"${l.name || l.title}" by ${l.artist || 'Artist'}`).join(", ");
-        const libStr = (effectiveLib || []).slice(-15).map(l => `"${l.name || l.title}" by ${l.artist || 'Artist'}`).join(", ");
+        const historyList = (effectiveHistory || []).slice(-20).map(h => `"${h.name || h.title}" by ${h.artist || 'Artist'}`);
+        const likedList = (effectiveLiked || []).map(l => `"${l.name || l.title}" by ${l.artist || 'Artist'}`);
+        const libList = (effectiveLib || []).map(l => `"${l.name || l.title}" by ${l.artist || 'Artist'}`);
+        const dislikedList = (effectiveDisliked || []).map(d => typeof d === 'object' ? `"${d.name || d.title}" by ${d.artist || 'Artist'}` : String(d));
 
-        const prompt = `You are an expert Music AI recommendation engine. Analyze this user's music taste profile:
-      
-1. RECENT HISTORY: [${historyStr || 'None'}]
-2. EXPLICITLY LIKED SONGS: [${likedStr || 'None'}]
-3. ADDED TO LIBRARY: [${libStr || 'None'}]
+        const systemPrompt = "You are an elite Music Curation Director and Algorithmic DJ, acclaimed for deep musicology, harmonic continuity, acoustic texture matching, and bespoke human-like discovery. You output strictly raw JSON without markdown backticks.";
 
-Generate 6 highly personalized playlist categories that match or expand upon their music taste.
-Include a creative mix of these categories:
-- "New & Trending Hits"
-- "Late Night Chill & Lo-Fi"
-- "High Energy & Workout Beats"
-- "Deep Focus & Flow State"
-- "Acoustic & Soulful Reprises"
-- "More Like Favorite Artists"
+        const prompt = `Analyze this listener's music taste profile with extreme precision:
 
-Format STRICTLY as raw JSON. No markdown backticks.
+1. TOP LIKED TRACKS (Highest positive affinity - match subgenres, vocal characteristics, and energy):
+[${likedList.length > 0 ? likedList.join(', ') : 'None yet'}]
+
+2. SAVED TO LIBRARY (Musical foundation):
+[${libList.length > 0 ? libList.join(', ') : 'None yet'}]
+
+3. RECENT STREAMS (Immediate listening rotation):
+[${historyList.length > 0 ? historyList.join(' | ') : 'None yet'}]
+
+4. STRICT EXCLUSIONS / DISLIKES (NEVER recommend these tracks or artists, and avoid their signature elements):
+[${dislikedList.length > 0 ? dislikedList.join(', ') : 'None'}]
+
+CURATION INSTRUCTIONS:
+- Generate 6 distinct, immersive personalized playlist categories matching different moods and facets of their taste.
+- Ensure diversity across all 6 mixes: do NOT repeat the same artist across multiple mixes.
+- Each mix must contain EXACTLY 5 real, popular, widely known songs that exist on streaming platforms.
+- Curate evocative, human playlist titles and descriptions that feel like Spotify/Apple Music editorial mixes (e.g. "Midnight Resonance", "Velvet Acoustic", "Sun-Drenched Drive", "Deep Focus & Flow", "High Voltage Anthem", "Nostalgia & Reprises").
+- Strictly obey all negative exclusions.
+
+Format strictly as JSON without markdown.
 Schema:
 {
   "playlists": [
     {
-      "categoryTitle": "String (Section Header)",
-      "title": "String (Creative Mix Name)",
-      "description": "String (Subtitle vibe)",
+      "categoryTitle": "String (e.g. Late Night Resonance)",
+      "title": "String (e.g. After Hours Vibe)",
+      "description": "String (Short evocative mood description)",
       "styleIndex": Number (0 to 6),
       "songs": [
         { "title": "String", "artist": "String" }
@@ -198,88 +137,57 @@ Schema:
 }`;
 
         try {
-            const parsed = await callLLM(prompt);
+            const parsed = await callLLM(prompt, systemPrompt);
             const playlists = parsed.playlists || [];
             if (playlists.length > 0) {
                 localStorage.setItem(CACHE_KEY, JSON.stringify({
                     timestamp: Date.now(),
                     playlists
                 }));
+                return playlists;
             }
-            state.isGenerating = false;
-            return playlists;
         } catch (e) {
-            state.isGenerating = false;
-            log(`Playlist generation failed: ${e.message}`, 'error');
-            // Graceful fallback to rich starter playlists so the UI never breaks
-            return getFallbackPlaylists();
+            console.warn("[AI] Custom playlists generation failed, using fallback:", e);
         }
+
+        return getFallbackPlaylists();
     }
 
-    async function generateQueueAutoplay(seedTitle, seedArtist, count = 8) {
-        log(`Generating ${count} AI autoplay songs based on "${seedTitle}" by ${seedArtist}...`, 'info');
-        const prompt = `The user is listening to "${seedTitle}" by "${seedArtist}".
-Recommend ${count} real, highly popular, and stylistically similar songs to queue up next for a continuous listening session.
-Format strictly as JSON without markdown.
-Schema:
+    async function generateQueueAutoplay(seedTitle, seedArtist, count = 8, dislikedSongs = []) {
+        const dislikedList = (dislikedSongs || []).map(d => typeof d === 'object' ? `"${d.name || d.title}" by ${d.artist || 'Artist'}` : String(d));
+        
+        const prompt = `The listener is currently enjoying "${seedTitle}" by "${seedArtist}".
+Strict exclusions (never recommend): [${dislikedList.length > 0 ? dislikedList.join(', ') : 'None'}]
+
+Recommend ${count} real, popular, and stylistically similar songs that maintain seamless harmonic, tempo, and emotional continuity with this track for an uninterrupted continuous listening session.
+Ensure artist variety (do not repeat the same artist more than once).
+Return ONLY raw JSON with schema:
 {
   "songs": [
-    { "title": "String", "artist": "String" }
+    { "title": "Song Name", "artist": "Artist Name" }
   ]
 }`;
+
         try {
             const parsed = await callLLM(prompt, "You output strictly raw JSON with schema {\"songs\": [{\"title\": \"string\", \"artist\": \"string\"}]}. No markdown.");
-            const list = parsed.songs || [];
-            log(`AI Autoplay returned ${list.length} song recommendations`, 'info');
-            return list;
+            return parsed.songs || [];
         } catch (e) {
-            log(`Queue autoplay generation failed: ${e.message}`, 'error');
+            console.warn("[AI] Queue autoplay generation error:", e);
             return [];
         }
     }
 
-    async function generateNextSimilar(currentTrackTitle, currentTrackArtist) {
-        log(`Generating infinite radio transition for "${currentTrackTitle}" by ${currentTrackArtist}...`, 'info');
-        const prompt = `The user is listening to "${currentTrackTitle}" by "${currentTrackArtist}". 
-Recommend EXACTLY ONE highly similar track that provides a seamless, pleasing infinite radio transition.
-Return ONLY raw JSON with no markdown:
-{"title": "Song Name", "artist": "Artist Name"}`;
+    async function generateNextSimilar(currentTrackTitle, currentTrackArtist, dislikedSongs = []) {
+        const dislikedList = (dislikedSongs || []).map(d => typeof d === 'object' ? `"${d.name || d.title}" by ${d.artist || 'Artist'}` : String(d));
+        const prompt = `The user is listening to "${currentTrackTitle}" by "${currentTrackArtist}".
+Strict exclusions: [${dislikedList.length > 0 ? dislikedList.join(', ') : 'None'}]
+Recommend EXACTLY ONE highly similar track that provides a seamless, pleasing transition.
+Return ONLY raw JSON: {"title": "Song Name", "artist": "Artist Name"}`;
 
         try {
             const parsed = await callLLM(prompt, "You output strictly raw JSON with keys title and artist. No markdown.");
-            if (parsed && parsed.title) {
-                log(`AI Radio recommended: "${parsed.title}" by ${parsed.artist}`, 'info');
-                return parsed;
-            }
+            return parsed;
         } catch (e) {
-            log(`Infinite radio recommendation failed: ${e.message}`, 'error');
-        }
-        return null;
-    }
-
-    async function generatePlaylistFromPrompt(userPrompt) {
-        if (!userPrompt || !userPrompt.trim()) return null;
-        log(`Generating custom playlist from prompt: "${userPrompt}"...`, 'info');
-        const prompt = `Create a custom 6-song music playlist based on this exact user request: "${userPrompt}".
-Ensure the songs are real and widely known.
-Return ONLY raw JSON with no markdown:
-{
-  "title": "String (Catchy Mix Title)",
-  "description": "String (Subtitle)",
-  "styleIndex": Number (0 to 6),
-  "songs": [
-    { "title": "String", "artist": "String" }
-  ]
-}`;
-
-        try {
-            const parsed = await callLLM(prompt);
-            return {
-                id: 'ai_' + Date.now(),
-                ...parsed
-            };
-        } catch (e) {
-            log(`Prompt-based playlist creation failed: ${e.message}`, 'error');
             return null;
         }
     }
@@ -287,71 +195,68 @@ Return ONLY raw JSON with no markdown:
     function getFallbackPlaylists() {
         return [
             {
-                categoryTitle: "Trending Global Hits",
-                title: "Top Charting Resonance",
-                description: "Today's most listened global hits",
+                categoryTitle: "After Hours Resonance",
+                title: "Midnight Velvet",
+                description: "Deep nocturnal rhythms and atmospheric melodies",
                 styleIndex: 0,
                 songs: [
                     { title: "Blinding Lights", artist: "The Weeknd" },
                     { title: "Levitating", artist: "Dua Lipa" },
-                    { title: "As It Was", artist: "Harry Styles" },
+                    { title: "Midnight City", artist: "M83" },
+                    { title: "Get Lucky", artist: "Daft Punk" },
                     { title: "Starboy", artist: "The Weeknd" }
                 ]
             },
             {
-                categoryTitle: "Chill Vibes & Relaxation",
-                title: "Midnight Lo-Fi & Soul",
-                description: "Calm frequencies for evening unwinding",
+                categoryTitle: "Golden Hour Glow",
+                title: "Sun-Drenched Waves",
+                description: "Warm guitars and indie-pop sunset melodies",
                 styleIndex: 1,
                 songs: [
-                    { title: "Lovely", artist: "Billie Eilish & Khalid" },
                     { title: "Heat Waves", artist: "Glass Animals" },
+                    { title: "As It Was", artist: "Harry Styles" },
                     { title: "Sunflower", artist: "Post Malone & Swae Lee" },
-                    { title: "Stay", artist: "The Kid LAROI & Justin Bieber" }
+                    { title: "Stay", artist: "The Kid LAROI & Justin Bieber" },
+                    { title: "Lovely", artist: "Billie Eilish & Khalid" }
                 ]
             },
             {
-                categoryTitle: "Energetic Beats",
-                title: "Peak Energy & Flow",
-                description: "Pump-up rhythms to keep momentum high",
+                categoryTitle: "Acoustic & Soulful",
+                title: "Raw & Unplugged",
+                description: "Intimate vocals, warm acoustic guitar, and piano warmth",
                 styleIndex: 2,
+                songs: [
+                    { title: "Kesariya", artist: "Arijit Singh" },
+                    { title: "Shallow", artist: "Lady Gaga & Bradley Cooper" },
+                    { title: "Someone Like You", artist: "Adele" },
+                    { title: "All of Me", artist: "John Legend" },
+                    { title: "Riptide", artist: "Vance Joy" }
+                ]
+            },
+            {
+                categoryTitle: "Peak Energy & Flow",
+                title: "Electric Momentum",
+                description: "High-octane electronic beats to fuel your focus and pace",
+                styleIndex: 3,
                 songs: [
                     { title: "One More Time", artist: "Daft Punk" },
                     { title: "Titanium", artist: "David Guetta & Sia" },
                     { title: "Wake Me Up", artist: "Avicii" },
-                    { title: "Closer", artist: "The Chainsmokers" }
+                    { title: "Closer", artist: "The Chainsmokers" },
+                    { title: "Don't Start Now", artist: "Dua Lipa" }
                 ]
             }
         ];
     }
 
-    async function testConnection() {
-        const start = Date.now();
-        try {
-            const res = await callLLM('Output raw JSON: {"status": "ok", "message": "Inception AI connection active"}');
-            const duration = Date.now() - start;
-            return { success: true, duration, data: res };
-        } catch (e) {
-            return { success: false, duration: Date.now() - start, error: e.message };
-        }
-    }
-
     function clearCache() {
         localStorage.removeItem(CACHE_KEY);
-        log("Cleared AI playlists cache", 'info');
     }
 
     window.ai = {
-        getConfig,
-        saveConfig,
-        state,
-        log,
         generateCustomPlaylists,
-        generateNextSimilar,
         generateQueueAutoplay,
-        generatePlaylistFromPrompt,
-        testConnection,
-        clearCache,
-        SAMPLE_PROFILE
+        generateNextSimilar,
+        clearCache
     };
 })();
