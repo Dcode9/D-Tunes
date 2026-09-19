@@ -216,6 +216,28 @@ Schema:
         }
     }
 
+    async function generateQueueAutoplay(seedTitle, seedArtist, count = 8) {
+        log(`Generating ${count} AI autoplay songs based on "${seedTitle}" by ${seedArtist}...`, 'info');
+        const prompt = `The user is listening to "${seedTitle}" by "${seedArtist}".
+Recommend ${count} real, highly popular, and stylistically similar songs to queue up next for a continuous listening session.
+Format strictly as JSON without markdown.
+Schema:
+{
+  "songs": [
+    { "title": "String", "artist": "String" }
+  ]
+}`;
+        try {
+            const parsed = await callLLM(prompt, "You output strictly raw JSON with schema {\"songs\": [{\"title\": \"string\", \"artist\": \"string\"}]}. No markdown.");
+            const list = parsed.songs || [];
+            log(`AI Autoplay returned ${list.length} song recommendations`, 'info');
+            return list;
+        } catch (e) {
+            log(`Queue autoplay generation failed: ${e.message}`, 'error');
+            return [];
+        }
+    }
+
     async function generateNextSimilar(currentTrackTitle, currentTrackArtist) {
         log(`Generating infinite radio transition for "${currentTrackTitle}" by ${currentTrackArtist}...`, 'info');
         const prompt = `The user is listening to "${currentTrackTitle}" by "${currentTrackArtist}". 
@@ -326,6 +348,7 @@ Return ONLY raw JSON with no markdown:
         log,
         generateCustomPlaylists,
         generateNextSimilar,
+        generateQueueAutoplay,
         generatePlaylistFromPrompt,
         testConnection,
         clearCache,

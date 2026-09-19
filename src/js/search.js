@@ -677,3 +677,6 @@
             }
         };
 
+
+window.homeView = homeView;
+window.searchManager = searchManager;

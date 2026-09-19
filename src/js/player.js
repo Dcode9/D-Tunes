@@ -693,6 +693,56 @@
                     if (ui.showToast) ui.showToast('Failed to load album tracks', 'error');
                 }
             },
+            triggerQueueAutoplay: async (count = 8) => {
+                const current = state.currentTrack || (state.playHistory && state.playHistory[0]);
+                const seedTitle = current?.name || current?.title || 'Starboy';
+                const seedArtist = current?.artist || current?.primary_artists || 'The Weeknd';
+
+                if (window.ui?.showToast) ui.showToast(`AI Autoplay: Finding ${count} songs...`);
+
+                try {
+                    let songList = [];
+                    if (window.ai && window.ai.generateQueueAutoplay) {
+                        songList = await window.ai.generateQueueAutoplay(seedTitle, seedArtist, count);
+                    }
+
+                    if (!songList || songList.length === 0) {
+                        if (window.jiosaavnAPI && jiosaavnAPI.searchSongs) {
+                            songList = await jiosaavnAPI.searchSongs(`${seedArtist} hits`, count);
+                        }
+                    }
+
+                    const hydrated = [];
+                    for (const s of songList) {
+                        if (s.id && s.url) {
+                            hydrated.push(s);
+                        } else if (window.aiHome && window.aiHome.searchTrackData) {
+                            const track = await window.aiHome.searchTrackData(s.title || s.name, s.artist);
+                            if (track && track.id) hydrated.push(track);
+                        } else if (window.jiosaavnAPI && jiosaavnAPI.searchSongs) {
+                            const results = await jiosaavnAPI.searchSongs(`${s.title} ${s.artist}`, 1);
+                            if (results && results.length > 0) hydrated.push(results[0]);
+                        }
+                    }
+
+                    if (hydrated.length > 0) {
+                        // Filter out duplicates already in queue
+                        const uniqueToAdd = hydrated.filter(h => !state.queue.some(q => q.id === h.id));
+                        const songsToAdd = uniqueToAdd.length > 0 ? uniqueToAdd : hydrated;
+                        
+                        state.queue.push(...songsToAdd);
+                        ui.renderQueue();
+                        primeNextTrack();
+                        persist.save();
+                        if (window.ui?.showToast) ui.showToast(`✨ AI Autoplay: Added ${songsToAdd.length} songs to Queue!`);
+                        return true;
+                    }
+                } catch (err) {
+                    console.error("[Autoplay] Failed to queue autoplay tracks:", err);
+                }
+                if (window.ui?.showToast) ui.showToast("Could not generate autoplay tracks", "error");
+                return false;
+            },
             clearQueue: () => {
                 state.userQueue = [];
                 state.queue = state.currentTrack ? [state.currentTrack] : [];
@@ -831,3 +881,5 @@
             cloudLibrary.flushPlaybackState(true);
         });
 
+
+window.player = player;

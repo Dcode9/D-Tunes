@@ -375,15 +375,13 @@
 
         testAutoplay: async () => {
             if (!state.currentTrack) {
-                // If no song playing, pick one from history or sample
                 const sampleSong = (state.playHistory && state.playHistory[0]) || { name: "Blinding Lights", artist: "The Weeknd" };
                 state.currentTrack = sampleSong;
             }
-            if (window.homeView && window.homeView.autoplayNextIntelligentTracks) {
-                const success = await window.homeView.autoplayNextIntelligentTracks();
-                if (success) {
-                    if (window.ui?.showToast) ui.showToast("Autoplay next track added to queue!");
-                }
+            if (window.player && window.player.triggerQueueAutoplay) {
+                await window.player.triggerQueueAutoplay(8);
+            } else if (window.homeView && window.homeView.autoplayNextIntelligentTracks) {
+                await window.homeView.autoplayNextIntelligentTracks();
             }
             devOptions.updateUI();
         },

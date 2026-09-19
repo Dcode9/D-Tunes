@@ -537,16 +537,21 @@
     <!-- MAIN SCROLLABLE CONTENT -->
     <main id="main-container" class="h-screen overflow-y-auto pt-24 md:pt-32 pb-32 md:pb-48">
         
-                <!-- ================= HOME VIEW ================= -->
+                        <!-- ================= HOME VIEW ================= -->
         <div id="view-home" class="pb-12">
             <!-- AI Recommendation Engine Section -->
-            <section id="section-ai-hub" class="mb-8">
+            <section id="section-ai-hub" class="mb-10">
                 <div id="ai-hub-container"></div>
             </section>
 
             <!-- Trending Section -->
             <section id="section-trending" class="mb-12">
-                <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8">Trending Right Now</h2>
+                <div class="flex items-center justify-between px-4 md:px-8 mb-6">
+                    <div>
+                        <h2 class="text-xl md:text-2xl font-bold text-white tracking-tight">Trending Right Now</h2>
+                        <p class="text-xs text-gray-400 mt-1">Today's most played global and regional hits.</p>
+                    </div>
+                </div>
                 <div class="relative group/track">
                     <div class="row-blur-left"></div>
                     <div id="trending-grid" class="horizontal-scroll"></div>
@@ -554,73 +559,18 @@
                 </div>
             </section>
 
-            <!-- Quick Picks Section -->
-            <section id="section-quick-picks" class="mb-12 hidden">
-                <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8">Quick Picks For You</h2>
-                <div class="relative group/track">
-                    <div class="row-blur-left"></div>
-                    <div id="quick-picks-grid" class="horizontal-scroll"></div>
-                    <div class="row-blur-right"></div>
-                </div>
-            </section>
-
-            <!-- Discover Mixes Section -->
-            <section id="section-discover" class="mb-12">
-                <div class="flex items-center justify-between px-4 md:px-8 mb-6">
-                    <div>
-                        <h2 class="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
-                            <svg class="w-6 h-6 text-[var(--accent-color)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                            Discover Mixes
-                        </h2>
-                        <p class="text-xs text-gray-400 mt-1">Made for you • Updated daily based on your listening habits & preferences</p>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <select id="preferred-language-select" onchange="localStorage.setItem('preferredLanguage', this.value); if(homeView.renderDiscoverSection) homeView.renderDiscoverSection();" class="bg-white/10 border border-white/10 rounded-full px-3 py-1.5 text-xs text-white focus:outline-none hidden sm:block">
-                            <option value="">Auto Language</option>
-                            <option value="hindi">Hindi</option>
-                            <option value="english">English</option>
-                            <option value="tamil">Tamil</option>
-                            <option value="telugu">Telugu</option>
-                            <option value="punjabi">Punjabi</option>
-                        </select>
-                        <button onclick="if(homeView.renderDiscoverSection) homeView.renderDiscoverSection(true)" class="text-xs font-bold px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 transition flex items-center gap-1.5 text-white">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                            Refresh
-                        </button>
-                    </div>
-                </div>
-                <div class="relative group/track">
-                    <div class="row-blur-left"></div>
-                    <div id="discover-grid" class="horizontal-scroll"></div>
-                    <div class="row-blur-right"></div>
-                </div>
-            </section>
-
             <!-- Recently Played Section -->
             <section id="section-recent" class="mb-12 hidden">
-                <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8">Recently Played</h2>
+                <div class="flex items-center justify-between px-4 md:px-8 mb-6">
+                    <div>
+                        <h2 class="text-xl md:text-2xl font-bold text-white tracking-tight">Recently Played</h2>
+                        <p class="text-xs text-gray-400 mt-1">Songs you listened to recently.</p>
+                    </div>
+                </div>
                 <div class="relative group/track">
                     <div class="row-blur-left"></div>
                     <div id="recent-grid" class="horizontal-scroll"></div>
                     <div class="row-blur-right"></div>
-                </div>
-            </section>
-
-            <!-- For You Section -->
-            <section id="section-for-you" class="mb-12 hidden">
-                <div class="flex items-center justify-between px-4 md:px-8 mb-6">
-                    <div>
-                        <h2 class="text-xl md:text-2xl font-bold text-white">Rule-based Picks</h2>
-                        <p class="text-xs text-gray-400 mt-1">From listening history.</p>
-                    </div>
-                </div>
-                <div class="relative group/track">
-                    <div class="row-blur-left"></div>
-                    <div id="for-you-grid" class="horizontal-scroll"></div>
-                    <div class="row-blur-right"></div>
-                </div>
-                <div id="for-you-actions" class="hidden px-4 md:px-8 mt-5 flex flex-wrap items-center gap-3">
-                    <span id="for-you-count" class="text-xs text-gray-400"></span>
                 </div>
             </section>
         </div>
@@ -1015,12 +965,18 @@
                 <!-- 2. BOTTOM ITEM: Expanding Lists Container -->
                 <div id="queue-expandable-area" class="order-2 hidden md:flex">
                     <div id="queue-full-content">
-                        <div id="queue-tabs" class="flex items-center justify-between gap-3 px-4 pt-4 pb-2 border-b border-white/5 flex-shrink-0 relative z-20">
-                            <div class="flex items-center gap-4 min-w-0">
+                        <div id="queue-tabs" class="flex items-center justify-between gap-2 px-4 pt-4 pb-2 border-b border-white/5 flex-shrink-0 relative z-20">
+                            <div class="flex items-center gap-3 min-w-0">
                                 <button class="text-xs font-bold uppercase tracking-wider text-white" id="tab-upnext" onclick="ui.switchQueueTab('upnext')">Up Next</button>
                                 <button class="text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-300" id="tab-history" onclick="ui.switchQueueTab('history')">History</button>
                             </div>
-                            <button id="btn-clear-queue" onclick="player.clearQueue(); event.stopPropagation();" class="text-[10px] font-black uppercase tracking-wider text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-full px-3 py-1.5 transition disabled:opacity-40 disabled:pointer-events-none" disabled>Clear Queue</button>
+                            <div class="flex items-center gap-1.5 flex-shrink-0">
+                                <button id="btn-queue-autoplay" onclick="player.triggerQueueAutoplay(8); event.stopPropagation();" class="text-[10px] font-black uppercase tracking-wider text-emerald-300 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 rounded-full px-3 py-1.5 transition flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer" title="AI Autoplay: Ask Inception AI to queue 5-10 similar songs">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                                    <span>✨ Autoplay</span>
+                                </button>
+                                <button id="btn-clear-queue" onclick="player.clearQueue(); event.stopPropagation();" class="text-[10px] font-black uppercase tracking-wider text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-full px-2.5 py-1.5 transition disabled:opacity-40 disabled:pointer-events-none" disabled>Clear</button>
+                            </div>
                         </div>
                         <div class="pt-2 pb-1 overflow-y-auto custom-scrollbar flex flex-col gap-1 flex-1 px-2" id="queue-list"></div>
                         <div class="pt-2 pb-1 overflow-y-auto custom-scrollbar flex flex-col gap-1 flex-1 px-2 hidden" id="history-list"></div>

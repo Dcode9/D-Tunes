@@ -17,9 +17,9 @@
         if (searchCache.has(query)) return searchCache.get(query);
 
         try {
-            // Priority 1: JioSaavn API in D-Tunes
-            if (window.jiosaavnAPI && window.jiosaavnAPI.searchSongs) {
-                const results = await window.jiosaavnAPI.searchSongs(query, 1);
+            // Priority 1: JioSaavn API
+            if (window.jiosaavnAPI && jiosaavnAPI.searchSongs) {
+                const results = await jiosaavnAPI.searchSongs(query, 1);
                 if (results && results.length > 0 && results[0]) {
                     const song = results[0];
                     searchCache.set(query, song);
@@ -27,7 +27,7 @@
                 }
             }
 
-            // Priority 2: iTunes API (from user reference code)
+            // Priority 2: iTunes API
             const encoded = encodeURIComponent(query);
             const res = await fetch(`https://itunes.apple.com/search?term=${encoded}&entity=song&limit=1`);
             const data = await res.json();
@@ -50,7 +50,6 @@
             console.warn(`[AI Hub] Song search failed for "${query}":`, e);
         }
 
-        // Fallback placeholder
         const fallback = {
             id: 'gen_' + Math.random().toString(36).slice(2, 9),
             name: title,
@@ -74,9 +73,9 @@
         const liked = state.likedIds || [];
         const lib = state.libraryIds || [];
 
-        // Show generating state
+        // Show generating banner
         container.innerHTML = `
-            <div class="px-4 md:px-8 pt-4 pb-8 animate-fade-in">
+            <div class="px-4 md:px-8 pt-4 pb-6 animate-fade-in">
                 <div class="flex items-center justify-between mb-6">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500/20 to-purple-600/30 border border-amber-500/30 flex items-center justify-center shadow-lg shadow-amber-500/10">
@@ -87,23 +86,23 @@
                                 <h2 class="text-xl md:text-2xl font-black text-white tracking-tight">AI Recommendation Engine</h2>
                                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider">Inception Mercury-2.5</span>
                             </div>
-                            <p class="text-xs text-neutral-400 mt-0.5">Analyzing your unique taste profile to craft 6 personalized mixes...</p>
+                            <p class="text-xs text-neutral-400 mt-0.5">Live personalized mixes tailored to your listening habits...</p>
                         </div>
                     </div>
                 </div>
 
-                <div class="flex flex-col items-center justify-center py-16 px-4 text-center rounded-2xl bg-neutral-900/40 border border-white/5 shadow-2xl">
-                    <div class="relative mb-5">
+                <div class="flex flex-col items-center justify-center py-14 px-4 text-center rounded-2xl bg-neutral-900/40 border border-white/5 shadow-2xl">
+                    <div class="relative mb-4">
                         <div class="absolute inset-0 bg-amber-500/20 blur-xl rounded-full"></div>
-                        <div class="w-16 h-16 rounded-full border-2 border-amber-500/30 border-t-amber-400 animate-spin flex items-center justify-center relative z-10">
-                            <span class="text-xl animate-pulse">🎵</span>
+                        <div class="w-14 h-14 rounded-full border-2 border-amber-500/30 border-t-amber-400 animate-spin flex items-center justify-center relative z-10">
+                            <span class="text-lg animate-pulse">🎵</span>
                         </div>
                     </div>
-                    <h3 class="text-lg font-bold text-white mb-1">Curating Your Personalized Hub</h3>
-                    <p class="text-xs text-neutral-400 max-w-md mb-2">Connecting to Inception LLM & analyzing streams, likes, and music affinity...</p>
+                    <h3 class="text-base font-bold text-white mb-1">Generating Your Custom Mixes</h3>
+                    <p class="text-xs text-neutral-400 max-w-md mb-2">Analyzing your profile & querying Inception LLM...</p>
                     <div class="flex items-center gap-2 text-[11px] font-mono text-amber-400/80 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
                         <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                        Model: Inception Mercury-2.5 (d-AI Engine)
+                        Inception Mercury-2.5 Active
                     </div>
                 </div>
             </div>
@@ -122,7 +121,6 @@
             }
 
             aiPlaylistsStore.clear();
-
             let sectionsHtml = '';
 
             for (let pIdx = 0; pIdx < playlists.length; pIdx++) {
@@ -130,14 +128,13 @@
                 const playlistId = 'pl_ai_' + pIdx;
                 const style = COVER_STYLES[(playlist.styleIndex || pIdx) % COVER_STYLES.length];
 
-                // Hydrate songs in parallel for performance
+                // Hydrate songs in parallel
                 const rawSongs = playlist.songs || [];
                 const hydratedSongs = await Promise.all(
                     rawSongs.map(s => searchTrackData(s.title, s.artist))
                 );
                 const validSongs = hydratedSongs.filter(Boolean);
 
-                // Store in memory for one-click playlist playback
                 aiPlaylistsStore.set(playlistId, {
                     ...playlist,
                     songs: validSongs
@@ -149,71 +146,67 @@
                     collageArts.push(FALLBACK_ART);
                 }
 
-                // Render individual song cards in the shelf
-                const songCardsHtml = validSongs.map(song => {
-                    const storeId = songStore.add(song);
-                    return `
-                        <div class="w-36 md:w-44 flex-shrink-0 cursor-pointer group snap-start bg-neutral-900/60 p-2.5 rounded-xl border border-white/5 hover:bg-neutral-800/80 hover:border-white/10 transition-all shadow-lg flex flex-col" onclick="playSongById('${storeId}')">
-                            <div class="relative aspect-square rounded-lg overflow-hidden mb-2.5 bg-black/40 shadow-md">
-                                <img src="${song.img || FALLBACK_ART}" alt="${utils.escapeHtml(song.name || song.title)}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" loading="lazy" onerror="this.src='${FALLBACK_ART}'" />
-                                <div class="absolute right-2 bottom-2 bg-[var(--accent-color)] rounded-full p-2.5 opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0 shadow-xl">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="black"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                                </div>
-                            </div>
-                            <div class="w-full min-w-0 flex-1">
-                                <h4 class="font-bold text-xs md:text-sm text-white truncate group-hover:text-[var(--accent-color)] transition-colors">${utils.escapeHtml(song.name || song.title)}</h4>
-                                <p class="text-[11px] text-neutral-400 truncate mt-0.5">${utils.escapeHtml(song.artist || 'Unknown')}</p>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
+                // Render songs using NATIVE ui.createCard(song) so song cards look EXACTLY as before!
+                const songCardsHtml = validSongs.map(song => ui.createCard(song)).join('');
 
                 sectionsHtml += `
-                    <div class="space-y-3 mb-8">
-                        <div class="flex items-center justify-between">
-                            <h3 class="text-lg md:text-xl font-black text-white tracking-tight flex items-center gap-2">
-                                <span>${utils.escapeHtml(playlist.categoryTitle || 'Curated For You')}</span>
-                            </h3>
-                            <button onclick="window.aiHome.playEntirePlaylist('${playlistId}')" class="text-xs text-neutral-400 hover:text-[var(--accent-color)] font-bold transition flex items-center gap-1">
-                                <span>Play All</span>
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    <div class="mb-10">
+                        <div class="flex items-center justify-between px-4 md:px-8 mb-4">
+                            <div>
+                                <h3 class="text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                                    <span>${utils.escapeHtml(playlist.categoryTitle || 'Curated Mix')}</span>
+                                </h3>
+                                ${playlist.description ? `<p class="text-xs text-gray-400 mt-0.5">${utils.escapeHtml(playlist.description)}</p>` : ''}
+                            </div>
+                            <button onclick="window.aiHome.playEntirePlaylist('${playlistId}')" class="text-xs font-bold px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition flex items-center gap-1.5 shadow-sm">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                <span>Play Mix</span>
                             </button>
                         </div>
 
-                        <div class="flex gap-4 overflow-x-auto pb-3 scrollbar-hide -mx-4 px-4 md:-mx-8 md:px-8 snap-x snap-mandatory">
-                            <!-- Dynamic 2x2 Collage Cover (From React design) -->
-                            <div class="snap-start relative w-40 h-52 sm:w-44 sm:h-56 md:w-52 md:h-64 rounded-2xl overflow-hidden group cursor-pointer shadow-2xl flex-shrink-0 border border-white/10 hover:border-amber-400/50 transition-all transform hover:scale-[1.02]" onclick="window.aiHome.playEntirePlaylist('${playlistId}')">
-                                <div class="absolute inset-0 grid grid-cols-2 grid-rows-2">
-                                    <img src="${collageArts[0]}" class="w-full h-full object-cover" />
-                                    <img src="${collageArts[1]}" class="w-full h-full object-cover" />
-                                    <img src="${collageArts[2]}" class="w-full h-full object-cover" />
-                                    <img src="${collageArts[3]}" class="w-full h-full object-cover" />
-                                </div>
-                                <div class="absolute inset-0 bg-gradient-to-br ${style.bg} ${style.blend} opacity-90 group-hover:opacity-75 transition-opacity"></div>
-                                <div class="absolute inset-0 bg-black/30 backdrop-blur-[1px]"></div>
-                                
-                                <div class="absolute inset-0 p-4 flex flex-col ${style.textPos} z-10">
-                                    <span class="text-[9px] font-black uppercase tracking-widest text-amber-300/90 mb-1 px-2 py-0.5 rounded bg-black/40 backdrop-blur-sm self-start">AI Mix</span>
-                                    <h3 class="text-white font-black text-base sm:text-lg md:text-xl leading-tight drop-shadow-xl uppercase tracking-tighter">${utils.escapeHtml(playlist.title || 'Custom Mix')}</h3>
-                                    ${playlist.description ? `<p class="text-white/80 text-[10px] sm:text-xs mt-1 drop-shadow-md font-medium tracking-wide line-clamp-2">${utils.escapeHtml(playlist.description)}</p>` : ''}
+                        <div class="relative group/track">
+                            <div class="row-blur-left"></div>
+                            <div class="horizontal-scroll px-4 md:px-8 gap-4">
+                                <!-- Dynamic 2x2 Collage Cover (styled to match native scroll-card) -->
+                                <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group/cover relative flex flex-col w-40 flex-shrink-0 cursor-pointer border border-white/10 hover:border-amber-400/50 shadow-xl overflow-hidden" onclick="window.aiHome.playEntirePlaylist('${playlistId}')">
+                                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 bg-black/60 shadow-md">
+                                        <div class="absolute inset-0 grid grid-cols-2 grid-rows-2">
+                                            <img src="${collageArts[0]}" class="w-full h-full object-cover" />
+                                            <img src="${collageArts[1]}" class="w-full h-full object-cover" />
+                                            <img src="${collageArts[2]}" class="w-full h-full object-cover" />
+                                            <img src="${collageArts[3]}" class="w-full h-full object-cover" />
+                                        </div>
+                                        <div class="absolute inset-0 bg-gradient-to-br ${style.bg} ${style.blend} opacity-85 group-hover/cover:opacity-75 transition-opacity"></div>
+                                        <div class="absolute inset-0 bg-black/25 backdrop-blur-[1px]"></div>
+                                        <div class="absolute inset-0 p-2.5 flex flex-col ${style.textPos} z-10">
+                                            <span class="text-[8px] font-black uppercase tracking-widest text-amber-300 px-1.5 py-0.5 rounded bg-black/60 self-start">AI MIX</span>
+                                            <h4 class="text-white font-black text-xs sm:text-sm uppercase leading-tight drop-shadow-md mt-auto">${utils.escapeHtml(playlist.title || 'Mix')}</h4>
+                                        </div>
+                                        <div class="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover/cover:opacity-100 transition z-20">
+                                            <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-2xl transform scale-75 group-hover/cover:scale-100 transition">
+                                                <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div class="w-full min-w-0 flex-1">
+                                        <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">${utils.escapeHtml(playlist.title || 'Custom Mix')}</h3></div>
+                                        <div class="marquee-container w-full mt-1"><p class="text-xs text-amber-400 marquee-text">${validSongs.length} Tracks • AI Curated</p></div>
+                                    </div>
                                 </div>
 
-                                <div class="absolute right-3 bottom-3 bg-[var(--accent-color)] rounded-full p-3.5 opacity-0 group-hover:opacity-100 transition-all transform translate-y-3 group-hover:translate-y-0 shadow-2xl z-20">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="black"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                                </div>
+                                <!-- Song Cards (Exact D-Tunes Native Design) -->
+                                ${songCardsHtml}
                             </div>
-
-                            <!-- Song Cards -->
-                            ${songCardsHtml}
+                            <div class="row-blur-right"></div>
                         </div>
                     </div>
                 `;
             }
 
             container.innerHTML = `
-                <div class="px-4 md:px-8 pt-2 pb-6 animate-fade-in">
-                    <!-- Hero Header -->
-                    <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8 pb-4 border-b border-white/10">
+                <div class="pt-2 animate-fade-in">
+                    <!-- Section Header -->
+                    <div class="flex items-center justify-between px-4 md:px-8 mb-6 pb-3 border-b border-white/10">
                         <div>
                             <div class="flex items-center gap-2 mb-1">
                                 <span class="text-xs text-amber-400 font-extrabold tracking-widest uppercase flex items-center gap-1.5">
@@ -221,27 +214,28 @@
                                     Powered by Inception AI
                                 </span>
                             </div>
-                            <h1 class="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">Your Custom AI Hub</h1>
-                            <p class="text-xs sm:text-sm text-neutral-400 mt-1">Personalized mixes generated live from your listening affinity & preferences.</p>
+                            <h2 class="text-2xl md:text-3xl font-black text-white tracking-tight">Your AI Mixes</h2>
+                            <p class="text-xs text-neutral-400 mt-0.5">Live personalized tracklists curated by Inception Mercury-2.5 based on your music profile.</p>
                         </div>
                         
-                        <div class="flex items-center gap-2.5 self-start sm:self-auto">
-                            <button onclick="window.devOptions && window.devOptions.open()" class="px-3.5 py-2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-mono font-bold hover:bg-amber-500/30 transition flex items-center gap-1.5 shadow-lg shadow-amber-500/10">
+                        <div class="flex items-center gap-2">
+                            <button onclick="window.devOptions && window.devOptions.open()" class="px-3 py-1.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-mono font-bold hover:bg-amber-500/30 transition flex items-center gap-1.5 shadow-sm">
                                 <span>🛠️</span>
-                                <span>Dev Options</span>
+                                <span class="hidden sm:inline">Dev Options</span>
                             </button>
-                            <button onclick="window.aiHome.renderAIHome(true)" title="Regenerate Recommendations" class="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition hover:rotate-180 duration-500 shadow-lg flex items-center justify-center">
-                                <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                            <button onclick="window.aiHome.renderAIHome(true)" title="Regenerate Recommendations" class="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition hover:rotate-180 duration-500 shadow-md">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                             </button>
                         </div>
                     </div>
 
-                    <!-- AI Playlists Sections -->
+                    <!-- AI Playlists Shelves -->
                     ${sectionsHtml}
                 </div>
             `;
 
             if (window.updateMarquees) updateMarquees();
+            if (window.setupShelfNavButtons) setupShelfNavButtons();
         } catch (err) {
             console.error("[AI Hub] Render error:", err);
             container.innerHTML = `
@@ -273,18 +267,75 @@
         if (window.ui?.showToast) ui.showToast(`Playing AI Mix: ${item.title}`);
     }
 
+    // Load Trending Hits with solid fallbacks
+    async function loadTrendingHits() {
+        const grid = document.getElementById('trending-grid');
+        if (!grid) return;
+
+        grid.innerHTML = Array(12).fill('<div class="scroll-card h-[220px] rounded-xl glass-panel animate-pulse w-40 flex-shrink-0"></div>').join('');
+
+        try {
+            let songs = [];
+            if (window.jiosaavnAPI && jiosaavnAPI.getTrending) {
+                songs = await jiosaavnAPI.getTrending(20);
+            }
+            if (!songs || songs.length === 0) {
+                if (window.jiosaavnAPI && jiosaavnAPI.searchSongs) {
+                    songs = await jiosaavnAPI.searchSongs('Top Bollywood Hits 2026', 16);
+                }
+            }
+            if (songs && songs.length > 0) {
+                grid.innerHTML = songs.map(s => ui.createCard(s)).join('');
+                if (window.updateMarquees) updateMarquees();
+                if (window.setupShelfNavButtons) setupShelfNavButtons();
+            } else {
+                grid.innerHTML = '<p class="text-neutral-500 pl-8 text-xs">Trending hits temporarily unavailable.</p>';
+            }
+        } catch (e) {
+            console.warn("[Trending] Error loading trending hits, trying fallback:", e);
+            if (window.jiosaavnAPI && jiosaavnAPI.searchSongs) {
+                try {
+                    const fallback = await jiosaavnAPI.searchSongs('Top Hits 2026', 16);
+                    if (fallback && fallback.length) {
+                        grid.innerHTML = fallback.map(s => ui.createCard(s)).join('');
+                        if (window.updateMarquees) updateMarquees();
+                        if (window.setupShelfNavButtons) setupShelfNavButtons();
+                    }
+                } catch (err) {}
+            }
+        }
+    }
+
+    // Load Recently Played from user history
+    function loadRecentlyPlayed() {
+        const section = document.getElementById('section-recent');
+        const grid = document.getElementById('recent-grid');
+        if (!section || !grid) return;
+
+        if (!state.playHistory || state.playHistory.length === 0) {
+            section.classList.add('hidden');
+            return;
+        }
+
+        section.classList.remove('hidden');
+        const deduped = utils.deduplicateSongs(state.playHistory);
+        grid.innerHTML = deduped.slice(0, 16).map(s => ui.createCard(s)).join('');
+        if (window.updateMarquees) updateMarquees();
+        if (window.setupShelfNavButtons) setupShelfNavButtons();
+    }
+
     // Wrap in global namespace
     window.aiHome = {
         renderAIHome,
-        playEntirePlaylist
+        playEntirePlaylist,
+        loadTrendingHits,
+        loadRecentlyPlayed,
+        searchTrackData
     };
 
-    // Override homeView.init cleanly without breaking other native sections
+    // Override homeView cleanly
     if (typeof homeView !== 'undefined') {
-        const originalInit = homeView.init;
-
         homeView.init = async () => {
-            // Strip touch hover classes & update profiles
             if (typeof stripTouchHoverClasses === 'function') stripTouchHoverClasses();
             if (ui.updateProfileUI) ui.updateProfileUI();
 
@@ -297,73 +348,61 @@
             if (ui.renderPlaylists) ui.renderPlaylists();
             if (ui.renderLibraryLists) ui.renderLibraryLists();
 
-            // Render AI Hub at top of Home screen
+            // 1. Render AI Recommendation Mixes at the top
             renderAIHome();
 
-            // Populate Trending shelf safely
-            const trendingSection = document.getElementById('section-trending');
-            const trendingGrid = document.getElementById('trending-grid');
-            if (trendingSection && trendingGrid) {
-                trendingSection.classList.remove('hidden');
-                if (trendingGrid.children.length === 0) {
-                    trendingGrid.innerHTML = Array(12).fill('<div class="scroll-card h-[200px] rounded-xl glass-panel animate-pulse w-40 flex-shrink-0"></div>').join('');
-                    if (window.jiosaavnAPI && jiosaavnAPI.getTrending) {
-                        jiosaavnAPI.getTrending().then(trendingSongs => {
-                            if (trendingSongs && trendingSongs.length) {
-                                trendingGrid.innerHTML = trendingSongs.slice(0, 16).map(song => ui.createCard(song)).join('');
-                                if (window.updateMarquees) updateMarquees();
-                                if (window.setupShelfNavButtons) setupShelfNavButtons();
-                            }
-                        }).catch(() => {});
-                    }
-                }
-            }
+            // 2. Render Trending Songs
+            loadTrendingHits();
 
-            // Populate Recently Played if user has history
-            if (state.playHistory && state.playHistory.length > 0) {
-                const recentSection = document.getElementById('section-recent');
-                if (recentSection) recentSection.classList.remove('hidden');
-                if (homeView.renderRecentlyPlayed) homeView.renderRecentlyPlayed();
-            }
-
-            // Populate Discover Mixes
-            if (homeView.renderDiscoverSection) {
-                homeView.renderDiscoverSection();
-            }
+            // 3. Render Recently Played
+            loadRecentlyPlayed();
 
             if (window.updateMarquees) updateMarquees();
             if (window.setupShelfNavButtons) setupShelfNavButtons();
         };
 
-        // Intelligent Infinite Radio Autoplay hook
+        // Intelligent Infinite Radio Autoplay hook (adds 5-10 songs)
         homeView.autoplayNextIntelligentTracks = async () => {
             const cfg = window.ai ? window.ai.getConfig() : { autoPlayEnabled: true };
             if (!cfg.autoPlayEnabled) return false;
 
-            const currentTrack = state.currentTrack;
+            const currentTrack = state.currentTrack || (state.playHistory && state.playHistory[0]);
             if (!currentTrack) return false;
 
             const trackTitle = currentTrack.name || currentTrack.title || '';
             const trackArtist = currentTrack.artist || currentTrack.primary_artists || '';
             if (!trackTitle) return false;
 
-            if (window.ui?.showToast) ui.showToast("AI Radio: Finding next track...");
+            if (window.ui?.showToast) ui.showToast("AI Autoplay: Finding 8 similar songs...");
             
             try {
-                const recommendation = await window.ai.generateNextSimilar(trackTitle, trackArtist);
-                if (recommendation && recommendation.title) {
-                    const matchedSong = await searchTrackData(recommendation.title, recommendation.artist);
+                let songList = [];
+                if (window.ai && window.ai.generateQueueAutoplay) {
+                    songList = await window.ai.generateQueueAutoplay(trackTitle, trackArtist, 8);
+                }
+
+                if (!songList || songList.length === 0) {
+                    if (window.jiosaavnAPI && jiosaavnAPI.searchSongs) {
+                        songList = await jiosaavnAPI.searchSongs(`${trackArtist} hits`, 8);
+                    }
+                }
+
+                const hydrated = [];
+                for (const s of songList) {
+                    const matchedSong = await searchTrackData(s.title || s.name, s.artist);
                     if (matchedSong && matchedSong.id) {
                         const appTrack = window.recommendationClient ? window.recommendationClient.toAppSong(matchedSong) : matchedSong;
-                        
-                        // Prevent duplicate
-                        if (!state.queue.some(s => s.id === appTrack.id)) {
-                            state.queue.push(appTrack);
-                            if (window.ui && ui.renderQueue) ui.renderQueue();
-                            if (window.ui?.showToast) ui.showToast(`AI Radio queued: ${appTrack.name || appTrack.title}`);
-                            return true;
+                        if (!state.queue.some(q => q.id === appTrack.id)) {
+                            hydrated.push(appTrack);
                         }
                     }
+                }
+
+                if (hydrated.length > 0) {
+                    state.queue.push(...hydrated);
+                    if (window.ui && ui.renderQueue) ui.renderQueue();
+                    if (window.ui?.showToast) ui.showToast(`✨ AI Autoplay: Added ${hydrated.length} songs to Queue!`);
+                    return true;
                 }
             } catch (e) {
                 console.warn("[Autoplay] AI Radio error:", e);

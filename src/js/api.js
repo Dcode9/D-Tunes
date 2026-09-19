@@ -174,3 +174,5 @@
             isStreamingUrl: (url) => !!(url && (url.startsWith('http://') || url.startsWith('https://')))
         };
 
+
+window.jiosaavnAPI = jiosaavnAPI;
