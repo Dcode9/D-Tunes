@@ -304,47 +304,148 @@
                 const row = e.target.closest('.swipe-song');
                 if (!row || !deviceMode.isMobileUI() || e.target.closest('button, input, select, textarea')) return;
                 const touch = e.changedTouches[0];
-                swipeSongStart = { row, x: touch.clientX, y: touch.clientY, moved: false };
+                const card = row.querySelector('.swipe-song-card') || row;
+                const revealLeft = row.querySelector('.swipe-reveal-left');
+                const revealRight = row.querySelector('.swipe-reveal-right');
+                const iconLeft = revealLeft?.querySelector('.swipe-icon');
+                const labelLeft = revealLeft?.querySelector('.swipe-label');
+                const iconRight = revealRight?.querySelector('.swipe-icon');
+                const labelRight = revealRight?.querySelector('.swipe-label');
+
+                swipeSongStart = {
+                    row,
+                    card,
+                    revealLeft,
+                    revealRight,
+                    iconLeft,
+                    labelLeft,
+                    iconRight,
+                    labelRight,
+                    startX: touch.clientX,
+                    startY: touch.clientY,
+                    dx: 0,
+                    dy: 0,
+                    isSwiping: false
+                };
             }, { passive: true });
+
             document.addEventListener('touchmove', (e) => {
                 if (!swipeSongStart) return;
                 const touch = e.changedTouches[0];
-                const dx = touch.clientX - swipeSongStart.x;
-                const dy = touch.clientY - swipeSongStart.y;
-                if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
-                    swipeSongStart.moved = true;
-                    const clamped = Math.max(-128, Math.min(128, dx));
-                    const progress = Math.min(1, Math.abs(clamped) / 96);
-                    swipeSongStart.row.style.setProperty('--song-swipe-x', `${clamped}px`);
-                    swipeSongStart.row.style.setProperty('--swipe-scale', progress.toFixed(3));
-                    swipeSongStart.row.classList.add('is-swiping');
-                    swipeSongStart.row.classList.toggle('swipe-show-next', dx > 14);
-                    swipeSongStart.row.classList.toggle('swipe-show-queue', dx < -14);
+                const dx = touch.clientX - swipeSongStart.startX;
+                const dy = touch.clientY - swipeSongStart.startY;
+                swipeSongStart.dx = dx;
+                swipeSongStart.dy = dy;
+
+                if (!swipeSongStart.isSwiping) {
+                    if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+                        swipeSongStart.isSwiping = true;
+                        swipeSongStart.row.classList.add('is-swiping');
+                    } else if (Math.abs(dy) > 8) {
+                        swipeSongStart = null;
+                        return;
+                    }
+                }
+
+                if (swipeSongStart.isSwiping) {
+                    const clamped = Math.max(-120, Math.min(120, dx));
+                    const revealProgress = Math.min(1, Math.abs(clamped) / 72);
+                    const iconScale = Math.min(1, revealProgress / 0.45);
+                    const labelOpacity = revealProgress > 0.45 ? Math.min(1, (revealProgress - 0.45) / 0.45) : 0;
+
+                    swipeSongStart.card.style.transform = `translate3d(${clamped}px, 0, 0)`;
+
+                    if (dx > 0) {
+                        if (swipeSongStart.revealLeft) {
+                            swipeSongStart.revealLeft.style.width = `${Math.min(clamped, 120)}px`;
+                            swipeSongStart.revealLeft.style.opacity = '1';
+                        }
+                        if (swipeSongStart.iconLeft) swipeSongStart.iconLeft.style.transform = `scale(${iconScale})`;
+                        if (swipeSongStart.labelLeft) swipeSongStart.labelLeft.style.opacity = `${labelOpacity}`;
+
+                        if (swipeSongStart.revealRight) {
+                            swipeSongStart.revealRight.style.width = '0px';
+                            swipeSongStart.revealRight.style.opacity = '0';
+                        }
+                    } else {
+                        const absClamped = Math.min(Math.abs(clamped), 120);
+                        if (swipeSongStart.revealRight) {
+                            swipeSongStart.revealRight.style.width = `${absClamped}px`;
+                            swipeSongStart.revealRight.style.opacity = '1';
+                        }
+                        if (swipeSongStart.iconRight) swipeSongStart.iconRight.style.transform = `scale(${iconScale})`;
+                        if (swipeSongStart.labelRight) swipeSongStart.labelRight.style.opacity = `${labelOpacity}`;
+
+                        if (swipeSongStart.revealLeft) {
+                            swipeSongStart.revealLeft.style.width = '0px';
+                            swipeSongStart.revealLeft.style.opacity = '0';
+                        }
+                    }
                 }
             }, { passive: true });
+
+            const resetSwipeRow = (stateObj) => {
+                if (!stateObj) return;
+                stateObj.row.classList.remove('is-swiping');
+                stateObj.card.style.transform = 'translate3d(0, 0, 0)';
+                if (stateObj.revealLeft) {
+                    stateObj.revealLeft.style.width = '0px';
+                    stateObj.revealLeft.style.opacity = '0';
+                }
+                if (stateObj.revealRight) {
+                    stateObj.revealRight.style.width = '0px';
+                    stateObj.revealRight.style.opacity = '0';
+                }
+                if (stateObj.iconLeft) stateObj.iconLeft.style.transform = 'scale(0)';
+                if (stateObj.labelLeft) stateObj.labelLeft.style.opacity = '0';
+                if (stateObj.iconRight) stateObj.iconRight.style.transform = 'scale(0)';
+                if (stateObj.labelRight) stateObj.labelRight.style.opacity = '0';
+            };
+
             document.addEventListener('touchend', (e) => {
                 if (!swipeSongStart) return;
-                const { row, x, y } = swipeSongStart;
-                const touch = e.changedTouches[0];
-                const dx = touch.clientX - x;
-                const dy = touch.clientY - y;
-                row.style.setProperty('--song-swipe-x', '0px');
-                row.style.setProperty('--swipe-scale', '0');
-                row.classList.remove('is-swiping', 'swipe-show-next', 'swipe-show-queue');
+                const stateObj = swipeSongStart;
                 swipeSongStart = null;
-                if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+
+                if (!stateObj.isSwiping) return;
+
+                const { dx, dy, row, card } = stateObj;
+                const isCommitted = Math.abs(dx) >= 65 && Math.abs(dx) > Math.abs(dy) * 1.1;
+
+                if (isCommitted) {
                     const song = songStore.get(row.dataset.storeId);
-                    if (!song) return;
-                    const isPlayNext = dx > 0;
-                    const commitClass = isPlayNext ? 'swipe-committed-next' : 'swipe-committed-queue';
-                    row.classList.add(commitClass);
-                    row.style.setProperty('--song-swipe-x', isPlayNext ? '115%' : '-115%');
-                    if (isPlayNext) player.addNext(song); else player.addToQueue(song);
-                    haptics.pulse('medium');
-                    setTimeout(() => { row.classList.remove(commitClass); row.style.setProperty('--song-swipe-x', '0px'); row.style.setProperty('--swipe-scale', '0'); }, 420);
-                    e.preventDefault();
+                    if (song) {
+                        const isPlayNext = dx > 0;
+                        haptics.pulse('medium');
+                        card.style.transition = 'transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)';
+                        card.style.transform = isPlayNext ? 'translate3d(115%, 0, 0)' : 'translate3d(-115%, 0, 0)';
+
+                        if (isPlayNext) {
+                            player.addNext(song);
+                        } else {
+                            player.addToQueue(song);
+                        }
+
+                        setTimeout(() => {
+                            card.style.transition = '';
+                            resetSwipeRow(stateObj);
+                        }, 260);
+                        if (e.cancelable) e.preventDefault();
+                        return;
+                    }
                 }
+
+                card.style.transition = 'transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1)';
+                resetSwipeRow(stateObj);
+                setTimeout(() => { card.style.transition = ''; }, 260);
             }, { passive: false });
+
+            document.addEventListener('touchcancel', () => {
+                if (swipeSongStart) {
+                    resetSwipeRow(swipeSongStart);
+                    swipeSongStart = null;
+                }
+            }, { passive: true });
 
             // Touch swiping / dragging for overflowing marquee text
             let marqueeTouchStart = null;

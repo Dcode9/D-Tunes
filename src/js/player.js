@@ -797,6 +797,11 @@
                 primeNextTrack();
                 persist.save();
             },
+            clearHistory: () => {
+                state.playHistory = state.currentTrack ? [{ ...state.currentTrack, playedAt: Date.now() }] : [];
+                ui.renderHistory();
+                persist.save();
+            },
             showSimilarSongs: async () => {
                 if (!state.currentTrack || !window.recommendationClient) return;
                 const songs = await window.recommendationClient.fetchPlaylist('similar', { songId: state.currentTrack.id, limit: 25 });
