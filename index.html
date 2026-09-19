@@ -537,9 +537,92 @@
     <!-- MAIN SCROLLABLE CONTENT -->
     <main id="main-container" class="h-screen overflow-y-auto pt-24 md:pt-32 pb-32 md:pb-48">
         
-        <!-- ================= HOME VIEW ================= -->
-        <div id="view-home">
-            <div id="ai-hub-container" class="pb-12 w-full h-full"></div>
+                <!-- ================= HOME VIEW ================= -->
+        <div id="view-home" class="pb-12">
+            <!-- AI Recommendation Engine Section -->
+            <section id="section-ai-hub" class="mb-8">
+                <div id="ai-hub-container"></div>
+            </section>
+
+            <!-- Trending Section -->
+            <section id="section-trending" class="mb-12">
+                <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8">Trending Right Now</h2>
+                <div class="relative group/track">
+                    <div class="row-blur-left"></div>
+                    <div id="trending-grid" class="horizontal-scroll"></div>
+                    <div class="row-blur-right"></div>
+                </div>
+            </section>
+
+            <!-- Quick Picks Section -->
+            <section id="section-quick-picks" class="mb-12 hidden">
+                <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8">Quick Picks For You</h2>
+                <div class="relative group/track">
+                    <div class="row-blur-left"></div>
+                    <div id="quick-picks-grid" class="horizontal-scroll"></div>
+                    <div class="row-blur-right"></div>
+                </div>
+            </section>
+
+            <!-- Discover Mixes Section -->
+            <section id="section-discover" class="mb-12">
+                <div class="flex items-center justify-between px-4 md:px-8 mb-6">
+                    <div>
+                        <h2 class="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
+                            <svg class="w-6 h-6 text-[var(--accent-color)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                            Discover Mixes
+                        </h2>
+                        <p class="text-xs text-gray-400 mt-1">Made for you • Updated daily based on your listening habits & preferences</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <select id="preferred-language-select" onchange="localStorage.setItem('preferredLanguage', this.value); if(homeView.renderDiscoverSection) homeView.renderDiscoverSection();" class="bg-white/10 border border-white/10 rounded-full px-3 py-1.5 text-xs text-white focus:outline-none hidden sm:block">
+                            <option value="">Auto Language</option>
+                            <option value="hindi">Hindi</option>
+                            <option value="english">English</option>
+                            <option value="tamil">Tamil</option>
+                            <option value="telugu">Telugu</option>
+                            <option value="punjabi">Punjabi</option>
+                        </select>
+                        <button onclick="if(homeView.renderDiscoverSection) homeView.renderDiscoverSection(true)" class="text-xs font-bold px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 transition flex items-center gap-1.5 text-white">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                            Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="relative group/track">
+                    <div class="row-blur-left"></div>
+                    <div id="discover-grid" class="horizontal-scroll"></div>
+                    <div class="row-blur-right"></div>
+                </div>
+            </section>
+
+            <!-- Recently Played Section -->
+            <section id="section-recent" class="mb-12 hidden">
+                <h2 class="text-xl md:text-2xl font-bold text-white mb-6 px-4 md:px-8">Recently Played</h2>
+                <div class="relative group/track">
+                    <div class="row-blur-left"></div>
+                    <div id="recent-grid" class="horizontal-scroll"></div>
+                    <div class="row-blur-right"></div>
+                </div>
+            </section>
+
+            <!-- For You Section -->
+            <section id="section-for-you" class="mb-12 hidden">
+                <div class="flex items-center justify-between px-4 md:px-8 mb-6">
+                    <div>
+                        <h2 class="text-xl md:text-2xl font-bold text-white">Rule-based Picks</h2>
+                        <p class="text-xs text-gray-400 mt-1">From listening history.</p>
+                    </div>
+                </div>
+                <div class="relative group/track">
+                    <div class="row-blur-left"></div>
+                    <div id="for-you-grid" class="horizontal-scroll"></div>
+                    <div class="row-blur-right"></div>
+                </div>
+                <div id="for-you-actions" class="hidden px-4 md:px-8 mt-5 flex flex-wrap items-center gap-3">
+                    <span id="for-you-count" class="text-xs text-gray-400"></span>
+                </div>
+            </section>
         </div>
 
         <!-- ================= LIBRARY VIEW ================= -->
@@ -795,6 +878,19 @@
                             <button id="dverse-settings-auth-button" onclick="cloudLibrary.toggleAuth()" class="flex-shrink-0 rounded-full bg-[var(--accent-color)] px-4 py-2 text-sm font-black text-black shadow-lg shadow-cyan-500/20 hover:scale-105 transition">Sign in</button>
                         </div>
                     </div>
+
+                    <div class="rounded-2xl p-4 bg-amber-500/10 border border-amber-500/30">
+                        <div class="flex items-center justify-between gap-4">
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <h3 class="text-lg font-bold text-white mb-1">Developer Options</h3>
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30 uppercase tracking-wider">Temporary</span>
+                                </div>
+                                <p class="text-sm text-gray-300">Inception AI recommendation engine & autoplay diagnostics, testing, and inspector.</p>
+                            </div>
+                            <button onclick="window.devOptions.open()" class="flex-shrink-0 rounded-full bg-amber-500 px-4 py-2 text-sm font-black text-black shadow-lg shadow-amber-500/20 hover:scale-105 transition">Open Dev Options</button>
+                        </div>
+                    </div>
                     <div>
                         <h3 class="text-lg font-bold text-white mb-2">Audio Quality</h3>
                         <p class="text-sm text-gray-400 mb-4">Choose the default streaming quality for your music. (Applies to next track)</p>
@@ -1040,6 +1136,7 @@
     <script defer src="src/js/search.js?v=1789798237"></script>
     <script defer src="src/js/ai-hub.js"></script>
     <script defer src="src/js/main.js?v=1789798237"></script>
+    <script defer src="src/js/dev-options.js"></script>
 
 </body>
 </html>
