@@ -738,12 +738,13 @@
                 const seedTitle = current?.name || current?.title || 'Starboy';
                 const seedArtist = current?.artist || current?.primary_artists || 'The Weeknd';
 
-                if (window.ui?.showToast) ui.showToast(`AI Autoplay: Finding ${count} songs...`);
+                if (window.ui?.showToast) ui.showToast(`Finding ${count} songs for autoplay...`);
 
                 try {
                     let songList = [];
+                    const disliked = state.dislikedSongs || [];
                     if (window.ai && window.ai.generateQueueAutoplay) {
-                        songList = await window.ai.generateQueueAutoplay(seedTitle, seedArtist, count);
+                        songList = await window.ai.generateQueueAutoplay(seedTitle, seedArtist, count, disliked);
                     }
 
                     if (!songList || songList.length === 0) {
@@ -754,14 +755,17 @@
 
                     const hydrated = [];
                     for (const s of songList) {
-                        if (s.id && s.url) {
-                            hydrated.push(s);
+                        let track = null;
+                        if (s.id && s.url && s.img && !s.img.includes('DTunes.svg')) {
+                            track = s;
                         } else if (window.aiHome && window.aiHome.searchTrackData) {
-                            const track = await window.aiHome.searchTrackData(s.title || s.name, s.artist);
-                            if (track && track.id) hydrated.push(track);
+                            track = await window.aiHome.searchTrackData(s.title || s.name, s.artist);
                         } else if (window.jiosaavnAPI && jiosaavnAPI.searchSongs) {
-                            const results = await jiosaavnAPI.searchSongs(`${s.title} ${s.artist}`, 1);
-                            if (results && results.length > 0) hydrated.push(results[0]);
+                            const results = await jiosaavnAPI.searchSongs(`${s.title || s.name} ${s.artist}`, 1);
+                            if (results && results.length > 0) track = results[0];
+                        }
+                        if (track && track.url && track.img && !track.img.includes('DTunes.svg') && track.img !== FALLBACK_ART) {
+                            hydrated.push(track);
                         }
                     }
 
@@ -774,13 +778,13 @@
                         ui.renderQueue();
                         primeNextTrack();
                         persist.save();
-                        if (window.ui?.showToast) ui.showToast(`✨ AI Autoplay: Added ${songsToAdd.length} songs to Queue!`);
+                        if (window.ui?.showToast) ui.showToast(`Added ${songsToAdd.length} songs to Queue`);
                         return true;
                     }
                 } catch (err) {
                     console.error("[Autoplay] Failed to queue autoplay tracks:", err);
                 }
-                if (window.ui?.showToast) ui.showToast("Could not generate autoplay tracks", "error");
+                if (window.ui?.showToast) ui.showToast("Could not find autoplay tracks", "error");
                 return false;
             },
             clearQueue: () => {

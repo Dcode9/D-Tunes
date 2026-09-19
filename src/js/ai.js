@@ -70,51 +70,104 @@
     }
 
     async function generateCustomPlaylists(history = [], likedSongs = [], librarySongs = [], dislikedSongs = [], force = false) {
-        if (!force) {
-            try {
-                const cached = localStorage.getItem(CACHE_KEY);
-                if (cached) {
-                    const parsed = JSON.parse(cached);
-                    if (parsed.timestamp && (Date.now() - parsed.timestamp < 3600000) && Array.isArray(parsed.playlists) && parsed.playlists.length > 0) {
-                        return parsed.playlists;
-                    }
+        let effectiveHistory = history && history.length ? history : (state.playHistory || []);
+        let effectiveLiked = likedSongs && likedSongs.length ? likedSongs : (state.likedIds || []);
+        let effectiveLib = librarySongs && librarySongs.length ? librarySongs : (state.libraryIds || []);
+        let effectiveDisliked = dislikedSongs && dislikedSongs.length ? dislikedSongs : (state.dislikedSongs || []);
+
+        // 1. Playlists data (Custom playlists, song titles, and durations)
+        const playlistsData = Object.entries(state.playlists || {})
+            .filter(([_, songs]) => Array.isArray(songs) && songs.length > 0)
+            .map(([name, songs]) => {
+                const songList = songs.slice(0, 10).map(s => {
+                    const title = s.name || s.title || 'Track';
+                    const artist = s.artist || s.primary_artists || 'Artist';
+                    const dur = s.duration ? ` [${Math.floor(s.duration / 60)}:${String(s.duration % 60).padStart(2, '0')}]` : '';
+                    return `"${title}" by ${artist}${dur}`;
+                }).join(', ');
+                return `Playlist "${name}" (${songs.length} tracks): [${songList}]`;
+            });
+
+        // 2. Play history with track durations and listen timestamps
+        const historyList = (effectiveHistory || []).slice(0, 25).map(h => {
+            const title = h.name || h.title || 'Track';
+            const artist = h.artist || h.primary_artists || 'Artist';
+            const dur = h.duration ? ` (length: ${Math.floor(h.duration / 60)}:${String(h.duration % 60).padStart(2, '0')})` : '';
+            const playedAt = h.playedAt ? ` at ${h.playedAt.slice(0, 16).replace('T', ' ')}` : '';
+            return `"${title}" by ${artist}${dur}${playedAt}`;
+        });
+
+        // 3. Listening stats & total play durations (from cloud if signed in)
+        let statsList = [];
+        try {
+            if (window.dverse && window.dverse.dtunes && window.dverse.dtunes.fetchListeningStats) {
+                const stats = await window.dverse.dtunes.fetchListeningStats(15);
+                if (Array.isArray(stats) && stats.length > 0) {
+                    statsList = stats.map(s => {
+                        const tr = s.dtunes_tracks || {};
+                        const mins = Math.round((s.total_duration_ms || 0) / 60000);
+                        return `"${tr.title || 'Track'}" by ${tr.artist || 'Artist'} (${s.play_count} plays, ~${mins} min listened)`;
+                    });
                 }
-            } catch (e) {}
-        }
+            }
+        } catch (e) {}
 
-        let effectiveHistory = history;
-        let effectiveLiked = likedSongs;
-        let effectiveLib = librarySongs;
-        let effectiveDisliked = dislikedSongs;
+        // 4. Artist play counts
+        const artistCounts = Object.entries(state.artistPlayCounts || {})
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8)
+            .map(([artist, count]) => `${artist} (${count} plays)`);
 
-        const totalPositive = (effectiveHistory.length || 0) + (effectiveLiked.length || 0) + (effectiveLib.length || 0);
+        // 5. Liked & Library songs
+        const likedList = (effectiveLiked || []).map(l => {
+            const song = typeof l === 'object' ? l : (window.songStore?.get(l) || state.playHistory?.find(h => h.id === l));
+            return song ? `"${song.name || song.title}" by ${song.artist || 'Artist'}` : null;
+        }).filter(Boolean);
+
+        const libList = (effectiveLib || []).map(l => {
+            const song = typeof l === 'object' ? l : (window.songStore?.get(l) || state.playHistory?.find(h => h.id === l));
+            return song ? `"${song.name || song.title}" by ${song.artist || 'Artist'}` : null;
+        }).filter(Boolean);
+
+        // 6. Strict Dislikes / Exclusions
+        const dislikedList = (effectiveDisliked || []).map(d => {
+            if (typeof d === 'object') return `"${d.name || d.title}" by ${d.artist || 'Artist'}`;
+            const s = window.songStore?.get(d);
+            return s ? `"${s.name || s.title}" by ${s.artist || 'Artist'}` : String(d);
+        });
+
+        const totalPositive = historyList.length + likedList.length + libList.length + playlistsData.length + statsList.length;
         if (totalPositive === 0) {
             effectiveLiked = SEED_PROFILE;
         }
 
-        const historyList = (effectiveHistory || []).slice(-20).map(h => `"${h.name || h.title}" by ${h.artist || 'Artist'}`);
-        const likedList = (effectiveLiked || []).map(l => `"${l.name || l.title}" by ${l.artist || 'Artist'}`);
-        const libList = (effectiveLib || []).map(l => `"${l.name || l.title}" by ${l.artist || 'Artist'}`);
-        const dislikedList = (effectiveDisliked || []).map(d => typeof d === 'object' ? `"${d.name || d.title}" by ${d.artist || 'Artist'}` : String(d));
+        const systemPrompt = "You are an elite music curation director acclaimed for deep musicology, harmonic continuity, acoustic texture matching, and human-like discovery. You output strictly raw JSON without markdown backticks.";
 
-        const systemPrompt = "You are an elite Music Curation Director and Algorithmic DJ, acclaimed for deep musicology, harmonic continuity, acoustic texture matching, and bespoke human-like discovery. You output strictly raw JSON without markdown backticks.";
+        const prompt = `Analyze this listener's complete music taste profile and listening habits:
 
-        const prompt = `Analyze this listener's music taste profile with extreme precision:
+1. USER'S PERSONAL PLAYLISTS (Hand-curated collections with song titles and track lengths):
+${playlistsData.length > 0 ? playlistsData.join('\n') : 'No custom playlists yet'}
 
-1. TOP LIKED TRACKS (Highest positive affinity - match subgenres, vocal characteristics, and energy):
-[${likedList.length > 0 ? likedList.join(', ') : 'None yet'}]
+2. TOTAL LISTENING DURATION & FREQUENTLY PLAYED TRACKS:
+${statsList.length > 0 ? statsList.join('\n') : 'No aggregated play records yet'}
 
-2. SAVED TO LIBRARY (Musical foundation):
-[${libList.length > 0 ? libList.join(', ') : 'None yet'}]
+3. RECENT STREAMS WITH PLAY TIMESTAMPS & LENGTHS:
+${historyList.length > 0 ? historyList.join(' | ') : 'None yet'}
 
-3. RECENT STREAMS (Immediate listening rotation):
-[${historyList.length > 0 ? historyList.join(' | ') : 'None yet'}]
+4. TOP PLAYED ARTISTS:
+${artistCounts.length > 0 ? artistCounts.join(', ') : 'None yet'}
 
-4. STRICT EXCLUSIONS / DISLIKES (NEVER recommend these tracks or artists, and avoid their signature elements):
-[${dislikedList.length > 0 ? dislikedList.join(', ') : 'None'}]
+5. FAVORITE LIKED TRACKS:
+${likedList.length > 0 ? likedList.join(', ') : 'None yet'}
+
+6. SAVED TO LIBRARY:
+${libList.length > 0 ? libList.join(', ') : 'None yet'}
+
+7. STRICT EXCLUSIONS / DISLIKED SONGS (NEVER recommend these tracks or artists, and avoid their signature characteristics):
+${dislikedList.length > 0 ? dislikedList.join(', ') : 'None'}
 
 CURATION INSTRUCTIONS:
-- Generate 6 distinct, immersive personalized playlist categories matching different moods and facets of their taste.
+- Generate 6 distinct, immersive personalized playlist categories matching different moods, genres, and facets of their taste.
 - Ensure diversity across all 6 mixes: do NOT repeat the same artist across multiple mixes.
 - Each mix must contain EXACTLY 5 real, popular, widely known songs that exist on streaming platforms.
 - Curate evocative, human playlist titles and descriptions that feel like Spotify/Apple Music editorial mixes (e.g. "Midnight Resonance", "Velvet Acoustic", "Sun-Drenched Drive", "Deep Focus & Flow", "High Voltage Anthem", "Nostalgia & Reprises").
@@ -140,14 +193,10 @@ Schema:
             const parsed = await callLLM(prompt, systemPrompt);
             const playlists = parsed.playlists || [];
             if (playlists.length > 0) {
-                localStorage.setItem(CACHE_KEY, JSON.stringify({
-                    timestamp: Date.now(),
-                    playlists
-                }));
                 return playlists;
             }
         } catch (e) {
-            console.warn("[AI] Custom playlists generation failed, using fallback:", e);
+            console.warn("[Recommendations] Playlists generation error, using fallback:", e);
         }
 
         return getFallbackPlaylists();

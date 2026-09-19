@@ -11,61 +11,73 @@
 
     const searchCache = new Map();
 
+    /**
+     * Searches for a track and strictly validates both the playable audio track
+     * and album artwork. If either is missing, invalid, or fallback art, returns null
+     * so that the track is NOT displayed.
+     */
     async function searchTrackData(title, artist) {
         const query = `${title} ${artist}`.trim();
         if (!query) return null;
         if (searchCache.has(query)) return searchCache.get(query);
 
         try {
-            // JioSaavn API first
+            // 1. JioSaavn API query
             if (window.jiosaavnAPI && jiosaavnAPI.searchSongs) {
                 const results = await jiosaavnAPI.searchSongs(query, 1);
                 if (results && results.length > 0 && results[0]) {
                     const song = results[0];
-                    searchCache.set(query, song);
-                    return song;
+                    const hasValidUrl = song.url && typeof song.url === 'string' && song.url.startsWith('http');
+                    const hasValidArt = song.img && typeof song.img === 'string' &&
+                                        song.img.startsWith('http') &&
+                                        !song.img.includes('DTunes.svg') &&
+                                        song.img !== FALLBACK_ART;
+                    if (hasValidUrl && hasValidArt) {
+                        searchCache.set(query, song);
+                        if (window.songStore && song.id) window.songStore.set(song.id, song);
+                        return song;
+                    }
                 }
             }
 
-            // iTunes API fallback
+            // 2. iTunes API fallback
             const encoded = encodeURIComponent(query);
             const res = await fetch(`https://itunes.apple.com/search?term=${encoded}&entity=song&limit=1`);
             const data = await res.json();
             if (data.results && data.results.length > 0) {
                 const track = data.results[0];
-                const normalized = {
-                    id: 'itunes_' + track.trackId,
-                    name: track.trackName,
-                    title: track.trackName,
-                    artist: track.artistName,
-                    img: track.artworkUrl100 ? track.artworkUrl100.replace('100x100bb', '500x500bb') : FALLBACK_ART,
-                    url: track.previewUrl,
-                    duration: Math.floor((track.trackTimeMillis || 0) / 1000) || 30,
-                    source: 'itunes'
-                };
-                searchCache.set(query, normalized);
-                return normalized;
+                const art = track.artworkUrl100 ? track.artworkUrl100.replace('100x100bb', '500x500bb') : null;
+                const hasValidUrl = track.previewUrl && typeof track.previewUrl === 'string' && track.previewUrl.startsWith('http');
+                const hasValidArt = art && typeof art === 'string' && art.startsWith('http') && !art.includes('DTunes.svg');
+
+                if (hasValidUrl && hasValidArt) {
+                    const normalized = {
+                        id: 'itunes_' + track.trackId,
+                        name: track.trackName,
+                        title: track.trackName,
+                        artist: track.artistName,
+                        img: art,
+                        url: track.previewUrl,
+                        duration: Math.floor((track.trackTimeMillis || 0) / 1000) || 30,
+                        source: 'itunes'
+                    };
+                    searchCache.set(query, normalized);
+                    if (window.songStore && normalized.id) window.songStore.set(normalized.id, normalized);
+                    return normalized;
+                }
             }
         } catch (e) {
-            console.warn(`[AI Hub] Search failed for "${query}":`, e);
+            console.warn(`[Track Search] Search failed for "${query}":`, e);
         }
 
-        const fallback = {
-            id: 'gen_' + Math.random().toString(36).slice(2, 9),
-            name: title,
-            title: title,
-            artist: artist || 'Unknown Artist',
-            img: FALLBACK_ART,
-            url: null,
-            duration: 180
-        };
-        searchCache.set(query, fallback);
-        return fallback;
+        // Return null if playable track or artwork failed to load
+        searchCache.set(query, null);
+        return null;
     }
 
     const aiPlaylistsStore = new Map();
 
-    // Render instant skeleton layout while generating
+    // Render skeleton layout with shimmering placeholders
     function renderSkeletons(container) {
         let skeletonShelves = '';
         for (let i = 0; i < 3; i++) {
@@ -109,7 +121,7 @@
                 <div class="flex items-center justify-between px-4 md:px-8 mb-6 pb-2 border-b border-white/10">
                     <div>
                         <h2 class="text-2xl md:text-3xl font-black text-white tracking-tight">Made For You</h2>
-                        <p class="text-xs md:text-sm text-neutral-400 mt-1">Playlists personalized to your taste and favorites.</p>
+                        <p class="text-xs md:text-sm text-neutral-400 mt-1">Playlists personalized to your taste and favorites, updated daily.</p>
                     </div>
                 </div>
                 ${skeletonShelves}
@@ -117,55 +129,175 @@
         `;
     }
 
+    // Render clean prompt when user is not signed in
+    function renderSignedOutState(container) {
+        container.innerHTML = `
+            <div class="pt-2 animate-fade-in px-4 md:px-8">
+                <div class="p-6 md:p-8 rounded-2xl glass-panel border border-white/10 flex flex-col md:flex-row items-center justify-between gap-6 bg-gradient-to-r from-purple-900/30 via-black/40 to-emerald-900/30">
+                    <div class="max-w-xl">
+                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white text-xs font-semibold mb-3">
+                            <span>Daily Mixes</span>
+                        </div>
+                        <h2 class="text-2xl md:text-3xl font-black text-white tracking-tight">Your Music, Tailored For You</h2>
+                        <p class="text-sm text-neutral-300 mt-2 leading-relaxed">Sign in to unlock personalized daily mixes based on your listening history, favorite tracks, and custom playlists.</p>
+                    </div>
+                    <button onclick="if(window.dverse && dverse.signInWithGoogle) dverse.signInWithGoogle();" class="px-6 py-3 rounded-full bg-[var(--accent-color)] text-black font-bold text-sm hover:scale-105 active:scale-95 transition shadow-lg flex-shrink-0 cursor-pointer flex items-center gap-2">
+                        <span>Sign In to D-Tunes</span>
+                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Renders daily mixes:
+     * - Only works if signed in.
+     * - Checks Supabase table dtunes_daily_mixes for today's generated mixes.
+     * - If present, loads without generating.
+     * - If not present (or forced refresh), generates, hydrates, strictly excludes invalid songs,
+     *   and updates the user's row in Supabase.
+     */
     async function renderAIHome(forceRefresh = false) {
         const container = document.getElementById('ai-hub-container');
         if (!container) return;
 
-        const history = state.playHistory || [];
-        const liked = state.likedIds || [];
-        const lib = state.libraryIds || [];
-        const disliked = state.dislikedSongs || [];
+        // 1. Session check: only work if signed in
+        const session = (window.cloudLibrary && cloudLibrary.session) ||
+                        (window.dverse && window.dverse.getSession ? await window.dverse.getSession() : null);
 
-        // 1. Render normal page with skeletons instantly
+        if (!session || !session.user || !session.user.id) {
+            renderSignedOutState(container);
+            return;
+        }
+
+        const userId = session.user.id;
+        const now = new Date();
+        const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+        // 2. Render skeletons while loading
         renderSkeletons(container);
 
         try {
-            const playlists = await window.ai.generateCustomPlaylists(history, liked, lib, disliked, forceRefresh);
+            let playlists = null;
+            const supabase = window.dverse?.supabase;
+
+            // 3. First check Supabase for today's saved mixes
+            if (!forceRefresh && supabase) {
+                try {
+                    const { data, error } = await supabase
+                        .from('dtunes_daily_mixes')
+                        .select('date_key, playlists')
+                        .eq('user_id', userId)
+                        .maybeSingle();
+
+                    if (!error && data && data.date_key === todayKey && Array.isArray(data.playlists) && data.playlists.length > 0) {
+                        playlists = data.playlists;
+                    }
+                } catch (e) {
+                    console.warn('[Daily Mixes] Supabase read failed:', e);
+                }
+            }
+
+            // 4. If not generated for today, generate and hydrate
+            if (!playlists || playlists.length === 0) {
+                const history = state.playHistory || [];
+                const liked = state.likedIds || [];
+                const lib = state.libraryIds || [];
+                const disliked = state.dislikedSongs || [];
+
+                const generated = await window.ai.generateCustomPlaylists(history, liked, lib, disliked, forceRefresh);
+                if (!generated || generated.length === 0) {
+                    container.innerHTML = '';
+                    return;
+                }
+
+                // Hydrate songs and strictly exclude any that fail to load audio or album art
+                const hydratedPlaylists = [];
+                for (let i = 0; i < generated.length; i++) {
+                    const pl = generated[i];
+                    const rawSongs = pl.songs || [];
+                    const hydratedSongs = await Promise.all(
+                        rawSongs.map(s => searchTrackData(s.title, s.artist))
+                    );
+
+                    // Must have a streamable URL and genuine artwork
+                    const validSongs = hydratedSongs.filter(s =>
+                        s && s.url && typeof s.url === 'string' && s.url.startsWith('http') &&
+                        s.img && typeof s.img === 'string' && s.img.startsWith('http') &&
+                        !s.img.includes('DTunes.svg') && s.img !== FALLBACK_ART
+                    );
+
+                    // Only include playlist if at least 2 valid songs exist
+                    if (validSongs.length >= 2) {
+                        hydratedPlaylists.push({
+                            categoryTitle: pl.categoryTitle || pl.title || 'Mix',
+                            title: pl.title || pl.categoryTitle || 'Mix',
+                            description: pl.description || '',
+                            styleIndex: pl.styleIndex !== undefined ? pl.styleIndex : i,
+                            songs: validSongs
+                        });
+                    }
+                }
+
+                playlists = hydratedPlaylists;
+
+                // 5. Update user's single row in Supabase for today
+                if (supabase && playlists.length > 0) {
+                    try {
+                        await supabase.from('dtunes_daily_mixes').upsert({
+                            user_id: userId,
+                            date_key: todayKey,
+                            playlists: playlists,
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: 'user_id' });
+                    } catch (e) {
+                        console.warn('[Daily Mixes] Failed to store daily mixes in Supabase:', e);
+                    }
+                }
+            }
+
             if (!playlists || playlists.length === 0) {
                 container.innerHTML = '';
                 return;
             }
 
+            // 6. Populate store and ensure songs are in songStore
             aiPlaylistsStore.clear();
             let sectionsHtml = '';
 
             for (let pIdx = 0; pIdx < playlists.length; pIdx++) {
                 const playlist = playlists[pIdx];
-                const playlistId = 'pl_ai_' + pIdx;
+                const playlistId = 'pl_daily_' + pIdx;
                 const style = COVER_STYLES[(playlist.styleIndex || pIdx) % COVER_STYLES.length];
 
-                // Hydrate songs in parallel
-                const rawSongs = playlist.songs || [];
-                const hydratedSongs = await Promise.all(
-                    rawSongs.map(s => searchTrackData(s.title, s.artist))
+                // Ensure every song is stored in songStore
+                const validSongs = (playlist.songs || []).filter(s =>
+                    s && s.url && typeof s.url === 'string' && s.url.startsWith('http') &&
+                    s.img && typeof s.img === 'string' && s.img.startsWith('http') &&
+                    !s.img.includes('DTunes.svg') && s.img !== FALLBACK_ART
                 );
-                const validSongs = hydratedSongs.filter(Boolean);
+
+                validSongs.forEach(s => {
+                    if (s && s.id && window.songStore) window.songStore.set(s.id, s);
+                });
+
+                if (validSongs.length === 0) continue;
 
                 aiPlaylistsStore.set(playlistId, {
                     ...playlist,
                     songs: validSongs
                 });
 
-                // Extract up to 4 cover art images for the 2x2 collage
-                const collageArts = validSongs.slice(0, 4).map(s => s.img || FALLBACK_ART);
-                while (collageArts.length < 4) {
-                    collageArts.push(FALLBACK_ART);
+                // Extract 4 genuine cover art images for the 2x2 collage (no fallback art)
+                const collageArts = [];
+                for (let c = 0; c < 4; c++) {
+                    collageArts.push(validSongs[c % validSongs.length].img);
                 }
 
                 // Render native D-Tunes song cards with progressive unblur & fade-in animation
                 const songCardsHtml = validSongs.map(song => {
                     let cardHtml = ui.createCard(song);
-                    // Inject unblur on image and text
                     cardHtml = cardHtml.replace(
                         'class="w-full h-full object-cover',
                         'class="w-full h-full object-cover reveal-blur-img" onload="this.classList.add(\'revealed\'); const p=this.closest(\'.scroll-card\'); if(p) p.querySelectorAll(\'.reveal-text\').forEach(el=>el.classList.add(\'revealed\'));"'
@@ -179,7 +311,7 @@
 
                 sectionsHtml += `
                     <div class="mb-10 animate-fade-in">
-                        <!-- Playlist Row Header with options: Play, Add to Queue, Save -->
+                        <!-- Playlist Row Header: Play, Add to Queue, Save -->
                         <div class="flex items-center justify-between px-4 md:px-8 mb-4">
                             <div>
                                 <h3 class="text-xl font-bold text-white tracking-tight flex items-center gap-2">
@@ -231,7 +363,7 @@
                                     </div>
                                 </div>
 
-                                <!-- Native D-Tunes Song Cards -->
+                                <!-- Native Verified Song Cards -->
                                 ${songCardsHtml}
                             </div>
                             <div class="row-blur-right"></div>
@@ -246,9 +378,9 @@
                     <div class="flex items-center justify-between px-4 md:px-8 mb-6 pb-2 border-b border-white/10">
                         <div>
                             <h2 class="text-2xl md:text-3xl font-black text-white tracking-tight">Made For You</h2>
-                            <p class="text-xs md:text-sm text-neutral-400 mt-1">Playlists personalized to your taste and favorites.</p>
+                            <p class="text-xs md:text-sm text-neutral-400 mt-1">Playlists tailored to your taste and favorites, updated daily.</p>
                         </div>
-                        <button onclick="window.aiHome.renderAIHome(true)" title="Refresh Recommendations" class="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition hover:rotate-180 duration-500 shadow-md">
+                        <button onclick="window.aiHome.renderAIHome(true)" title="Refresh Daily Mixes" class="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition hover:rotate-180 duration-500 shadow-md">
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                         </button>
                     </div>
@@ -257,7 +389,7 @@
                 </div>
             `;
 
-            // Trigger unblur on any images that loaded from cache instantly
+            // Reveal any images that are already complete from cache
             setTimeout(() => {
                 container.querySelectorAll('.reveal-blur-img').forEach(img => {
                     if (img.complete) {
@@ -271,7 +403,7 @@
             if (window.updateMarquees) updateMarquees();
             if (window.setupShelfNavButtons) setupShelfNavButtons();
         } catch (err) {
-            console.warn("[AI Hub] Render error:", err);
+            console.warn("[Daily Mixes] Render error:", err);
             container.innerHTML = '';
         }
     }
@@ -316,7 +448,7 @@
         if (window.ui?.showToast) ui.showToast(`Saved "${name}" to your Library Playlists!`);
     }
 
-    // Load Trending Hits with solid fallback
+    // Load Trending Hits
     async function loadTrendingHits() {
         const grid = document.getElementById('trending-grid');
         if (!grid) return;
@@ -398,7 +530,7 @@
             if (ui.renderPlaylists) ui.renderPlaylists();
             if (ui.renderLibraryLists) ui.renderLibraryLists();
 
-            // 1. Render AI Recommendation Mixes with skeletons & unblur animation
+            // 1. Render Daily Mixes
             renderAIHome();
 
             // 2. Render Trending Songs
@@ -411,7 +543,7 @@
             if (window.setupShelfNavButtons) setupShelfNavButtons();
         };
 
-        // Intelligent Infinite Radio Autoplay (adds 8 songs seamlessly)
+        // Continuous Autoplay
         homeView.autoplayNextIntelligentTracks = async () => {
             const currentTrack = state.currentTrack || (state.playHistory && state.playHistory[0]);
             if (!currentTrack) return false;
@@ -438,7 +570,7 @@
                 const hydrated = [];
                 for (const s of songList) {
                     const matchedSong = await searchTrackData(s.title || s.name, s.artist);
-                    if (matchedSong && matchedSong.id) {
+                    if (matchedSong && matchedSong.url && matchedSong.img && !matchedSong.img.includes('DTunes.svg') && matchedSong.img !== FALLBACK_ART) {
                         const appTrack = window.recommendationClient ? window.recommendationClient.toAppSong(matchedSong) : matchedSong;
                         if (!state.queue.some(q => q.id === appTrack.id)) {
                             hydrated.push(appTrack);
@@ -458,5 +590,12 @@
 
             return false;
         };
+    }
+
+    // Re-render when auth changes
+    if (window.dverse && window.dverse.onAuthStateChange) {
+        window.dverse.onAuthStateChange(() => {
+            renderAIHome();
+        });
     }
 })();
