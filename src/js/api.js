@@ -66,43 +66,21 @@
             },
             searchAll: async (query) => {
                 try {
-                    let songs = [];
-                    // Fetch iTunes results first for high-quality matching
-                    const itunesRes = await fetch(`https://itunes.apple.com/search?term=${encodeURIComponent(query)}&entity=song&limit=10`).then(r => r.json()).catch(() => null);
-                    
-                    if (itunesRes && itunesRes.results && itunesRes.results.length > 0) {
-                        // Match with JioSaavn in parallel for speed
-                        const matchedSongs = await Promise.all(itunesRes.results.map(async (track) => {
-                            const searchStr = `${track.trackName} ${track.artistName}`;
-                            const jioRes = await jiosaavnAPI.searchSongs(searchStr, 1);
-                            if (jioRes && jioRes.length > 0) {
-                                const s = jioRes[0];
-                                // Enrich with iTunes preview and high-quality artwork
-                                s.itunesPreview = track.previewUrl;
-                                if(track.artworkUrl100) s.img = track.artworkUrl100.replace('100x100bb', '500x500bb');
-                                return s;
-                            }
-                            return null;
-                        }));
-                        songs = matchedSongs.filter(Boolean);
-                    }
-                    
-                    // Fallback to JioSaavn directly if iTunes fails or finds nothing
-                    if (songs.length === 0) {
-                        songs = await jiosaavnAPI.searchSongs(query, 12);
-                    }
-
-                    const [albums, artists] = await Promise.all([
+                    const [songs, albums, artists] = await Promise.all([
+                        jiosaavnAPI.searchSongs(query, 20),
                         jiosaavnAPI.searchAlbums(query),
                         jiosaavnAPI.searchArtists(query)
                     ]);
 
-                    songs = utils.deduplicateSongs(songs);
-                    if (songs.length === 0) return { top: null, songs: [], albums: [], artists: [] };
-                    const top = songs[0];
-                    const remainingSongs = songs.slice(1).filter(s => !utils.areDuplicateTracks(s, top)).slice(0, 6);
-                    return { top, songs: remainingSongs, albums, artists };
-                } catch(e) { return { top: null, songs: [], albums: [], artists: [] }; }
+                    const dedupedSongs = utils.deduplicateSongs(songs || []);
+                    if (dedupedSongs.length === 0) return { top: null, songs: [], albums: albums || [], artists: artists || [] };
+                    const top = dedupedSongs[0];
+                    const remainingSongs = dedupedSongs.slice(1).filter(s => !utils.areDuplicateTracks(s, top)).slice(0, 10);
+                    return { top, songs: remainingSongs, albums: albums || [], artists: artists || [] };
+                } catch(e) {
+                    console.warn('[JioSaavn SearchAll] Failed:', e);
+                    return { top: null, songs: [], albums: [], artists: [] };
+                }
             },
             getTrending: async (limit = 25) => {
                 const trendingPlaylists = ['47599074', '1297282877', '1261305331', '158221835'];

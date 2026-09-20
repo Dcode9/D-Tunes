@@ -24,7 +24,7 @@
 
     <script defer src="src/js/preload.js?v=1.3.1"></script>
 
-    <link rel="stylesheet" href="src/css/styles.css?v=1.3.1">
+    <link rel="stylesheet" href="src/css/styles.css?v=1.3.2">
 
 </head>
 <body>
@@ -655,8 +655,23 @@
 
         <!-- ================= FULL SEARCH VIEW ================= -->
         <div id="view-search" class="hidden pb-12">
-            <h2 class="text-2xl md:text-3xl font-bold text-white mb-8 px-4 md:px-8" id="search-title">Search Results</h2>
-            <div id="search-loading" class="text-gray-400 hidden px-4 md:px-8">Searching across the universe...</div>
+            <div class="flex items-center justify-between px-4 md:px-8 mb-6">
+                <h2 class="text-2xl md:text-3xl font-bold text-white" id="search-title">Search</h2>
+                <button id="btn-clear-search-history" onclick="searchManager.clearSearchHistory()" class="text-xs font-semibold text-[var(--accent-color)] hover:underline active:scale-95 transition hidden">Clear All</button>
+            </div>
+
+            <!-- Recent Searches Section (Android style) -->
+            <div id="search-history-section" class="px-4 md:px-8 mb-8">
+                <div class="flex items-center justify-between py-1 mb-3">
+                    <h3 class="text-sm md:text-base font-bold text-gray-300 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        Recent Searches
+                    </h3>
+                </div>
+                <div id="search-history-list" class="flex flex-col gap-2"></div>
+            </div>
+
+            <div id="search-loading" class="text-gray-400 hidden px-4 md:px-8 py-8 text-center">Searching across the universe...</div>
             <div id="search-content" class="hidden">
                 <div class="grid grid-cols-1 lg:grid-cols-5 gap-8 mb-12 relative z-20 px-4 md:px-8">
                     <div class="lg:col-span-2 relative z-20 self-start">
@@ -942,17 +957,19 @@
                             <img id="curr-art-img" src="https://raw.githubusercontent.com/Datamaverik/D-Tunes/main/assets/DTunes2.svg" class="w-full h-full object-cover border border-white/20" crossorigin="anonymous">
                         </div>
 
-                        <div class="flex-1 min-w-0 flex flex-col justify-center cursor-pointer ml-3">
-                            <div class="marquee-container w-full"><h3 id="p-title" class="font-bold text-white text-sm marquee-text">Not Playing</h3></div>
-                            <div class="marquee-container w-full mt-0.5"><p id="p-artist" class="text-xs text-gray-400 marquee-text">Select song</p></div>
+                        <div id="player-track-meta" class="flex items-center justify-between flex-1 min-w-0 ml-3">
+                            <div class="flex-1 min-w-0 flex flex-col justify-center cursor-pointer">
+                                <div class="marquee-container w-full"><h3 id="p-title" class="font-bold text-white text-sm marquee-text">Not Playing</h3></div>
+                                <div class="marquee-container w-full mt-0.5"><p id="p-artist" class="text-xs text-gray-400 marquee-text">Select song</p></div>
+                            </div>
+                            
+                            <button onclick="player.toggleLike(); event.stopPropagation();" id="p-like-btn" class="text-gray-400 hover:text-red-500 transition disabled:opacity-30 flex-shrink-0 ml-2" disabled aria-label="Like song">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                            </button>
                         </div>
-                        
-                        <button onclick="player.toggleLike(); event.stopPropagation();" id="p-like-btn" class="text-gray-400 hover:text-red-500 transition disabled:opacity-30 flex-shrink-0 ml-2" disabled>
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-                        </button>
 
                         <!-- Mobile Specific Play Button in Pill -->
-                        <button onclick="player.togglePlay(); event.stopPropagation();" class="md:hidden flex items-center justify-center text-white ml-2 flex-shrink-0 z-30 relative">
+                        <button onclick="player.togglePlay(); event.stopPropagation();" class="md:hidden flex items-center justify-center text-white ml-2 flex-shrink-0 z-30 relative" aria-label="Toggle playback">
                             <span id="m-icon-play" class="flex"><svg class="w-8 h-8" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
                             <span id="m-icon-pause" class="hidden"><svg class="w-8 h-8" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg></span>
                         </button>
@@ -968,7 +985,7 @@
                 </div>
 
                 <!-- 2. BOTTOM ITEM: Expanding Lists Container -->
-                <div id="queue-expandable-area" class="order-2 hidden md:flex">
+                <div id="queue-expandable-area" class="order-2 flex">
                     <div id="queue-full-content">
                         <div id="queue-tabs" class="flex items-center justify-between gap-2 px-4 pt-4 pb-2 border-b border-white/5 flex-shrink-0 relative z-20">
                             <div class="flex items-center gap-3 min-w-0">
@@ -1097,23 +1114,23 @@
     <audio id="audio-el" crossorigin="anonymous" controls="true" preload="auto" playsinline webkit-playsinline style="position:fixed;top:-9999px;left:-9999px;opacity:0.001;pointer-events:none;width:1px;height:1px;"></audio>
 
     <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script defer src="src/js/dverseClient.js?v=1.3.1"></script>
-    <script defer src="src/js/ai.js?v=1.3.1"></script>
-    <script defer src="src/js/recommendationClient.js?v=1.3.1"></script>
-    <script defer src="src/js/utils.js?v=1.3.1"></script>
-    <script defer src="src/js/api.js?v=1.3.1"></script>
-    <script defer src="src/js/spotify.js?v=1.3.1"></script>
-    <script defer src="src/js/timer.js?v=1.3.1"></script>
-    <script defer src="src/js/state.js?v=1.3.1"></script>
-    <script defer src="src/js/context-menu.js?v=1.3.1"></script>
-    <script defer src="src/js/player.js?v=1.3.1"></script>
-    <script defer src="src/js/visualizer.js?v=1.3.1"></script>
-    <script defer src="src/js/theme.js?v=1.3.1"></script>
-    <script defer src="src/js/lyrics.js?v=1.3.1"></script>
-    <script defer src="src/js/ui.js?v=1.3.1"></script>
-    <script defer src="src/js/search.js?v=1.3.1"></script>
-    <script defer src="src/js/ai-hub.js?v=1.3.1"></script>
-    <script defer src="src/js/main.js?v=1.3.1"></script>
+    <script defer src="src/js/dverseClient.js?v=1.3.2"></script>
+    <script defer src="src/js/ai.js?v=1.3.2"></script>
+    <script defer src="src/js/recommendationClient.js?v=1.3.2"></script>
+    <script defer src="src/js/utils.js?v=1.3.2"></script>
+    <script defer src="src/js/api.js?v=1.3.2"></script>
+    <script defer src="src/js/spotify.js?v=1.3.2"></script>
+    <script defer src="src/js/timer.js?v=1.3.2"></script>
+    <script defer src="src/js/state.js?v=1.3.2"></script>
+    <script defer src="src/js/context-menu.js?v=1.3.2"></script>
+    <script defer src="src/js/player.js?v=1.3.2"></script>
+    <script defer src="src/js/visualizer.js?v=1.3.2"></script>
+    <script defer src="src/js/theme.js?v=1.3.2"></script>
+    <script defer src="src/js/lyrics.js?v=1.3.2"></script>
+    <script defer src="src/js/ui.js?v=1.3.2"></script>
+    <script defer src="src/js/search.js?v=1.3.2"></script>
+    <script defer src="src/js/ai-hub.js?v=1.3.2"></script>
+    <script defer src="src/js/main.js?v=1.3.2"></script>
 
 </body>
 </html>

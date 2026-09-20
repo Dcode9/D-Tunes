@@ -146,6 +146,7 @@
             libraryIds: safeStorage.getJSON('libraryIds', []),
             likedArtists: safeStorage.getJSON('likedArtists', []),
             playHistory: safeStorage.getJSON('playHistory', []),
+            searchHistory: safeStorage.getJSON('searchHistory', safeStorage.getJSON('recentSearches', [])),
             artistPlayCounts: safeStorage.getJSON('artistPlayCounts', {}),
             playlists: safeStorage.getJSON('playlists', {}),
             playlistStyles: safeStorage.getJSON('playlistStyles', {}),
@@ -602,7 +603,7 @@
                 // Completely purge all local storage keys
                 const targetKeys = [
                     'likedIds', 'libraryIds', 'likedArtists', 'playlists', 'playlistStyles',
-                    'playHistory', 'artistPlayCounts', 'recentSearches', 'username', 'avatarUrl',
+                    'playHistory', 'artistPlayCounts', 'recentSearches', 'searchHistory', 'username', 'avatarUrl',
                     'songStore', 'dtunes_tester_streak', 'savedQueue', 'lastActiveTrack',
                     'playbackState', 'equalizerSettings', 'audioQuality', 'preferredLanguage',
                     'dverse_session_cache', 'dverse_supabase_auth_token', 'sb-supabase-auth-token',
@@ -627,6 +628,7 @@
                 state.libraryIds = [];
                 state.likedArtists = [];
                 state.playHistory = [];
+                state.searchHistory = [];
                 state.artistPlayCounts = {};
                 state.playlists = {};
                 state.playlistStyles = {};

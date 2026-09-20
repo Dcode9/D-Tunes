@@ -39,33 +39,6 @@
                     }
                 }
             }
-
-            // 2. iTunes API fallback
-            const encoded = encodeURIComponent(query);
-            const res = await fetch(`https://itunes.apple.com/search?term=${encoded}&entity=song&limit=1`);
-            const data = await res.json();
-            if (data.results && data.results.length > 0) {
-                const track = data.results[0];
-                const art = track.artworkUrl100 ? track.artworkUrl100.replace('100x100bb', '500x500bb') : null;
-                const hasValidUrl = track.previewUrl && typeof track.previewUrl === 'string' && track.previewUrl.startsWith('http');
-                const hasValidArt = art && typeof art === 'string' && art.startsWith('http') && !art.includes('DTunes.svg');
-
-                if (hasValidUrl && hasValidArt) {
-                    const normalized = {
-                        id: 'itunes_' + track.trackId,
-                        name: track.trackName,
-                        title: track.trackName,
-                        artist: track.artistName,
-                        img: art,
-                        url: track.previewUrl,
-                        duration: Math.floor((track.trackTimeMillis || 0) / 1000) || 30,
-                        source: 'itunes'
-                    };
-                    searchCache.set(query, normalized);
-                    if (window.songStore && normalized.id) window.songStore.set(normalized.id, normalized);
-                    return normalized;
-                }
-            }
         } catch (e) {
             console.warn(`[Track Search] Search failed for "${query}":`, e);
         }

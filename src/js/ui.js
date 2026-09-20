@@ -97,6 +97,18 @@
                 document.getElementById(`view-${view}`).classList.remove('hidden'); document.getElementById('main-container').scrollTo({ top: 0, behavior: 'smooth' });
 
                 if (view === 'stats') statsView.render();
+                if (view === 'search') {
+                    const input = document.getElementById('search-input');
+                    const q = input ? input.value.trim() : '';
+                    if (!q && typeof searchManager !== 'undefined' && searchManager.renderSearchHistory) {
+                        searchManager.renderSearchHistory();
+                        document.getElementById('search-history-section')?.classList.remove('hidden');
+                        document.getElementById('search-content')?.classList.add('hidden');
+                        document.getElementById('search-loading')?.classList.add('hidden');
+                        const title = document.getElementById('search-title');
+                        if (title) title.textContent = 'Search';
+                    }
+                }
 
                 if (view !== 'search') {
                     document.getElementById('search-dropdown').classList.remove('active');
@@ -104,10 +116,12 @@
 
                 if (view !== 'home' && deviceMode.isMobileUI()) {
                     document.body.classList.remove('mobile-player-open');
-                    document.body.classList.remove('mobile-search-open');
-                    document.documentElement.style.setProperty('--mobile-keyboard-offset', '0px');
-                    document.documentElement.style.setProperty('--mobile-keyboard-lift', '0px');
-                    document.body.classList.remove('mobile-keyboard-open');
+                    if (view !== 'search') {
+                        document.body.classList.remove('mobile-search-open');
+                        document.documentElement.style.setProperty('--mobile-keyboard-offset', '0px');
+                        document.documentElement.style.setProperty('--mobile-keyboard-lift', '0px');
+                        document.body.classList.remove('mobile-keyboard-open');
+                    }
                 }
 
                 ui.setMobileNavActive(view);
@@ -140,12 +154,12 @@
             },
 
             openMobileSearch: () => {
+                ui.switchView('search');
                 if (!deviceMode.isMobileUI()) {
-                    document.getElementById('search-input').focus({ preventScroll: true });
+                    document.getElementById('search-input')?.focus({ preventScroll: true });
                     return;
                 }
                 const input = document.getElementById('search-input');
-                state.mobileSearchOriginView = ui.getCurrentView();
                 document.body.classList.remove('mobile-player-open');
                 document.body.classList.add('mobile-search-open');
                 ui.setMobileNavActive('search');
@@ -198,10 +212,14 @@
             },
 
             playFromQuickSearch: (storeId) => {
+                const song = songStore.get(storeId);
+                if (song && typeof searchManager !== 'undefined' && searchManager.addToRecentSearches) {
+                    searchManager.addToRecentSearches(song);
+                }
                 playSongById(storeId);
                 document.getElementById('search-dropdown').classList.remove('active');
                 if (deviceMode.isMobileUI() && document.body.classList.contains('mobile-search-open')) {
-                    ui.closeMobileSearch({ clearQuickState: true, restoreOrigin: true });
+                    ui.closeMobileSearch({ clearQuickState: true, restoreOrigin: false });
                 }
             },
 

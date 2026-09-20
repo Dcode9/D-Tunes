@@ -68,11 +68,38 @@
                     if (q.length >= 2 && results.innerHTML !== '') dropWrapper.classList.add('active'); 
                 });
                 
-                input.addEventListener('blur', () => { setTimeout(() => { dropWrapper.classList.remove('active'); }, 200); });
+                input.addEventListener('blur', () => {
+                    setTimeout(() => {
+                        if (!dropWrapper.contains(document.activeElement)) {
+                            dropWrapper.classList.remove('active');
+                        }
+                    }, 250);
+                });
                 
                 input.addEventListener('input', (e) => {
-                    clearTimeout(state.searchDebounce); const query = e.target.value.trim();
-                    if (query.length < 2) { dropWrapper.classList.remove('active'); results.innerHTML = ''; return; }
+                    clearTimeout(state.searchDebounce);
+                    const query = e.target.value.trim();
+
+                    if (query.length === 0) {
+                        dropWrapper.classList.remove('active');
+                        results.innerHTML = '';
+                        if (ui.getCurrentView() === 'search') {
+                            searchManager.renderSearchHistory();
+                            document.getElementById('search-history-section')?.classList.remove('hidden');
+                            document.getElementById('search-content')?.classList.add('hidden');
+                            document.getElementById('search-loading')?.classList.add('hidden');
+                            const title = document.getElementById('search-title');
+                            if (title) title.textContent = 'Search';
+                        }
+                        return;
+                    }
+
+                    if (query.length < 2) {
+                        dropWrapper.classList.remove('active');
+                        results.innerHTML = '';
+                        return;
+                    }
+
                     dropWrapper.classList.add('active');
                     results.classList.add('is-updating');
                     const requestedQuery = query;
@@ -95,25 +122,128 @@
                 
                 input.addEventListener('keydown', (e) => {
                     if(e.key === 'Enter') {
-                        e.preventDefault(); const query = e.target.value.trim();
+                        e.preventDefault();
+                        const query = e.target.value.trim();
                         if(query.length > 0) { 
                             if (deviceMode.isMobileUI()) {
                                 e.target.blur();
-                                ui.closeMobileSearch();
                             }
                             lastFullSearch = query; 
-                            dropWrapper.classList.remove('active'); results.innerHTML = ''; 
+                            dropWrapper.classList.remove('active');
+                            results.innerHTML = ''; 
                             searchManager.performFullSearch(query); 
                         }
                     }
                 });
+
+                searchManager.renderSearchHistory();
             },
+
+            addToRecentSearches: (song) => {
+                if (!song || !song.id) return;
+                const normalized = {
+                    id: song.id,
+                    name: song.name || song.title || 'Unknown Track',
+                    title: song.title || song.name || 'Unknown Track',
+                    artist: song.artist || 'Unknown Artist',
+                    img: song.img || FALLBACK_ART,
+                    url: song.url,
+                    duration: song.duration || 0,
+                    searchedAt: Date.now()
+                };
+
+                let list = state.searchHistory || [];
+                list = list.filter(item => item && item.id !== song.id);
+                list.unshift(normalized);
+                if (list.length > 25) list = list.slice(0, 25);
+
+                state.searchHistory = list;
+                localStorage.setItem('searchHistory', JSON.stringify(list));
+                localStorage.setItem('recentSearches', JSON.stringify(list));
+
+                if (ui.getCurrentView() === 'search') {
+                    searchManager.renderSearchHistory();
+                }
+            },
+
+            removeFromSearchHistory: (songId) => {
+                if (!songId) return;
+                state.searchHistory = (state.searchHistory || []).filter(item => item && item.id !== songId);
+                localStorage.setItem('searchHistory', JSON.stringify(state.searchHistory));
+                localStorage.setItem('recentSearches', JSON.stringify(state.searchHistory));
+                searchManager.renderSearchHistory();
+            },
+
+            clearSearchHistory: () => {
+                state.searchHistory = [];
+                localStorage.setItem('searchHistory', JSON.stringify([]));
+                localStorage.setItem('recentSearches', JSON.stringify([]));
+                searchManager.renderSearchHistory();
+            },
+
+            renderSearchHistory: () => {
+                const listEl = document.getElementById('search-history-list');
+                const clearBtn = document.getElementById('btn-clear-search-history');
+                if (!listEl) return;
+
+                const history = state.searchHistory || [];
+                if (clearBtn) {
+                    clearBtn.classList.toggle('hidden', history.length === 0);
+                }
+
+                if (history.length === 0) {
+                    listEl.innerHTML = `
+                        <div class="py-8 text-center text-gray-500 text-sm">
+                            No recent searches yet. Search for your favorite songs, artists, or albums.
+                        </div>`;
+                    return;
+                }
+
+                listEl.innerHTML = history.map(song => {
+                    const storeId = songStore.add(song);
+                    return `
+                    <div class="swipe-song relative overflow-hidden rounded-2xl mb-2 group select-none flex-shrink-0 w-full flex items-center" data-store-id="${storeId}">
+                        <div class="swipe-reveal-left absolute inset-y-0 left-0 flex items-center overflow-hidden pointer-events-none rounded-2xl z-0 bg-emerald-600 text-white font-bold text-xs" style="width:0px;">
+                            <div class="swipe-reveal-content flex items-center gap-2 px-4 whitespace-nowrap min-w-max h-full">
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+                                <span class="font-bold text-xs tracking-wide">Play Next</span>
+                            </div>
+                        </div>
+                        <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-cyan-600 text-white font-bold text-xs" style="width:0px;">
+                            <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
+                                <span class="font-bold text-xs tracking-wide">Add to Queue</span>
+                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
+                            </div>
+                        </div>
+                        <div class="swipe-song-card glass-panel rounded-2xl p-2 pr-3 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/95 hover-pause cursor-pointer relative z-10" onclick="searchManager.playRecentSearch('${storeId}')" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                            ${ui.createSongPillInner(song)}
+                            <button class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition flex-shrink-0 ml-1" onclick="event.stopPropagation(); searchManager.removeFromSearchHistory('${utils.escapeJs(song.id)}')" title="Remove from recent searches" aria-label="Remove from recent searches">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                            </button>
+                        </div>
+                    </div>`;
+                }).join('');
+                updateMarquees();
+            },
+
+            playRecentSearch: (storeId) => {
+                const song = songStore.get(storeId);
+                if (song) {
+                    searchManager.addToRecentSearches(song);
+                }
+                playSongById(storeId);
+            },
+
             performFullSearch: async (query) => {
-                ui.switchView('search'); document.getElementById('search-title').textContent = `Results for "${query}"`;
-                document.getElementById('search-content').classList.add('hidden'); document.getElementById('search-loading').classList.remove('hidden');
+                ui.switchView('search');
+                document.getElementById('search-title').textContent = `Results for "${query}"`;
+                document.getElementById('search-history-section')?.classList.add('hidden');
+                document.getElementById('search-content').classList.add('hidden');
+                document.getElementById('search-loading').classList.remove('hidden');
 
                 const data = await jiosaavnAPI.searchAll(query);
-                document.getElementById('search-loading').classList.add('hidden'); document.getElementById('search-content').classList.remove('hidden');
+                document.getElementById('search-loading').classList.add('hidden');
+                document.getElementById('search-content').classList.remove('hidden');
                 if(!data.top) { document.getElementById('search-content').innerHTML = '<p class="text-gray-400 pl-8">No results found.</p>'; return; }
 
                 const topStoreId = songStore.add(data.top);

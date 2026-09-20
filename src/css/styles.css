@@ -634,7 +634,7 @@
             left: 0 !important;
             right: 0 !important;
             padding: calc(6px + env(safe-area-inset-top, 0px)) 12px 6px !important;
-            z-index: 90 !important;
+            z-index: 150 !important;
         }
 
         html[data-ui-mode="mobile"] #search-dropdown,
@@ -644,12 +644,19 @@
             left: 0;
             right: 0;
             padding: 0;
-            z-index: 95 !important;
+            z-index: 160 !important;
+        }
+
+        html[data-ui-mode="mobile"] #search-dropdown.active {
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            pointer-events: auto !important;
         }
 
         html[data-ui-mode="mobile"] #search-dropdown .search-blur-bg {
             border-radius: 1.25rem;
-            background: rgba(10, 10, 14, 0.94);
+            background: rgba(10, 10, 14, 0.96);
             backdrop-filter: blur(24px);
             -webkit-backdrop-filter: blur(24px);
             mask-image: none;
@@ -658,16 +665,19 @@
         }
 
         html[data-ui-mode="mobile"] #search-dropdown .search-results-content {
-            max-height: calc(100dvh - 180px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+            max-height: calc(100dvh - 140px - var(--mobile-keyboard-lift, 0px)) !important;
             overflow-y: auto;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            background: rgba(12, 12, 16, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            background: rgba(12, 12, 16, 0.95);
             border-radius: 1.25rem;
             -webkit-overflow-scrolling: touch;
+            pointer-events: auto !important;
         }
 
-        html[data-ui-mode="mobile"] body.mobile-search-open #search-dropdown .search-results-content {
-            max-height: calc(100dvh - 180px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important;
+        html[data-ui-mode="mobile"] #search-dropdown.active .search-results-content {
+            opacity: 1 !important;
+            transform: translateY(0) !important;
+            pointer-events: auto !important;
         }
 
         html[data-ui-mode="mobile"] #mobile-nav {
@@ -749,6 +759,17 @@
             z-index: 100 !important;
         }
 
+        html[data-ui-mode="mobile"] body.mobile-keyboard-open #player-footer,
+        html[data-ui-mode="mobile"] body.mobile-search-open.mobile-keyboard-open #player-footer {
+            bottom: calc(8px + var(--mobile-keyboard-lift, 0px)) !important;
+        }
+
+        html[data-ui-mode="mobile"] body.mobile-keyboard-open #mobile-nav {
+            transform: translateY(120%) !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+        }
+
         html[data-ui-mode="mobile"] #queue-anchor {
             width: 100%;
             height: auto;
@@ -762,14 +783,14 @@
             width: 100%;
         }
 
-        html[data-ui-mode="mobile"] #queue-preview-slot,
-        html[data-ui-mode="mobile"] #queue-expandable-area,
-        html[data-ui-mode="mobile"] #btn-expand-queue,
-        html[data-ui-mode="mobile"] #player-card .w-24.hidden.md\:block {
+        html[data-ui-mode="mobile"] body:not(.mobile-player-open) #queue-preview-slot,
+        html[data-ui-mode="mobile"] body:not(.mobile-player-open) #queue-expandable-area,
+        html[data-ui-mode="mobile"] body:not(.mobile-player-open) #btn-expand-queue,
+        html[data-ui-mode="mobile"] body:not(.mobile-player-open) #player-card .w-24.hidden.md\:block {
             display: none !important;
         }
 
-        html[data-ui-mode="mobile"] #player-card {
+        html[data-ui-mode="mobile"] body:not(.mobile-player-open) #player-card {
             display: none;
         }
 
@@ -1130,150 +1151,7 @@ html[data-ui-mode="mobile"] body.mobile-player-open .mobile-player-header {
     border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-/* Tab Switching Control */
-/* Default (Playing Tab): Show Queue Anchor (for Active Area) + Player Card + Quick Nav. Hide Expandable Area & Lyrics. */
-html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #queue-anchor,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #queue-anchor {
-    display: flex !important;
-    flex-direction: column !important;
-    flex: 1 1 0% !important;
-    height: auto !important;
-    max-height: none !important;
-    width: 100% !important;
-    position: static !important;
-    pointer-events: auto !important;
-    overflow: hidden !important;
-    justify-content: center !important;
-    align-items: center !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #player-active-area,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #player-active-area {
-    display: flex !important;
-    flex-direction: column !important;
-    width: 100% !important;
-    flex: 1 1 0% !important;
-    justify-content: center !important;
-    align-items: center !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #queue-expandable-area,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #queue-expandable-area,
-html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #mobile-lyrics-container,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #mobile-lyrics-container {
-    display: none !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #player-card,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #player-card {
-    display: flex !important;
-    flex-direction: column !important;
-    width: 100% !important;
-    flex-shrink: 0 !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) .mobile-quick-nav,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] .mobile-quick-nav {
-    display: flex !important;
-}
-
-/* Queue Tab: Full Height Unlimited Scroll Queue. Hide Track Area & Player Card & History List. */
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #player-active-area,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #player-card,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] .mobile-quick-nav,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #mobile-lyrics-container,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #history-list {
-    display: none !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #queue-anchor {
-    display: flex !important;
-    flex-direction: column !important;
-    flex: 1 1 0% !important;
-    height: 100% !important;
-    max-height: none !important;
-    width: 100% !important;
-    position: static !important;
-    pointer-events: auto !important;
-    overflow: hidden !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #queue-expandable-area {
-    display: flex !important;
-    flex-direction: column !important;
-    flex: 1 1 0% !important;
-    height: 100% !important;
-    max-height: none !important;
-    width: 100% !important;
-    overflow: hidden !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #queue-list {
-    display: flex !important;
-    flex-direction: column !important;
-    flex: 1 1 0% !important;
-    height: 100% !important;
-    max-height: none !important;
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch !important;
-}
-
-/* History Tab: Full Height Unlimited Scroll History. Hide Track Area & Player Card & Queue List. */
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #player-active-area,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #player-card,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] .mobile-quick-nav,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #mobile-lyrics-container,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #queue-list {
-    display: none !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #queue-anchor {
-    display: flex !important;
-    flex-direction: column !important;
-    flex: 1 1 0% !important;
-    height: 100% !important;
-    max-height: none !important;
-    width: 100% !important;
-    position: static !important;
-    pointer-events: auto !important;
-    overflow: hidden !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #queue-expandable-area {
-    display: flex !important;
-    flex-direction: column !important;
-    flex: 1 1 0% !important;
-    height: 100% !important;
-    max-height: none !important;
-    width: 100% !important;
-    overflow: hidden !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #history-list {
-    display: flex !important;
-    flex-direction: column !important;
-    flex: 1 1 0% !important;
-    height: 100% !important;
-    max-height: none !important;
-    overflow-y: auto !important;
-    -webkit-overflow-scrolling: touch !important;
-}
-
-/* Lyrics Tab: Full Height Lyrics. Hide Track Area & Player Card & Queue Anchor. */
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #player-active-area,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #player-card,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] .mobile-quick-nav,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #queue-anchor {
-    display: none !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #mobile-lyrics-container {
-    display: flex !important;
-    flex: 1 1 0% !important;
-    height: 100% !important;
-    max-height: none !important;
-    overflow-y: auto !important;
-}
+/* Tab Switching Control handled in Mobile Player Tab States below */
 
 /* Mobile Queue & History Container Styling (Unlimited Scroll Area) */
 html[data-ui-mode="mobile"] body.mobile-player-open #queue-wrapper {
@@ -1336,10 +1214,11 @@ html[data-ui-mode="mobile"] body.mobile-player-open #info-island {
 
 html[data-ui-mode="mobile"] body.mobile-player-open #album-art-wrapper {
     --album-swipe-x: 0px;
-    width: min(72vw, 290px) !important;
-    height: min(72vw, 290px) !important;
-    margin: 8px auto 14px !important;
-    border-radius: 26px !important;
+    width: min(calc(100vw - 36px), 360px, calc(100dvh - 350px)) !important;
+    height: min(calc(100vw - 36px), 360px, calc(100dvh - 350px)) !important;
+    aspect-ratio: 1 / 1 !important;
+    margin: 4px auto 14px !important;
+    border-radius: 24px !important;
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.14) !important;
     transform: translate3d(var(--album-swipe-x), 0, 0) !important;
     transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
@@ -1353,17 +1232,29 @@ html[data-ui-mode="mobile"] body.mobile-player-open #album-art-wrapper.album-swi
 }
 
 html[data-ui-mode="mobile"] body.mobile-player-open #curr-art-img {
-    border-radius: 26px !important;
+    border-radius: 24px !important;
     width: 100% !important;
     height: 100% !important;
     object-fit: cover !important;
 }
 
-html[data-ui-mode="mobile"] body.mobile-player-open #info-island .flex-1 {
+html[data-ui-mode="mobile"] body.mobile-player-open #player-track-meta {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
     width: 100% !important;
+    padding: 0 6px !important;
+    margin: 0 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-track-meta .flex-1 {
+    width: auto !important;
+    flex: 1 1 0% !important;
+    min-width: 0 !important;
     text-align: left !important;
     margin: 0 !important;
-    padding: 0 6px !important;
+    padding: 0 4px !important;
 }
 
 html[data-ui-mode="mobile"] body.mobile-player-open #p-title {
@@ -1382,8 +1273,12 @@ html[data-ui-mode="mobile"] body.mobile-player-open #p-artist {
 }
 
 html[data-ui-mode="mobile"] body.mobile-player-open #p-like-btn {
-    transform: scale(1.35) !important;
-    margin: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-shrink: 0 !important;
+    transform: scale(1.3) !important;
+    margin: 0 0 0 12px !important;
     padding: 8px !important;
 }
 
@@ -1563,52 +1458,158 @@ html[data-ui-mode="mobile"] body.mobile-player-open .mobile-queue-btn {
     box-shadow: 0 2px 10px color-mix(in srgb, var(--accent-color) 35%, transparent);
 }
 
-/* Mobile Player view states */
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #player-active-area {
-    display: none !important;
-}
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #queue-anchor {
-    display: none !important;
-}
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] .mobile-queue-btn {
-    display: none !important;
-}
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #mobile-lyrics-container {
+/* Mobile Player Tab States (Playing, Queue, History, Lyrics) */
+
+/* 1. Playing / Track Tab (Default) */
+html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #player-active-area,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #player-active-area {
     display: flex !important;
-    flex: 1 1 auto;
-    min-height: 0;
-    max-height: calc(100dvh - 200px);
+    flex-direction: column !important;
+    width: 100% !important;
+    flex: 1 1 auto !important;
+    justify-content: center !important;
+    align-items: center !important;
+    min-height: 0 !important;
 }
 
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #player-active-area {
+html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #queue-anchor,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #queue-anchor {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    height: auto !important;
+    max-height: none !important;
+    width: 100% !important;
+    position: static !important;
+    pointer-events: auto !important;
+    justify-content: center !important;
+    align-items: center !important;
+    min-height: 0 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #queue-expandable-area,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #queue-expandable-area,
+html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #mobile-lyrics-container,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #mobile-lyrics-container {
     display: none !important;
 }
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #mobile-lyrics-container {
+
+html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #player-card,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #player-card {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    flex-shrink: 0 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) .mobile-quick-nav,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] .mobile-quick-nav {
+    display: flex !important;
+}
+
+/* 2. Queue Tab */
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #player-active-area,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #mobile-lyrics-container,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] .mobile-quick-nav,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #history-list {
     display: none !important;
 }
+
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #queue-anchor {
     display: flex !important;
-    flex: 1 1 auto;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
     height: auto !important;
+    max-height: none !important;
+    width: 100% !important;
+    position: static !important;
+    pointer-events: auto !important;
+    overflow: hidden !important;
+    min-height: 0 !important;
 }
+
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #queue-wrapper,
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #queue-expandable-area,
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #queue-full-content {
     display: flex !important;
-    max-height: none !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
     height: 100% !important;
-}
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #queue-list,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #history-list {
     max-height: none !important;
-    flex: 1;
+    width: 100% !important;
+    min-height: 0 !important;
 }
 
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #mobile-lyrics-container {
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #queue-list {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    height: 100% !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding: 8px 2px 24px !important;
+}
+
+/* 3. History Tab */
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #player-active-area,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #mobile-lyrics-container,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] .mobile-quick-nav,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #queue-list {
     display: none !important;
 }
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #queue-anchor:not(.queue-expanded) {
-    display: none;
+
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #queue-anchor {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    height: auto !important;
+    max-height: none !important;
+    width: 100% !important;
+    position: static !important;
+    pointer-events: auto !important;
+    overflow: hidden !important;
+    min-height: 0 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #queue-wrapper,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #queue-expandable-area,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #queue-full-content {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    height: 100% !important;
+    max-height: none !important;
+    width: 100% !important;
+    min-height: 0 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #history-list {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    height: 100% !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    padding: 8px 2px 24px !important;
+}
+
+/* 4. Lyrics Tab */
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #player-active-area,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #queue-anchor,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #player-card,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] .mobile-quick-nav {
+    display: none !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #mobile-lyrics-container {
+    display: flex !important;
+    flex: 1 1 auto !important;
+    height: 100% !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
 }
 
 /* Touch manipulation & safe area padding */
