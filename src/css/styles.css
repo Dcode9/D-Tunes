@@ -1186,6 +1186,12 @@ html[data-ui-mode="mobile"] body.mobile-player-open #queue-expandable-area {
     border: none !important;
     background: transparent !important;
     box-shadow: none !important;
+    /* Override desktop base max-height:0 / opacity:0 */
+    max-height: none !important;
+    opacity: 1 !important;
+    overflow: visible !important;
+    pointer-events: auto !important;
+    transition: none !important;
 }
 
 html[data-ui-mode="mobile"] body.mobile-player-open #queue-full-content {
@@ -1199,6 +1205,9 @@ html[data-ui-mode="mobile"] body.mobile-player-open #queue-full-content {
     border: none !important;
     box-shadow: none !important;
     margin: 0 !important;
+    /* Override desktop base opacity:0 */
+    opacity: 1 !important;
+    pointer-events: auto !important;
 }
 
 html[data-ui-mode="mobile"] body.mobile-player-open #queue-tabs {
@@ -1585,11 +1594,6 @@ html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #pl
     flex-shrink: 0 !important;
 }
 
-html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) .mobile-quick-nav,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] .mobile-quick-nav {
-    display: flex !important;
-}
-
 /* 2. Queue Tab */
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #player-active-area,
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #mobile-lyrics-container,
@@ -1621,6 +1625,8 @@ html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #qu
     max-height: none !important;
     width: 100% !important;
     min-height: 0 !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
 }
 
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #queue-list {
@@ -1632,6 +1638,14 @@ html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #qu
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch !important;
     padding: 8px 2px 24px !important;
+}
+
+/* Player controls always pinned to bottom in queue tab */
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #player-card {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    flex-shrink: 0 !important;
 }
 
 /* 3. History Tab */
@@ -1665,6 +1679,8 @@ html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #
     max-height: none !important;
     width: 100% !important;
     min-height: 0 !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
 }
 
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #history-list {
@@ -1678,12 +1694,27 @@ html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #
     padding: 8px 2px 24px !important;
 }
 
+/* Player controls always pinned to bottom in history tab */
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #player-card {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    flex-shrink: 0 !important;
+}
+
 /* 4. Lyrics Tab */
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #player-active-area,
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #queue-anchor,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #player-card,
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] .mobile-quick-nav {
     display: none !important;
+}
+
+/* Player controls always pinned to bottom in lyrics tab */
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #player-card {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    flex-shrink: 0 !important;
 }
 
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #mobile-lyrics-container {

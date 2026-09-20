@@ -425,20 +425,15 @@
             },
             renderEqualizerSettings: () => {
                 const containers = [
-                    { bandsId: 'eq-bands', presetsId: 'eq-settings-presets', descId: 'eq-settings-preset-desc', headroomId: 'eq-settings-headroom-badge', prefix: 'set' },
-                    { bandsId: 'eq-modal-bands', presetsId: 'eq-modal-presets', descId: 'eq-modal-preset-desc', headroomId: 'eq-modal-headroom-badge', prefix: 'mod' }
+                    { bandsId: 'eq-bands', presetsId: 'eq-settings-presets', prefix: 'set' },
+                    { bandsId: 'eq-modal-bands', presetsId: 'eq-modal-presets', prefix: 'mod' }
                 ];
 
                 const currentPreset = getCurrentPresetId();
-                const activePresetObj = EQ_PRESETS[currentPreset];
-                const descText = activePresetObj ? activePresetObj.desc : 'Custom studio equalizer profile';
 
-                containers.forEach(({ bandsId, presetsId, descId, prefix }) => {
+                containers.forEach(({ bandsId, presetsId, prefix }) => {
                     const bandsContainer = document.getElementById(bandsId);
                     const presetsContainer = document.getElementById(presetsId);
-                    const descEl = document.getElementById(descId);
-
-                    if (descEl) descEl.textContent = descText;
 
                     if (presetsContainer) {
                         presetsContainer.innerHTML = Object.entries(EQ_PRESETS).map(([key, preset]) => `
@@ -457,11 +452,11 @@
                     if (bandsContainer) {
                         if (!bandsContainer.dataset.rendered) {
                             bandsContainer.innerHTML = EQ_BANDS.map((band) => `
-                                <div class="eq-band" title="${band.frequency} Hz (${band.subLabel})">
+                                <div class="eq-band">
                                     <span id="${prefix}-${band.key}-value" class="eq-value">0 dB</span>
                                     <div class="eq-slider-container">
                                         <div class="eq-zero-line"></div>
-                                        <input id="${prefix}-${band.key}" type="range" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="${band.label} (${band.subLabel})" oninput="ui.updateEqualizer('${band.key}', this.value)" class="eq-slider">
+                                        <input id="${prefix}-${band.key}" type="range" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="${band.label}" oninput="ui.updateEqualizer('${band.key}', this.value)" class="eq-slider">
                                     </div>
                                     <div class="flex flex-col items-center leading-none">
                                         <span class="eq-label">${band.label}</span>
@@ -483,11 +478,7 @@
                 });
             },
             updateEqualizerMonitoring: (preampDb = 0) => {
-                const headroomText = `Headroom: ${preampDb < 0 ? preampDb.toFixed(1) : '0.0'} dB`;
-                const setBadge = document.getElementById('eq-settings-headroom-badge');
-                const modBadge = document.getElementById('eq-modal-headroom-badge');
-                if (setBadge) setBadge.textContent = headroomText;
-                if (modBadge) modBadge.textContent = headroomText;
+                // No-op: headroom badges removed from UI
             },
             setEqualizerPreset: (presetId) => {
                 const preset = EQ_PRESETS[presetId];
