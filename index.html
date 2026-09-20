@@ -22,9 +22,9 @@
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.2/color-thief.umd.js?v=1789798237"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
-    <script defer src="src/js/preload.js?v=1.3.1"></script>
+    <script defer src="src/js/preload.js?v=1.3.3"></script>
 
-    <link rel="stylesheet" href="src/css/styles.css?v=1.3.2">
+    <link rel="stylesheet" href="src/css/styles.css?v=1.3.3">
 
 </head>
 <body>
@@ -952,9 +952,19 @@
                             <svg class="w-5 h-5 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/></svg>
                         </button>
 
-                        <div id="album-art-wrapper" class="relative w-12 h-12 flex-shrink-0 cursor-pointer rounded-xl overflow-hidden shadow-md ml-1 my-1">
+                        <div id="album-art-wrapper" class="relative w-12 h-12 flex-shrink-0 cursor-pointer rounded-xl shadow-md ml-1 my-1">
                             <div id="album-art-glow"></div>
-                            <img id="curr-art-img" src="https://raw.githubusercontent.com/Datamaverik/D-Tunes/main/assets/DTunes2.svg" class="w-full h-full object-cover border border-white/20" crossorigin="anonymous">
+                            <div id="album-carousel-track" class="w-full h-full relative">
+                                <div id="peek-prev-card" class="album-art-card album-art-prev hidden" aria-hidden="true">
+                                    <img id="peek-prev-img" src="https://raw.githubusercontent.com/Datamaverik/D-Tunes/main/assets/DTunes2.svg" class="w-full h-full object-cover" alt="Previous track">
+                                </div>
+                                <div id="curr-art-card" class="album-art-card album-art-current w-full h-full">
+                                    <img id="curr-art-img" src="https://raw.githubusercontent.com/Datamaverik/D-Tunes/main/assets/DTunes2.svg" class="w-full h-full object-cover border border-white/20" crossorigin="anonymous" alt="Current track">
+                                </div>
+                                <div id="peek-next-card" class="album-art-card album-art-next hidden" aria-hidden="true">
+                                    <img id="peek-next-img" src="https://raw.githubusercontent.com/Datamaverik/D-Tunes/main/assets/DTunes2.svg" class="w-full h-full object-cover" alt="Next track">
+                                </div>
+                            </div>
                         </div>
 
                         <div id="player-track-meta" class="flex items-center justify-between flex-1 min-w-0 ml-3">
@@ -1114,23 +1124,23 @@
     <audio id="audio-el" crossorigin="anonymous" controls="true" preload="auto" playsinline webkit-playsinline style="position:fixed;top:-9999px;left:-9999px;opacity:0.001;pointer-events:none;width:1px;height:1px;"></audio>
 
     <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script defer src="src/js/dverseClient.js?v=1.3.2"></script>
-    <script defer src="src/js/ai.js?v=1.3.2"></script>
-    <script defer src="src/js/recommendationClient.js?v=1.3.2"></script>
-    <script defer src="src/js/utils.js?v=1.3.2"></script>
-    <script defer src="src/js/api.js?v=1.3.2"></script>
-    <script defer src="src/js/spotify.js?v=1.3.2"></script>
-    <script defer src="src/js/timer.js?v=1.3.2"></script>
-    <script defer src="src/js/state.js?v=1.3.2"></script>
-    <script defer src="src/js/context-menu.js?v=1.3.2"></script>
-    <script defer src="src/js/player.js?v=1.3.2"></script>
-    <script defer src="src/js/visualizer.js?v=1.3.2"></script>
-    <script defer src="src/js/theme.js?v=1.3.2"></script>
-    <script defer src="src/js/lyrics.js?v=1.3.2"></script>
-    <script defer src="src/js/ui.js?v=1.3.2"></script>
-    <script defer src="src/js/search.js?v=1.3.2"></script>
-    <script defer src="src/js/ai-hub.js?v=1.3.2"></script>
-    <script defer src="src/js/main.js?v=1.3.2"></script>
+    <script defer src="src/js/dverseClient.js?v=1.3.3"></script>
+    <script defer src="src/js/ai.js?v=1.3.3"></script>
+    <script defer src="src/js/recommendationClient.js?v=1.3.3"></script>
+    <script defer src="src/js/utils.js?v=1.3.3"></script>
+    <script defer src="src/js/api.js?v=1.3.3"></script>
+    <script defer src="src/js/spotify.js?v=1.3.3"></script>
+    <script defer src="src/js/timer.js?v=1.3.3"></script>
+    <script defer src="src/js/state.js?v=1.3.3"></script>
+    <script defer src="src/js/context-menu.js?v=1.3.3"></script>
+    <script defer src="src/js/player.js?v=1.3.3"></script>
+    <script defer src="src/js/visualizer.js?v=1.3.3"></script>
+    <script defer src="src/js/theme.js?v=1.3.3"></script>
+    <script defer src="src/js/lyrics.js?v=1.3.3"></script>
+    <script defer src="src/js/ui.js?v=1.3.3"></script>
+    <script defer src="src/js/search.js?v=1.3.3"></script>
+    <script defer src="src/js/ai-hub.js?v=1.3.3"></script>
+    <script defer src="src/js/main.js?v=1.3.3"></script>
 
 </body>
 </html>

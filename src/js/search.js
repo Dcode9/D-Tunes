@@ -186,7 +186,10 @@
                 const clearBtn = document.getElementById('btn-clear-search-history');
                 if (!listEl) return;
 
-                const history = state.searchHistory || [];
+                let history = state.searchHistory || [];
+                if (history.length === 0 && Array.isArray(state.playHistory) && state.playHistory.length > 0) {
+                    history = state.playHistory.slice(0, 10);
+                }
                 if (clearBtn) {
                     clearBtn.classList.toggle('hidden', history.length === 0);
                 }
@@ -205,17 +208,17 @@
                     <div class="swipe-song relative overflow-hidden rounded-2xl mb-2 group select-none flex-shrink-0 w-full flex items-center" data-store-id="${storeId}">
                         <div class="swipe-reveal-left absolute inset-y-0 left-0 flex items-center overflow-hidden pointer-events-none rounded-2xl z-0 bg-emerald-600 text-white font-bold text-xs" style="width:0px;">
                             <div class="swipe-reveal-content flex items-center gap-2 px-4 whitespace-nowrap min-w-max h-full">
-                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
-                                <span class="font-bold text-xs tracking-wide">Play Next</span>
+                                <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+                                <span class="swipe-reveal-text font-bold text-xs tracking-wide">Play Next</span>
                             </div>
                         </div>
                         <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-cyan-600 text-white font-bold text-xs" style="width:0px;">
                             <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
-                                <span class="font-bold text-xs tracking-wide">Add to Queue</span>
-                                <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
+                                <span class="swipe-reveal-text font-bold text-xs tracking-wide">Add to Queue</span>
+                                <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
                             </div>
                         </div>
-                        <div class="swipe-song-card glass-panel rounded-2xl p-2 pr-3 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/95 hover-pause cursor-pointer relative z-10" onclick="searchManager.playRecentSearch('${storeId}')" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                        <div class="swipe-song-card glass-panel rounded-2xl p-2 pr-3 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/95 cursor-pointer relative z-10" onclick="searchManager.playRecentSearch('${storeId}')" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
                             ${ui.createSongPillInner(song)}
                             <button class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition flex-shrink-0 ml-1" onclick="event.stopPropagation(); searchManager.removeFromSearchHistory('${utils.escapeJs(song.id)}')" title="Remove from recent searches" aria-label="Remove from recent searches">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>

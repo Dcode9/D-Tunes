@@ -200,43 +200,142 @@
             }, {passive: true});
             island.addEventListener('touchcancel', resetCompactSwipe, {passive: true});
 
-            const albumArtSwipeTarget = document.getElementById('album-art-wrapper');
+            const albumTrack = document.getElementById('album-carousel-track') || document.getElementById('album-art-wrapper');
             let albumSwipeStart = null;
             const resetAlbumSwipe = () => {
                 albumSwipeStart = null;
-                albumArtSwipeTarget?.style.setProperty('--album-swipe-x', '0px');
-                albumArtSwipeTarget?.classList.remove('album-swiping');
+                if (albumTrack) {
+                    albumTrack.style.transition = '';
+                    albumTrack.style.setProperty('--album-swipe-x', '0px');
+                    albumTrack.style.transform = 'translate3d(0, 0, 0)';
+                    albumTrack.classList.remove('album-swiping');
+                }
+                const currCard = document.getElementById('curr-art-card');
+                const prevCard = document.getElementById('peek-prev-card');
+                const nextCard = document.getElementById('peek-next-card');
+                if (currCard) { currCard.style.transform = ''; currCard.style.opacity = ''; }
+                if (prevCard) { prevCard.style.transform = ''; prevCard.style.opacity = ''; }
+                if (nextCard) { nextCard.style.transform = ''; nextCard.style.opacity = ''; }
             };
-            albumArtSwipeTarget?.addEventListener('touchstart', e => {
+
+            const albumSwipeContainer = document.getElementById('album-art-wrapper') || albumTrack;
+            albumSwipeContainer?.addEventListener('touchstart', e => {
                 if (!deviceMode.isMobileUI() || !document.body.classList.contains('mobile-player-open') || !state.currentTrack) return;
                 const touch = e.changedTouches[0];
-                albumSwipeStart = { x: touch.clientX, y: touch.clientY };
-                albumArtSwipeTarget.classList.add('album-swiping');
-            }, { passive: true });
-            albumArtSwipeTarget?.addEventListener('touchmove', e => {
-                if (!albumSwipeStart) return;
-                const touch = e.changedTouches[0];
-                const dx = touch.clientX - albumSwipeStart.x;
-                const dy = touch.clientY - albumSwipeStart.y;
-                if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) {
-                    albumArtSwipeTarget.style.setProperty('--album-swipe-x', `${Math.max(-120, Math.min(120, dx))}px`);
+                albumSwipeStart = { x: touch.clientX, y: touch.clientY, startTime: Date.now() };
+                if (albumTrack) {
+                    albumTrack.classList.add('album-swiping');
+                    albumTrack.style.transition = 'none';
                 }
+                if (ui.updateAlbumCarouselPeeks) ui.updateAlbumCarouselPeeks();
             }, { passive: true });
-            albumArtSwipeTarget?.addEventListener('touchend', e => {
-                if (!albumSwipeStart) return;
+
+            albumSwipeContainer?.addEventListener('touchmove', e => {
+                if (!albumSwipeStart || !albumTrack) return;
+                const touch = e.changedTouches[0];
+                let dx = touch.clientX - albumSwipeStart.x;
+                const dy = touch.clientY - albumSwipeStart.y;
+
+                if (Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy)) {
+                    if (e.cancelable) e.preventDefault();
+
+                    const prevTrack = typeof player !== 'undefined' && player.getPreviousTrack ? player.getPreviousTrack() : null;
+                    const nextTrack = typeof player !== 'undefined' && player.getUpcomingTrack ? player.getUpcomingTrack() : null;
+
+                    // Add resistance if swiping towards an empty direction
+                    if ((dx > 0 && !prevTrack) || (dx < 0 && !nextTrack)) {
+                        dx = dx * 0.28;
+                    }
+
+                    albumTrack.style.setProperty('--album-swipe-x', `${dx}px`);
+                    albumTrack.style.transform = `translate3d(${dx}px, 0, 0)`;
+
+                    const prevCard = document.getElementById('peek-prev-card');
+                    const nextCard = document.getElementById('peek-next-card');
+                    const currCard = document.getElementById('curr-art-card');
+                    const absDx = Math.abs(dx);
+                    const progress = Math.min(1.0, absDx / 280);
+
+                    if (currCard) {
+                        const currScale = Math.max(0.88, 1.0 - progress * 0.12);
+                        const currOpacity = Math.max(0.65, 1.0 - progress * 0.35);
+                        currCard.style.transform = `scale(${currScale})`;
+                        currCard.style.opacity = `${currOpacity}`;
+                    }
+
+                    if (dx > 0 && prevCard) {
+                        const s = Math.min(1.0, 0.90 + progress * 0.10);
+                        const op = Math.min(1.0, 0.75 + progress * 0.25);
+                        prevCard.style.transform = `scale(${s})`;
+                        prevCard.style.opacity = `${op}`;
+                    }
+                    if (dx < 0 && nextCard) {
+                        const s = Math.min(1.0, 0.90 + progress * 0.10);
+                        const op = Math.min(1.0, 0.75 + progress * 0.25);
+                        nextCard.style.transform = `scale(${s})`;
+                        nextCard.style.opacity = `${op}`;
+                    }
+                }
+            }, { passive: false });
+
+            albumSwipeContainer?.addEventListener('touchend', e => {
+                if (!albumSwipeStart || !albumTrack) return;
                 const touch = e.changedTouches[0];
                 const dx = touch.clientX - albumSwipeStart.x;
                 const dy = touch.clientY - albumSwipeStart.y;
-                if (Math.abs(dx) > 72 && Math.abs(dx) > Math.abs(dy) * 1.2) {
-                    const goNext = dx < 0;
-                    albumArtSwipeTarget.style.setProperty('--album-swipe-x', goNext ? '-120%' : '120%');
+                const duration = Math.max(1, Date.now() - albumSwipeStart.startTime);
+                const vx = Math.abs(dx) / duration;
+                const isCommitted = (Math.abs(dx) > 60 || vx > 0.42) && Math.abs(dx) > Math.abs(dy) * 1.1;
+
+                const prevTrack = typeof player !== 'undefined' && player.getPreviousTrack ? player.getPreviousTrack() : null;
+                const nextTrack = typeof player !== 'undefined' && player.getUpcomingTrack ? player.getUpcomingTrack() : null;
+                const goNext = dx < 0;
+                const targetTrack = goNext ? nextTrack : prevTrack;
+
+                if (isCommitted && targetTrack) {
+                    albumTrack.classList.remove('album-swiping');
+                    albumTrack.style.transition = 'transform 0.26s cubic-bezier(0.2, 0.8, 0.2, 1)';
+                    const slideTarget = goNext ? 'calc(-100% - 18px)' : 'calc(100% + 18px)';
+                    albumTrack.style.setProperty('--album-swipe-x', slideTarget);
+                    albumTrack.style.transform = `translate3d(${slideTarget}, 0, 0)`;
                     haptics.pulse('soft');
-                    setTimeout(() => { if (goNext) player.next(); else player.prev(); resetAlbumSwipe(); }, 180);
+
+                    setTimeout(() => {
+                        // Instantly swap current artwork image and reset carousel position without backwards animation
+                        const currImg = document.getElementById('curr-art-img');
+                        if (currImg && (targetTrack.img || targetTrack.image)) {
+                            currImg.src = sanitizeImageUrl(targetTrack.img || targetTrack.image);
+                        }
+                        albumTrack.style.transition = 'none';
+                        albumTrack.style.setProperty('--album-swipe-x', '0px');
+                        albumTrack.style.transform = 'translate3d(0, 0, 0)';
+
+                        if (goNext) player.next(); else player.prev();
+
+                        requestAnimationFrame(() => {
+                            setTimeout(() => {
+                                if (albumTrack) albumTrack.style.transition = '';
+                                resetAlbumSwipe();
+                                if (ui.updateAlbumCarouselPeeks) ui.updateAlbumCarouselPeeks();
+                            }, 50);
+                        });
+                    }, 250);
                 } else {
-                    resetAlbumSwipe();
+                    albumTrack.classList.remove('album-swiping');
+                    albumTrack.style.transition = 'transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1)';
+                    albumTrack.style.setProperty('--album-swipe-x', '0px');
+                    albumTrack.style.transform = 'translate3d(0, 0, 0)';
+                    const currCard = document.getElementById('curr-art-card');
+                    const prevCard = document.getElementById('peek-prev-card');
+                    const nextCard = document.getElementById('peek-next-card');
+                    if (currCard) { currCard.style.transition = 'transform 0.24s ease, opacity 0.24s ease'; currCard.style.transform = ''; currCard.style.opacity = ''; }
+                    if (prevCard) { prevCard.style.transition = 'transform 0.24s ease, opacity 0.24s ease'; prevCard.style.transform = ''; prevCard.style.opacity = ''; }
+                    if (nextCard) { nextCard.style.transition = 'transform 0.24s ease, opacity 0.24s ease'; nextCard.style.transform = ''; nextCard.style.opacity = ''; }
+                    setTimeout(resetAlbumSwipe, 260);
                 }
             }, { passive: true });
-            albumArtSwipeTarget?.addEventListener('touchcancel', resetAlbumSwipe, { passive: true });
+
+            albumSwipeContainer?.addEventListener('touchcancel', resetAlbumSwipe, { passive: true });
 
             // Expanded mobile player: pull down on header to collapse
             const playerFooter = document.getElementById('player-footer');
@@ -302,7 +401,7 @@
             let swipeSongStart = null;
             document.addEventListener('touchstart', (e) => {
                 const row = e.target.closest('.swipe-song');
-                if (!row || !deviceMode.isMobileUI() || e.target.closest('button, input, select, textarea')) return;
+                if (!row || e.target.closest('button, input, select, textarea')) return;
                 const touch = e.changedTouches[0];
                 const card = row.querySelector('.swipe-song-card') || row;
                 const revealLeft = row.querySelector('.swipe-reveal-left');
@@ -347,19 +446,43 @@
                     if (e.cancelable) e.preventDefault();
 
                     const clamped = Math.max(-140, Math.min(140, dx));
+                    swipeSongStart.card.style.setProperty('--swipe-card-x', `${clamped}px`);
                     swipeSongStart.card.style.transform = `translate3d(${clamped}px, 0, 0)`;
+
+                    const revealWidth = Math.abs(clamped);
+                    const iconScale = Math.min(1, Math.max(0, revealWidth / 36));
+                    const textProgress = Math.min(1, Math.max(0, (revealWidth - 40) / 36));
 
                     if (clamped > 0) {
                         if (swipeSongStart.revealLeft) {
                             swipeSongStart.revealLeft.style.width = `${clamped}px`;
+                            const icon = swipeSongStart.revealLeft.querySelector('svg');
+                            const text = swipeSongStart.revealLeft.querySelector('span');
+                            if (icon) {
+                                icon.style.transform = `scale(${iconScale})`;
+                                icon.style.opacity = iconScale > 0.1 ? '1' : '0';
+                            }
+                            if (text) {
+                                text.style.opacity = `${textProgress}`;
+                                text.style.transform = `translate3d(${(1 - textProgress) * -8}px, 0, 0)`;
+                            }
                         }
                         if (swipeSongStart.revealRight) {
                             swipeSongStart.revealRight.style.width = '0px';
                         }
                     } else {
-                        const absW = Math.abs(clamped);
                         if (swipeSongStart.revealRight) {
-                            swipeSongStart.revealRight.style.width = `${absW}px`;
+                            swipeSongStart.revealRight.style.width = `${revealWidth}px`;
+                            const icon = swipeSongStart.revealRight.querySelector('svg');
+                            const text = swipeSongStart.revealRight.querySelector('span');
+                            if (icon) {
+                                icon.style.transform = `scale(${iconScale})`;
+                                icon.style.opacity = iconScale > 0.1 ? '1' : '0';
+                            }
+                            if (text) {
+                                text.style.opacity = `${textProgress}`;
+                                text.style.transform = `translate3d(${(1 - textProgress) * 8}px, 0, 0)`;
+                            }
                         }
                         if (swipeSongStart.revealLeft) {
                             swipeSongStart.revealLeft.style.width = '0px';
@@ -380,16 +503,32 @@
                 const { row, card, revealLeft, revealRight, dx } = stateObj;
                 row.classList.remove('is-swiping');
 
-                const duration = '0.24s';
+                const duration = '0.26s';
                 const ease = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
-                card.style.transition = `transform ${duration} ${ease}`;
-                if (revealLeft) revealLeft.style.transition = `width ${duration} ${ease}`;
-                if (revealRight) revealRight.style.transition = `width ${duration} ${ease}`;
+                if (revealLeft) {
+                    revealLeft.style.transition = `width ${duration} ${ease}`;
+                    const icon = revealLeft.querySelector('svg');
+                    const text = revealLeft.querySelector('span');
+                    if (icon) icon.style.transition = `transform ${duration} ${ease}, opacity ${duration} ${ease}`;
+                    if (text) text.style.transition = `transform ${duration} ${ease}, opacity ${duration} ${ease}`;
+                }
+                if (revealRight) {
+                    revealRight.style.transition = `width ${duration} ${ease}`;
+                    const icon = revealRight.querySelector('svg');
+                    const text = revealRight.querySelector('span');
+                    if (icon) icon.style.transition = `transform ${duration} ${ease}, opacity ${duration} ${ease}`;
+                    if (text) text.style.transition = `transform ${duration} ${ease}, opacity ${duration} ${ease}`;
+                }
 
                 if (isCommitted) {
                     const song = songStore.get(row.dataset.storeId);
                     if (song) {
                         haptics.pulse('medium');
+                        const isSearch = !document.getElementById('view-search')?.classList.contains('hidden') ||
+                                         document.body.classList.contains('mobile-search-open');
+                        if (isSearch && typeof searchManager !== 'undefined' && searchManager.addToRecentSearches) {
+                            searchManager.addToRecentSearches(song);
+                        }
                         if (dx > 0) {
                             player.addNext(song);
                         } else {
@@ -398,15 +537,28 @@
                     }
                 }
 
+                card.style.setProperty('--swipe-card-x', '0px');
                 card.style.transform = 'translate3d(0, 0, 0)';
                 if (revealLeft) revealLeft.style.width = '0px';
                 if (revealRight) revealRight.style.width = '0px';
 
                 setTimeout(() => {
                     card.style.transition = '';
-                    if (revealLeft) revealLeft.style.transition = '';
-                    if (revealRight) revealRight.style.transition = '';
-                }, 260);
+                    if (revealLeft) {
+                        revealLeft.style.transition = '';
+                        const icon = revealLeft.querySelector('svg');
+                        const text = revealLeft.querySelector('span');
+                        if (icon) { icon.style.transition = ''; icon.style.transform = ''; }
+                        if (text) { text.style.transition = ''; text.style.opacity = ''; text.style.transform = ''; }
+                    }
+                    if (revealRight) {
+                        revealRight.style.transition = '';
+                        const icon = revealRight.querySelector('svg');
+                        const text = revealRight.querySelector('span');
+                        if (icon) { icon.style.transition = ''; icon.style.transform = ''; }
+                        if (text) { text.style.transition = ''; text.style.opacity = ''; text.style.transform = ''; }
+                    }
+                }, 280);
             };
 
             document.addEventListener('touchend', (e) => {
@@ -921,7 +1073,17 @@
             window.ui = ui;
             window.lyricsManager = lyricsManager;
 
-            ctxMenu.init(); searchManager.init(); persist.load(); ui.updateRepeatBtn(); ui.updateShuffleBtn(); homeView.init(); cloudLibrary.init(); requestAnimationFrame(viz.render);
+            ctxMenu.init();
+            searchManager.init();
+            persist.load();
+            ui.renderQueue();
+            ui.renderHistory();
+            if (ui.updateAlbumCarouselPeeks) ui.updateAlbumCarouselPeeks();
+            ui.updateRepeatBtn();
+            ui.updateShuffleBtn();
+            homeView.init();
+            cloudLibrary.init();
+            requestAnimationFrame(viz.render);
             deviceMode.apply();
             setupShelfNavButtons();
 

@@ -55,19 +55,28 @@
         };
 
         const getPreviousTrack = () => {
-            if (!state.queue || state.queue.length === 0) return null;
-            if (state.shuffle) {
-                if (!state.shuffledOrder || state.shuffledOrder.length !== state.queue.length) {
-                    generateShuffledQueue();
+            if (state.queue && state.queue.length > 0) {
+                if (state.shuffle) {
+                    if (!state.shuffledOrder || state.shuffledOrder.length !== state.queue.length) {
+                        generateShuffledQueue();
+                    }
+                    if (state.shufflePointer > 0) {
+                        const prevShuffleIdx = state.shuffledOrder[state.shufflePointer - 1];
+                        if (state.queue[prevShuffleIdx]) return state.queue[prevShuffleIdx];
+                    }
+                    if (state.queue.length > 1 && state.shuffledOrder.length > 0) {
+                        return state.queue[state.shuffledOrder[state.shuffledOrder.length - 1]];
+                    }
+                } else if (state.idx > 0) {
+                    return state.queue[state.idx - 1];
+                } else if (state.queue.length > 1) {
+                    return state.queue[state.queue.length - 1];
                 }
-                if (state.shufflePointer > 0) {
-                    const prevShuffleIdx = state.shuffledOrder[state.shufflePointer - 1];
-                    return state.queue[prevShuffleIdx] || null;
-                }
-                return state.queue.length > 1 ? state.queue[state.shuffledOrder[state.shuffledOrder.length - 1]] : null;
             }
-            if (state.idx > 0) return state.queue[state.idx - 1];
-            return state.queue.length > 1 ? state.queue[state.queue.length - 1] : null;
+            if (state.playHistory && state.playHistory.length > 1) {
+                return state.playHistory[1];
+            }
+            return null;
         };
 
         const primeNextTrack = async () => {
@@ -225,7 +234,14 @@
 
         window.playSongById = (storeId) => {
             const song = songStore.get(storeId);
-            if (song) { player.playDirect(song); } 
+            if (song) {
+                const isSearch = !document.getElementById('view-search')?.classList.contains('hidden') ||
+                                 document.body.classList.contains('mobile-search-open');
+                if (isSearch && typeof searchManager !== 'undefined' && searchManager.addToRecentSearches) {
+                    searchManager.addToRecentSearches(song);
+                }
+                player.playDirect(song);
+            } 
         };
 
         window.playContext = async (type, id) => {
@@ -353,9 +369,17 @@
                     state.playHistory.unshift(trackWithTime);
                     if(state.playHistory.length > 100) state.playHistory.pop();
                     localStorage.setItem('playHistory', JSON.stringify(state.playHistory));
+
+                    if (typeof searchManager !== 'undefined' && searchManager.addToRecentSearches) {
+                        const isSearchView = (typeof ui !== 'undefined' && ui.getCurrentView && ui.getCurrentView() === 'search') || document.body.classList.contains('mobile-search-open');
+                        if (isSearchView || track.source === 'search' || track.isSearchResult) {
+                            searchManager.addToRecentSearches(track);
+                        }
+                    }
                     
                     if (window.listeningSession) listeningSession.start(state.currentTrack);
                     ui.renderHistory();
+                    if (ui.updateAlbumCarouselPeeks) ui.updateAlbumCarouselPeeks();
                     if(!document.getElementById('view-home').classList.contains('hidden')) homeView.renderRecentlyPlayed();
                     persist.save();
                     return true;
@@ -798,10 +822,14 @@
                 persist.save();
             },
             clearHistory: () => {
-                state.playHistory = state.currentTrack ? [{ ...state.currentTrack, playedAt: Date.now() }] : [];
+                state.playHistory = [];
+                localStorage.setItem('playHistory', JSON.stringify([]));
                 ui.renderHistory();
+                if (ui.renderLibraryLists) ui.renderLibraryLists();
                 persist.save();
             },
+            getUpcomingTrack,
+            getPreviousTrack,
             showSimilarSongs: async () => {
                 if (!state.currentTrack || !window.recommendationClient) return;
                 const songs = await window.recommendationClient.fetchPlaylist('similar', { songId: state.currentTrack.id, limit: 25 });

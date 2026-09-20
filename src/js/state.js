@@ -136,7 +136,9 @@
         };
 
         const state = { 
-            queue: [], userQueue: [], idx: -1, playing: false, loading: false, loaded: false,
+            queue: safeStorage.getJSON('savedQueue', safeStorage.getJSON('playbackState', {}).q || []),
+            userQueue: safeStorage.getJSON('savedUserQueue', safeStorage.getJSON('playbackState', {}).uq || []),
+            idx: -1, playing: false, loading: false, loaded: false,
             shuffle: safeStorage.get('playShuffle') === 'true',
             repeat: parseInt(safeStorage.get('playRepeat', '0'), 10) || 0,
             shuffledOrder: [], shufflePointer: 0, _audioRetryCount: 0,
@@ -305,37 +307,48 @@
 
         const persist = {
             snapshot: () => {
-                if(!state.currentTrack) return null;
                 return {
-                    track: state.currentTrack,
-                    q: state.queue,
-                    uq: state.userQueue,
+                    track: state.currentTrack || null,
+                    q: state.queue || [],
+                    uq: state.userQueue || [],
                     idx: state.idx,
-                    time: Number.isFinite(audio.currentTime) ? audio.currentTime : 0,
-                    duration: Number.isFinite(audio.duration) ? audio.duration : null,
+                    time: Number.isFinite(audio?.currentTime) ? audio.currentTime : 0,
+                    duration: Number.isFinite(audio?.duration) ? audio.duration : null,
                     playing: Boolean(state.playing),
                     updated_at: new Date().toISOString()
                 };
             },
             apply: (data) => {
-                if(!data || !data.track) return false;
-                state.currentTrack = data.track; state.queue = data.q || []; state.userQueue = data.uq || []; state.idx = data.idx || 0;
-                state.loaded = true;
+                if(!data) return false;
+                if (Array.isArray(data.q)) state.queue = data.q;
+                if (Array.isArray(data.uq)) state.userQueue = data.uq;
+                if (typeof data.idx === 'number') state.idx = data.idx;
 
-                document.getElementById('player-footer').classList.remove('translate-y-[150%]', 'opacity-0');
-                ui.enableControls(); ui.updateMetadata(state.currentTrack); ui.renderQueue(); ui.renderHistory();
-
-                audio.src = state.currentTrack.url;
-                audio.addEventListener('loadedmetadata', function onMetaLoad() {
-                    audio.currentTime = data.time || 0; currentProgress = audio.duration ? audio.currentTime / audio.duration : 0;
-                    document.getElementById('seek-bar').value = data.time || 0; audio.removeEventListener('loadedmetadata', onMetaLoad);
-                });
+                if (data.track && data.track.id) {
+                    state.currentTrack = data.track;
+                    state.loaded = true;
+                    document.getElementById('player-footer')?.classList.remove('translate-y-[150%]', 'opacity-0');
+                    ui.enableControls();
+                    ui.updateMetadata(state.currentTrack);
+                    if (state.currentTrack.url) {
+                        audio.src = state.currentTrack.url;
+                        audio.addEventListener('loadedmetadata', function onMetaLoad() {
+                            audio.currentTime = data.time || 0;
+                            currentProgress = audio.duration ? audio.currentTime / audio.duration : 0;
+                            document.getElementById('seek-bar').value = data.time || 0;
+                            audio.removeEventListener('loadedmetadata', onMetaLoad);
+                        });
+                    }
+                }
+                ui.renderQueue();
+                ui.renderHistory();
                 return true;
             },
             save: () => {
                 const data = persist.snapshot();
-                if(!data) return;
                 localStorage.setItem('playbackState', JSON.stringify(data));
+                localStorage.setItem('savedQueue', JSON.stringify(state.queue || []));
+                localStorage.setItem('savedUserQueue', JSON.stringify(state.userQueue || []));
                 window.cloudLibrary?.schedulePlaybackSave?.();
                 return data;
             },
