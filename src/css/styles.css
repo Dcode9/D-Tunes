@@ -1011,15 +1011,15 @@ html[data-ui-mode="mobile"] body.mobile-search-open #search-positioner {
     backface-visibility: hidden;
     transition: background-color 0.18s ease, border-color 0.18s ease;
     contain: layout paint;
-}
-
-/* Android-Style Swipe Actions (Replicated from D-Tunes Android SwipeableSongListItem) */
-.swipe-song {
+    flex-shrink: 0 !important;
+    width: 100% !important;
+    min-height: 58px !important;
     position: relative;
     overflow: hidden;
     touch-action: pan-y;
 }
 
+/* Android-Style Expanding Swipe Action Containers */
 .swipe-reveal-left,
 .swipe-reveal-right {
     position: absolute;
@@ -1037,38 +1037,26 @@ html[data-ui-mode="mobile"] body.mobile-search-open #search-positioner {
     left: 0;
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     color: #ffffff;
-    border-top-left-radius: 1rem;
-    border-bottom-left-radius: 1rem;
+    border-radius: 1rem;
     justify-content: flex-start;
-    padding-left: 14px;
 }
 
 .swipe-reveal-right {
     right: 0;
     background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
     color: #ffffff;
-    border-top-right-radius: 1rem;
-    border-bottom-right-radius: 1rem;
+    border-radius: 1rem;
     justify-content: flex-end;
-    padding-right: 14px;
 }
 
-.swipe-icon {
-    display: inline-flex;
+.swipe-reveal-content {
+    display: flex;
     align-items: center;
-    justify-content: center;
-    transform-origin: center;
-    will-change: transform;
-    transition: transform 0.12s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.swipe-label {
+    height: 100%;
+    padding: 0 16px;
     white-space: nowrap;
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.025em;
-    will-change: opacity;
-    transition: opacity 0.14s ease;
+    min-width: max-content;
+    box-sizing: border-box;
 }
 
 .swipe-song-card {
@@ -1143,7 +1131,22 @@ html[data-ui-mode="mobile"] body.mobile-player-open .mobile-player-header {
 }
 
 /* Tab Switching Control */
-/* Default (Playing Tab): Show Player Active Area + Player Card + Quick Nav. Hide Queue & Lyrics. */
+/* Default (Playing Tab): Show Queue Anchor (for Active Area) + Player Card + Quick Nav. Hide Expandable Area & Lyrics. */
+html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #queue-anchor,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #queue-anchor {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 0% !important;
+    height: auto !important;
+    max-height: none !important;
+    width: 100% !important;
+    position: static !important;
+    pointer-events: auto !important;
+    overflow: hidden !important;
+    justify-content: center !important;
+    align-items: center !important;
+}
+
 html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #player-active-area,
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #player-active-area {
     display: flex !important;
@@ -1152,6 +1155,13 @@ html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #pl
     flex: 1 1 0% !important;
     justify-content: center !important;
     align-items: center !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #queue-expandable-area,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #queue-expandable-area,
+html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #mobile-lyrics-container,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #mobile-lyrics-container {
+    display: none !important;
 }
 
 html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #player-card,
@@ -1167,18 +1177,12 @@ html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] .mo
     display: flex !important;
 }
 
-html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #queue-anchor,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #queue-anchor,
-html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #mobile-lyrics-container,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #mobile-lyrics-container {
-    display: none !important;
-}
-
-/* Queue Tab: Full Height Unlimited Scroll Queue. Hide Track Area & Player Card. */
+/* Queue Tab: Full Height Unlimited Scroll Queue. Hide Track Area & Player Card & History List. */
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #player-active-area,
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #player-card,
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] .mobile-quick-nav,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #mobile-lyrics-container {
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #mobile-lyrics-container,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #history-list {
     display: none !important;
 }
 
@@ -1194,11 +1198,32 @@ html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #qu
     overflow: hidden !important;
 }
 
-/* History Tab: Full Height Unlimited Scroll History. Hide Track Area & Player Card. */
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #queue-expandable-area {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 0% !important;
+    height: 100% !important;
+    max-height: none !important;
+    width: 100% !important;
+    overflow: hidden !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #queue-list {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 0% !important;
+    height: 100% !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+/* History Tab: Full Height Unlimited Scroll History. Hide Track Area & Player Card & Queue List. */
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #player-active-area,
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #player-card,
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] .mobile-quick-nav,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #mobile-lyrics-container {
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #mobile-lyrics-container,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #queue-list {
     display: none !important;
 }
 
@@ -1212,6 +1237,26 @@ html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #
     position: static !important;
     pointer-events: auto !important;
     overflow: hidden !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #queue-expandable-area {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 0% !important;
+    height: 100% !important;
+    max-height: none !important;
+    width: 100% !important;
+    overflow: hidden !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #history-list {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 0% !important;
+    height: 100% !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch !important;
 }
 
 /* Lyrics Tab: Full Height Lyrics. Hide Track Area & Player Card & Queue Anchor. */
@@ -1241,13 +1286,6 @@ html[data-ui-mode="mobile"] body.mobile-player-open #queue-wrapper {
 }
 
 html[data-ui-mode="mobile"] body.mobile-player-open #queue-expandable-area {
-    display: flex !important;
-    flex-direction: column !important;
-    flex: 1 1 0% !important;
-    height: 100% !important;
-    max-height: none !important;
-    width: 100% !important;
-    overflow: hidden !important;
     border: none !important;
     background: transparent !important;
     box-shadow: none !important;
@@ -1280,8 +1318,6 @@ html[data-ui-mode="mobile"] body.mobile-player-open #history-list {
     -webkit-overflow-scrolling: touch !important;
     overscroll-behavior-y: contain !important;
     padding: 10px 2px 28px !important;
-    display: flex !important;
-    flex-direction: column !important;
     gap: 8px !important;
 }
 

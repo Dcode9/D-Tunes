@@ -307,25 +307,18 @@
                 const card = row.querySelector('.swipe-song-card') || row;
                 const revealLeft = row.querySelector('.swipe-reveal-left');
                 const revealRight = row.querySelector('.swipe-reveal-right');
-                const iconLeft = revealLeft?.querySelector('.swipe-icon');
-                const labelLeft = revealLeft?.querySelector('.swipe-label');
-                const iconRight = revealRight?.querySelector('.swipe-icon');
-                const labelRight = revealRight?.querySelector('.swipe-label');
 
                 swipeSongStart = {
                     row,
                     card,
                     revealLeft,
                     revealRight,
-                    iconLeft,
-                    labelLeft,
-                    iconRight,
-                    labelRight,
                     startX: touch.clientX,
                     startY: touch.clientY,
                     dx: 0,
                     dy: 0,
-                    isSwiping: false
+                    isSwiping: false,
+                    hapticFired: false
                 };
             }, { passive: true });
 
@@ -338,68 +331,82 @@
                 swipeSongStart.dy = dy;
 
                 if (!swipeSongStart.isSwiping) {
-                    if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+                    if (Math.abs(dx) > 7 && Math.abs(dx) > Math.abs(dy)) {
                         swipeSongStart.isSwiping = true;
                         swipeSongStart.row.classList.add('is-swiping');
-                    } else if (Math.abs(dy) > 8) {
+                        swipeSongStart.card.style.transition = 'none';
+                        if (swipeSongStart.revealLeft) swipeSongStart.revealLeft.style.transition = 'none';
+                        if (swipeSongStart.revealRight) swipeSongStart.revealRight.style.transition = 'none';
+                    } else if (Math.abs(dy) > 7) {
                         swipeSongStart = null;
                         return;
                     }
                 }
 
                 if (swipeSongStart.isSwiping) {
-                    const clamped = Math.max(-120, Math.min(120, dx));
-                    const revealProgress = Math.min(1, Math.abs(clamped) / 72);
-                    const iconScale = Math.min(1, revealProgress / 0.45);
-                    const labelOpacity = revealProgress > 0.45 ? Math.min(1, (revealProgress - 0.45) / 0.45) : 0;
+                    if (e.cancelable) e.preventDefault();
 
+                    const clamped = Math.max(-140, Math.min(140, dx));
                     swipeSongStart.card.style.transform = `translate3d(${clamped}px, 0, 0)`;
 
-                    if (dx > 0) {
+                    if (clamped > 0) {
                         if (swipeSongStart.revealLeft) {
-                            swipeSongStart.revealLeft.style.width = `${Math.min(clamped, 120)}px`;
-                            swipeSongStart.revealLeft.style.opacity = '1';
+                            swipeSongStart.revealLeft.style.width = `${clamped}px`;
                         }
-                        if (swipeSongStart.iconLeft) swipeSongStart.iconLeft.style.transform = `scale(${iconScale})`;
-                        if (swipeSongStart.labelLeft) swipeSongStart.labelLeft.style.opacity = `${labelOpacity}`;
-
                         if (swipeSongStart.revealRight) {
                             swipeSongStart.revealRight.style.width = '0px';
-                            swipeSongStart.revealRight.style.opacity = '0';
                         }
                     } else {
-                        const absClamped = Math.min(Math.abs(clamped), 120);
+                        const absW = Math.abs(clamped);
                         if (swipeSongStart.revealRight) {
-                            swipeSongStart.revealRight.style.width = `${absClamped}px`;
-                            swipeSongStart.revealRight.style.opacity = '1';
+                            swipeSongStart.revealRight.style.width = `${absW}px`;
                         }
-                        if (swipeSongStart.iconRight) swipeSongStart.iconRight.style.transform = `scale(${iconScale})`;
-                        if (swipeSongStart.labelRight) swipeSongStart.labelRight.style.opacity = `${labelOpacity}`;
-
                         if (swipeSongStart.revealLeft) {
                             swipeSongStart.revealLeft.style.width = '0px';
-                            swipeSongStart.revealLeft.style.opacity = '0';
+                        }
+                    }
+
+                    if (Math.abs(clamped) >= 65 && !swipeSongStart.hapticFired) {
+                        swipeSongStart.hapticFired = true;
+                        haptics.pulse('soft');
+                    } else if (Math.abs(clamped) < 65 && swipeSongStart.hapticFired) {
+                        swipeSongStart.hapticFired = false;
+                    }
+                }
+            }, { passive: false });
+
+            const finishSwipe = (stateObj, isCommitted) => {
+                if (!stateObj) return;
+                const { row, card, revealLeft, revealRight, dx } = stateObj;
+                row.classList.remove('is-swiping');
+
+                const duration = '0.24s';
+                const ease = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
+                card.style.transition = `transform ${duration} ${ease}`;
+                if (revealLeft) revealLeft.style.transition = `width ${duration} ${ease}`;
+                if (revealRight) revealRight.style.transition = `width ${duration} ${ease}`;
+
+                if (isCommitted) {
+                    const song = songStore.get(row.dataset.storeId);
+                    if (song) {
+                        haptics.pulse('medium');
+                        if (dx > 0) {
+                            player.addNext(song);
+                        } else {
+                            player.addToQueue(song);
                         }
                     }
                 }
-            }, { passive: true });
 
-            const resetSwipeRow = (stateObj) => {
-                if (!stateObj) return;
-                stateObj.row.classList.remove('is-swiping');
-                stateObj.card.style.transform = 'translate3d(0, 0, 0)';
-                if (stateObj.revealLeft) {
-                    stateObj.revealLeft.style.width = '0px';
-                    stateObj.revealLeft.style.opacity = '0';
-                }
-                if (stateObj.revealRight) {
-                    stateObj.revealRight.style.width = '0px';
-                    stateObj.revealRight.style.opacity = '0';
-                }
-                if (stateObj.iconLeft) stateObj.iconLeft.style.transform = 'scale(0)';
-                if (stateObj.labelLeft) stateObj.labelLeft.style.opacity = '0';
-                if (stateObj.iconRight) stateObj.iconRight.style.transform = 'scale(0)';
-                if (stateObj.labelRight) stateObj.labelRight.style.opacity = '0';
+                card.style.transform = 'translate3d(0, 0, 0)';
+                if (revealLeft) revealLeft.style.width = '0px';
+                if (revealRight) revealRight.style.width = '0px';
+
+                setTimeout(() => {
+                    card.style.transition = '';
+                    if (revealLeft) revealLeft.style.transition = '';
+                    if (revealRight) revealRight.style.transition = '';
+                }, 260);
             };
 
             document.addEventListener('touchend', (e) => {
@@ -409,40 +416,14 @@
 
                 if (!stateObj.isSwiping) return;
 
-                const { dx, dy, row, card } = stateObj;
-                const isCommitted = Math.abs(dx) >= 65 && Math.abs(dx) > Math.abs(dy) * 1.1;
-
-                if (isCommitted) {
-                    const song = songStore.get(row.dataset.storeId);
-                    if (song) {
-                        const isPlayNext = dx > 0;
-                        haptics.pulse('medium');
-                        card.style.transition = 'transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1)';
-                        card.style.transform = isPlayNext ? 'translate3d(115%, 0, 0)' : 'translate3d(-115%, 0, 0)';
-
-                        if (isPlayNext) {
-                            player.addNext(song);
-                        } else {
-                            player.addToQueue(song);
-                        }
-
-                        setTimeout(() => {
-                            card.style.transition = '';
-                            resetSwipeRow(stateObj);
-                        }, 260);
-                        if (e.cancelable) e.preventDefault();
-                        return;
-                    }
-                }
-
-                card.style.transition = 'transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1)';
-                resetSwipeRow(stateObj);
-                setTimeout(() => { card.style.transition = ''; }, 260);
+                const isCommitted = Math.abs(stateObj.dx) >= 65;
+                finishSwipe(stateObj, isCommitted);
+                if (e.cancelable) e.preventDefault();
             }, { passive: false });
 
             document.addEventListener('touchcancel', () => {
                 if (swipeSongStart) {
-                    resetSwipeRow(swipeSongStart);
+                    finishSwipe(swipeSongStart, false);
                     swipeSongStart = null;
                 }
             }, { passive: true });

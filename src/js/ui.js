@@ -127,8 +127,7 @@
                     if (!state.currentTrack) return;
                     ui.closeMobileSearch();
                     document.body.classList.add('mobile-player-open');
-                    const initialTab = document.body.dataset.mobileTab || 'track';
-                    ui.switchMobilePlayerTab(initialTab);
+                    ui.switchMobilePlayerTab('track');
                     requestAnimationFrame(resizeCanvas);
                     setTimeout(resizeCanvas, 120);
                     setTimeout(resizeCanvas, 320);
@@ -1157,13 +1156,13 @@
                 const history = document.getElementById('library-history');
                 if (librarySongs) {
                     const songs = state.libraryIds.map(item => typeof item === 'object' ? item : state.playHistory.find(song => song.id === item) || state.likedIds.find(item2 => (typeof item2 === 'object' ? item2.id : item2) === item)).filter(Boolean);
-                    librarySongs.innerHTML = songs.length ? songs.map(song => ui.createListRow(song)).join('') : '<p class="text-sm text-gray-500">Add songs to your library from search or the song menu.</p>';
+                    librarySongs.innerHTML = songs.length ? songs.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`, 'library')).join('') : '<p class="text-sm text-gray-500">Add songs to your library from search or the song menu.</p>';
                 }
                 if (likedArtists) {
                     likedArtists.innerHTML = state.likedArtists.length ? state.likedArtists.map(artist => ui.createArtistCard(artist)).join('') : '<p class="text-sm text-gray-500 col-span-full">Like artists from search results to collect them here.</p>';
                 }
                 if (history) {
-                    history.innerHTML = state.playHistory.length ? state.playHistory.map(song => ui.createListRow(song)).join('') : '<p class="text-sm text-gray-500">Played songs will appear here.</p>';
+                    history.innerHTML = state.playHistory.length ? state.playHistory.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`, 'history')).join('') : '<p class="text-sm text-gray-500">Played songs will appear here.</p>';
                 }
                 updateMarquees();
             },
@@ -1253,14 +1252,18 @@
                 const storeId = songStore.add(song);
                 const safeSection = utils.escapeHtml(section);
                 return `
-                <div class="queue-reorder-row swipe-song relative overflow-hidden rounded-2xl mb-2 group select-none" draggable="true" data-queue-section="${safeSection}" data-queue-index="${index}" data-store-id="${storeId}">
-                    <div class="swipe-reveal-left absolute inset-y-0 left-0 flex items-center px-4 pointer-events-none rounded-2xl z-0 bg-emerald-600/90 text-black font-bold text-xs" style="width:0; opacity:0;">
-                        <svg class="swipe-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
-                        <span class="swipe-label ml-2 whitespace-nowrap font-bold text-xs tracking-wide opacity-0">Play Next</span>
+                <div class="queue-reorder-row swipe-song relative overflow-hidden rounded-2xl mb-2 group select-none flex-shrink-0 w-full" draggable="true" data-queue-section="${safeSection}" data-queue-index="${index}" data-store-id="${storeId}">
+                    <div class="swipe-reveal-left absolute inset-y-0 left-0 flex items-center overflow-hidden pointer-events-none rounded-2xl z-0 bg-emerald-600 text-white font-bold text-xs" style="width:0px;">
+                        <div class="swipe-reveal-content flex items-center gap-2 px-4 whitespace-nowrap min-w-max h-full">
+                            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+                            <span class="font-bold text-xs tracking-wide">Play Next</span>
+                        </div>
                     </div>
-                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end px-4 pointer-events-none rounded-2xl z-0 bg-cyan-600/90 text-black font-bold text-xs" style="width:0; opacity:0;">
-                        <span class="swipe-label mr-2 whitespace-nowrap font-bold text-xs tracking-wide opacity-0">Add to Queue</span>
-                        <svg class="swipe-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
+                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-cyan-600 text-white font-bold text-xs" style="width:0px;">
+                        <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
+                            <span class="font-bold text-xs tracking-wide">Add to Queue</span>
+                            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
+                        </div>
                     </div>
                     <div class="swipe-song-card glass-panel rounded-2xl p-2 pr-2 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/95 cursor-pointer relative z-10" onclick="playSongById('${storeId}')" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
                         ${ui.createSongPillInner(song)}
@@ -1276,14 +1279,18 @@
                 const timeBadge = song.playedAt ? `<span class="text-[10px] text-gray-400 font-mono px-2 py-0.5 rounded-md bg-white/5 flex-shrink-0 mr-1.5">${ui.formatRelativeTime(song.playedAt)}</span>` : '';
 
                 return `
-                <div class="swipe-song relative overflow-hidden rounded-2xl mb-2 group select-none" data-store-id="${storeId}">
-                    <div class="swipe-reveal-left absolute inset-y-0 left-0 flex items-center px-4 pointer-events-none rounded-2xl z-0 bg-emerald-600/90 text-black font-bold text-xs" style="width:0; opacity:0;">
-                        <svg class="swipe-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
-                        <span class="swipe-label ml-2 whitespace-nowrap font-bold text-xs tracking-wide opacity-0">Play Next</span>
+                <div class="swipe-song relative overflow-hidden rounded-2xl mb-2 group select-none flex-shrink-0 w-full" data-store-id="${storeId}">
+                    <div class="swipe-reveal-left absolute inset-y-0 left-0 flex items-center overflow-hidden pointer-events-none rounded-2xl z-0 bg-emerald-600 text-white font-bold text-xs" style="width:0px;">
+                        <div class="swipe-reveal-content flex items-center gap-2 px-4 whitespace-nowrap min-w-max h-full">
+                            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+                            <span class="font-bold text-xs tracking-wide">Play Next</span>
+                        </div>
                     </div>
-                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end px-4 pointer-events-none rounded-2xl z-0 bg-cyan-600/90 text-black font-bold text-xs" style="width:0; opacity:0;">
-                        <span class="swipe-label mr-2 whitespace-nowrap font-bold text-xs tracking-wide opacity-0">Add to Queue</span>
-                        <svg class="swipe-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
+                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-cyan-600 text-white font-bold text-xs" style="width:0px;">
+                        <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
+                            <span class="font-bold text-xs tracking-wide">Add to Queue</span>
+                            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
+                        </div>
                     </div>
                     <div class="swipe-song-card glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/95 hover-pause cursor-pointer relative z-10" onclick="${clickHandlerStr}" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
                         ${ui.createSongPillInner(song)}
@@ -1300,16 +1307,20 @@
                 const removeBtnHtml = contextPlaylistName ? `<button class="p-2 text-red-400 hover:text-red-500 rounded-full hover:bg-red-500/10 hidden md:block" title="Remove" onclick="event.stopPropagation(); ui.removeSongFromPlaylist('${utils.escapeJs(contextPlaylistName)}', '${utils.escapeJs(song.id)}')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>` : '';
                 
                 return `
-                <div class="swipe-song relative overflow-hidden rounded-xl mb-1.5 group select-none" data-store-id="${storeId}">
-                    <div class="swipe-reveal-left absolute inset-y-0 left-0 flex items-center px-4 pointer-events-none rounded-xl z-0 bg-emerald-600/90 text-black font-bold text-xs" style="width:0; opacity:0;">
-                        <svg class="swipe-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
-                        <span class="swipe-label ml-2 whitespace-nowrap font-bold text-xs tracking-wide opacity-0">Play Next</span>
+                <div class="swipe-song relative overflow-hidden rounded-2xl mb-2 group select-none flex-shrink-0 w-full" data-store-id="${storeId}">
+                    <div class="swipe-reveal-left absolute inset-y-0 left-0 flex items-center overflow-hidden pointer-events-none rounded-2xl z-0 bg-emerald-600 text-white font-bold text-xs" style="width:0px;">
+                        <div class="swipe-reveal-content flex items-center gap-2 px-4 whitespace-nowrap min-w-max h-full">
+                            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+                            <span class="font-bold text-xs tracking-wide">Play Next</span>
+                        </div>
                     </div>
-                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end px-4 pointer-events-none rounded-xl z-0 bg-cyan-600/90 text-black font-bold text-xs" style="width:0; opacity:0;">
-                        <span class="swipe-label mr-2 whitespace-nowrap font-bold text-xs tracking-wide opacity-0">Add to Queue</span>
-                        <svg class="swipe-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
+                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-cyan-600 text-white font-bold text-xs" style="width:0px;">
+                        <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
+                            <span class="font-bold text-xs tracking-wide">Add to Queue</span>
+                            <svg class="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
+                        </div>
                     </div>
-                    <div class="swipe-song-card group flex items-center gap-4 p-2 rounded-xl glass-panel hover:bg-white/10 transition hover-pause relative z-10 w-full bg-[#121212]/95 border border-white/10" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                    <div class="swipe-song-card group flex items-center gap-4 p-2 rounded-2xl glass-panel hover:bg-white/10 transition hover-pause relative z-10 w-full bg-[#121212]/95 border border-white/10" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
                         <div class="relative w-12 h-12 flex-shrink-0 cursor-pointer rounded-md overflow-hidden" onclick="playSongById('${storeId}')">
                             <img src="${song.img}" class="w-full h-full object-cover" decoding="async">
                             <div class="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition"><svg class="w-6 h-6 text-white" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></div>
@@ -1623,6 +1634,19 @@
                 if (clearQ) clearQ.classList.toggle('hidden', !isUpNext);
                 if (autoQ) autoQ.classList.toggle('hidden', !isUpNext);
                 if (clearH) clearH.classList.toggle('hidden', isUpNext);
+
+                if (deviceMode.isMobileUI() && document.body.classList.contains('mobile-player-open')) {
+                    const targetMobileTab = isUpNext ? 'queue' : 'history';
+                    if (document.body.dataset.mobileTab !== targetMobileTab) {
+                        document.body.dataset.mobileTab = targetMobileTab;
+                        document.querySelectorAll('.mobile-tab-btn').forEach(btn => {
+                            const isCurrent = btn.id === `m-tab-${targetMobileTab}`;
+                            btn.classList.toggle('active', isCurrent);
+                            btn.classList.toggle('text-white', isCurrent);
+                            btn.classList.toggle('text-gray-400', !isCurrent);
+                        });
+                    }
+                }
                 updateMarquees();
             },
             queueTrackForSection: (section, index) => {
