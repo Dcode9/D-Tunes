@@ -242,7 +242,14 @@
         ? `dtunes://auth?code=${encodeURIComponent(code)}`
         : `dtunes://auth?access_token=${encodeURIComponent(accessToken)}&refresh_token=${encodeURIComponent(refreshToken)}`;
 
-      // 1. Post to loopback server on port 49200
+      // 1. Immediately trigger deep link navigation to hand off to Android/desktop app without delay
+      try {
+        window.location.replace(deepLinkUrl);
+      } catch (_) {
+        try { window.location.href = deepLinkUrl; } catch (__) {}
+      }
+
+      // 2. Post to loopback server on port 49200 (for desktop Electron app)
       try {
         fetch('http://127.0.0.1:49200/token', {
           method: 'POST',
@@ -251,17 +258,12 @@
         }).catch(() => {});
       } catch (_) {}
 
-      // 2. Render desktop handoff UI in browser
+      // 3. Render desktop handoff UI in browser as fallback
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => renderDesktopHandoffUI(deepLinkUrl));
       } else {
         renderDesktopHandoffUI(deepLinkUrl);
       }
-
-      // 3. Trigger deep link navigation to bring Windows app to front
-      try {
-        window.location.href = deepLinkUrl;
-      } catch (_) {}
     }
   }
   checkImmediateDesktopAuthHandoff();
