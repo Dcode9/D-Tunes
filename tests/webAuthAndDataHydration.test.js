@@ -125,7 +125,7 @@ test('Web Auth & Data Hydration Test Suite', async (t) => {
             load: async () => { loadCalled = true; }
         };
 
-        const codeContent = fs.readFileSync(path.join(__dirname, '../src/dverseClient.js'), 'utf8');
+        const codeContent = fs.readFileSync(path.join(__dirname, '../src/js/dverseClient.js'), 'utf8');
         vm.runInNewContext(codeContent, env.window);
 
         assert.ok(env.window.dverse, 'dverse client initialized');
@@ -191,7 +191,7 @@ test('Web Auth & Data Hydration Test Suite', async (t) => {
             load: async () => {}
         };
 
-        const codeContent = fs.readFileSync(path.join(__dirname, '../src/dverseClient.js'), 'utf8');
+        const codeContent = fs.readFileSync(path.join(__dirname, '../src/js/dverseClient.js'), 'utf8');
         vm.runInNewContext(codeContent, env.window);
 
         const session = await env.window.dverse.getSession();
@@ -238,7 +238,7 @@ test('Web Auth & Data Hydration Test Suite', async (t) => {
             })
         };
 
-        const codeContent = fs.readFileSync(path.join(__dirname, '../src/dverseClient.js'), 'utf8');
+        const codeContent = fs.readFileSync(path.join(__dirname, '../src/js/dverseClient.js'), 'utf8');
         vm.runInNewContext(codeContent, env.window);
 
         const session = await env.window.dverse.getSession();
@@ -277,7 +277,7 @@ test('Web Auth & Data Hydration Test Suite', async (t) => {
             })
         };
 
-        const codeContent = fs.readFileSync(path.join(__dirname, '../src/dverseClient.js'), 'utf8');
+        const codeContent = fs.readFileSync(path.join(__dirname, '../src/js/dverseClient.js'), 'utf8');
         vm.runInNewContext(codeContent, env.window);
 
         const session = await env.window.dverse.getSession();
@@ -338,7 +338,7 @@ test('Web Auth & Data Hydration Test Suite', async (t) => {
             })
         };
 
-        const codeContent = fs.readFileSync(path.join(__dirname, '../src/dverseClient.js'), 'utf8');
+        const codeContent = fs.readFileSync(path.join(__dirname, '../src/js/dverseClient.js'), 'utf8');
         vm.runInNewContext(codeContent, env.window);
 
         assert.ok(typeof env.window.dverse.dtunes.fetchProfile === 'function', 'fetchProfile is exported');
@@ -539,7 +539,7 @@ test('Web Auth & Data Hydration Test Suite', async (t) => {
     await t.test('Tier 7: recommendationClient resolves user ID from cloudLibrary session', async () => {
         const env = createTestEnvironment();
         setupSandbox(env);
-        const recContent = fs.readFileSync(path.join(__dirname, '../src/recommendationClient.js'), 'utf8');
+        const recContent = fs.readFileSync(path.join(__dirname, '../src/js/recommendationClient.js'), 'utf8');
 
         // Signed out state
         env.window.cloudLibrary = { session: null };
@@ -555,8 +555,8 @@ test('Web Auth & Data Hydration Test Suite', async (t) => {
     });
 
     await t.test('Tier 8: Static codebase contracts for auth & hydration', () => {
-        const dverseCode = fs.readFileSync(path.join(__dirname, '../src/dverseClient.js'), 'utf8');
-        const appCode = fs.readFileSync(path.join(__dirname, '../src/app.js'), 'utf8');
+        const dverseCode = fs.readFileSync(path.join(__dirname, '../src/js/dverseClient.js'), 'utf8');
+        const appCode = fs.readFileSync(path.join(__dirname, '../src/js/state.js'), 'utf8');
 
         // detectSessionInUrl must be false in dverseClient.js
         assert.ok(dverseCode.includes('detectSessionInUrl: false'), 'detectSessionInUrl must be explicitly false');
@@ -602,7 +602,7 @@ test('Web Auth & Data Hydration Test Suite', async (t) => {
             })
         };
 
-        const codeContent = fs.readFileSync(path.join(__dirname, '../src/dverseClient.js'), 'utf8');
+        const codeContent = fs.readFileSync(path.join(__dirname, '../src/js/dverseClient.js'), 'utf8');
         vm.runInNewContext(codeContent, env.window);
 
         await env.window.dverse.signInWithGoogle();
@@ -672,7 +672,7 @@ test('Web Auth & Data Hydration Test Suite', async (t) => {
             })
         };
 
-        const codeContent = fs.readFileSync(path.join(__dirname, '../src/dverseClient.js'), 'utf8');
+        const codeContent = fs.readFileSync(path.join(__dirname, '../src/js/dverseClient.js'), 'utf8');
         vm.runInNewContext(codeContent, env.window);
 
         const session = await env.window.dverse.getSession();

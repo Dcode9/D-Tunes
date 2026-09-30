@@ -1,4 +1,4 @@
-        function initApp() {
+        async function initApp() {
             installGlobalImageFallback();
 
             const vCanvas = document.getElementById('visualizer-canvas'); visualizerCtx = vCanvas.getContext('2d');
@@ -1081,8 +1081,8 @@
             if (ui.updateAlbumCarouselPeeks) ui.updateAlbumCarouselPeeks();
             ui.updateRepeatBtn();
             ui.updateShuffleBtn();
-            homeView.init();
-            cloudLibrary.init();
+            await cloudLibrary.init();
+            await homeView.init();
             requestAnimationFrame(viz.render);
             deviceMode.apply();
             setupShelfNavButtons();

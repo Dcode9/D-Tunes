@@ -4,3 +4,7 @@ node_modules/
 Thumbs.db
 .vercel
 .env*
+
+browserless-automation/
+*.webm
+*.mp4

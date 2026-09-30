@@ -266,6 +266,151 @@
                 }
                 else { modal.classList.add('hidden'); }
             },
+            toggleVibeMixModal: (show) => {
+                const modal = document.getElementById('vibe-mix-modal');
+                if (!modal) return;
+                const willOpen = show !== undefined ? Boolean(show) : modal.classList.contains('hidden');
+                if (willOpen) {
+                    modal.classList.remove('hidden');
+                    const input = document.getElementById('vibe-input');
+                    if (input) {
+                        input.value = '';
+                        setTimeout(() => input.focus(), 100);
+                    }
+                    const status = document.getElementById('vibe-loading-status');
+                    if (status) status.classList.add('hidden');
+                    const btn = document.getElementById('btn-create-vibe-mix');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.classList.remove('opacity-50', 'pointer-events-none');
+                    }
+                } else {
+                    modal.classList.add('hidden');
+                }
+            },
+            selectVibeChip: (text, isTimeCapsule = false) => {
+                const input = document.getElementById('vibe-input');
+                if (input) {
+                    input.value = text;
+                    input.focus();
+                }
+                const chipBtns = document.querySelectorAll('.vibe-chip');
+                chipBtns.forEach(btn => {
+                    const label = text.split(':')[0].trim().substring(0, 8);
+                    if (btn.textContent.includes(label)) {
+                        btn.classList.add('border-cyan-400', 'bg-cyan-500/20', 'text-cyan-300');
+                    } else {
+                        btn.classList.remove('border-cyan-400', 'bg-cyan-500/20', 'text-cyan-300');
+                    }
+                });
+            },
+            submitVibeMix: async () => {
+                const input = document.getElementById('vibe-input');
+                const promptVal = input ? input.value.trim() : '';
+                const infuseTaste = document.getElementById('vibe-infuse-taste')?.checked ?? true;
+                const isTimeCapsule = promptVal.toLowerCase().includes('time capsule') || promptVal.toLowerCase().includes('forgotten');
+
+                const statusEl = document.getElementById('vibe-loading-status');
+                const statusText = document.getElementById('vibe-loading-text');
+                const createBtn = document.getElementById('btn-create-vibe-mix');
+
+                if (createBtn) {
+                    createBtn.disabled = true;
+                    createBtn.classList.add('opacity-50', 'pointer-events-none');
+                }
+                if (statusEl) {
+                    statusEl.classList.remove('hidden');
+                    if (statusText) statusText.textContent = isTimeCapsule ? 'Resurrecting nostalgic favorites...' : 'Curating tracks matching your vibe...';
+                }
+
+                try {
+                    let generated = null;
+                    if (window.ai && window.ai.generateVibeMix) {
+                        generated = await window.ai.generateVibeMix(promptVal || 'Late Night Chill', {
+                            isTimeCapsule,
+                            infuseTaste
+                        });
+                    }
+
+                    if (!generated || !Array.isArray(generated.songs) || generated.songs.length === 0) {
+                        throw new Error('Could not generate tracks for this vibe.');
+                    }
+
+                    if (statusText) statusText.textContent = 'Verifying audio streams & artwork...';
+
+                    const hydrated = [];
+                    const searchFn = (window.aiHome && window.aiHome.searchTrackData) || (async (title, artist) => {
+                        if (window.jiosaavnAPI?.searchSongs) {
+                            const res = await window.jiosaavnAPI.searchSongs(`${title} ${artist}`, 1);
+                            if (res && res[0] && res[0].url) return res[0];
+                        }
+                        return null;
+                    });
+
+                    for (const s of generated.songs) {
+                        const matched = await searchFn(s.title, s.artist);
+                        if (matched && matched.url && matched.img && !matched.img.includes('DTunes.svg') && matched.img !== FALLBACK_ART) {
+                            const appSong = window.recommendationClient ? window.recommendationClient.toAppSong(matched) : matched;
+                            if (!hydrated.some(h => h.id === appSong.id)) {
+                                hydrated.push(appSong);
+                            }
+                        }
+                    }
+
+                    if (hydrated.length === 0) {
+                        throw new Error('Unable to find verified playable tracks for this mix.');
+                    }
+
+                    let baseName = generated.title || (isTimeCapsule ? 'Time Capsule' : 'Vibe Mix');
+                    let playlistName = baseName;
+                    let counter = 1;
+                    while (state.playlists[playlistName]) {
+                        playlistName = `${baseName} (${++counter})`;
+                    }
+
+                    state.playlists[playlistName] = hydrated;
+                    const paletteColors = ['#06b6d4', '#6366f1', '#a855f7', '#ec4899', '#f97316', '#10b981', '#3b82f6'];
+                    const pickedColor = paletteColors[(generated.styleIndex || 0) % paletteColors.length];
+                    state.playlistStyles[playlistName] = {
+                        color: pickedColor,
+                        icon: isTimeCapsule ? 'history' : 'sparkles',
+                        shape: 'squircle',
+                        cornerRadius: 24,
+                        smoothness: 100,
+                        starSides: 5,
+                        starCurve: 0.15,
+                        starRotation: 0,
+                        starScale: 1
+                    };
+
+                    localStorage.setItem('playlists', JSON.stringify(state.playlists));
+                    localStorage.setItem('playlistStyles', JSON.stringify(state.playlistStyles));
+
+                    if (window.cloudLibrary && cloudLibrary.savePlaylist) {
+                        cloudLibrary.savePlaylist(playlistName);
+                    }
+
+                    ui.renderPlaylists();
+                    ui.toggleVibeMixModal(false);
+
+                    if (ui.showToast) {
+                        ui.showToast(`Created "${playlistName}" (${hydrated.length} tracks)`, 'success');
+                    }
+
+                    ui.openPlaylist(playlistName);
+                } catch (err) {
+                    console.error('[VibeMix] Error creating vibe mix:', err);
+                    if (ui.showToast) {
+                        ui.showToast(err.message || 'Failed to create Vibe Mix. Please try again.', 'error');
+                    }
+                } finally {
+                    if (createBtn) {
+                        createBtn.disabled = false;
+                        createBtn.classList.remove('opacity-50', 'pointer-events-none');
+                    }
+                    if (statusEl) statusEl.classList.add('hidden');
+                }
+            },
             initPlaylistCoverControls: () => {
                 const colorEl = document.getElementById('pl-color-picker');
                 const iconEl = document.getElementById('pl-icon-picker');
@@ -1099,6 +1244,21 @@
                     <div class="w-full min-w-0 flex-1">
                         <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">Create Playlist</h3></div>
                         <p class="text-xs text-gray-400 mt-1">New mix</p>
+                    </div>
+                </div>`;
+
+                // Vibe Mix Card
+                html += `
+                <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer border border-cyan-500/20 hover:border-cyan-400/50 bg-gradient-to-b from-cyan-950/20 to-black/40" onclick="ui.toggleVibeMixModal(true)">
+                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center bg-gradient-to-br from-indigo-900/60 via-purple-900/40 to-cyan-900/60 border border-cyan-500/20 group-hover:border-cyan-400/50 transition">
+                        <div class="absolute inset-0" style="background: radial-gradient(circle at 70% 30%, rgba(6, 182, 212, 0.25), transparent 60%);"></div>
+                        <span class="relative w-14 h-14 rounded-full bg-gradient-to-tr from-cyan-500 to-indigo-500 text-white flex items-center justify-center shadow-xl shadow-cyan-500/30 group-hover:scale-110 transition">
+                            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        </span>
+                    </div>
+                    <div class="w-full min-w-0 flex-1">
+                        <div class="marquee-container w-full"><h3 class="font-bold text-cyan-400 text-sm marquee-text">Vibe Mix</h3></div>
+                        <p class="text-xs text-gray-400 mt-1">Curate any mood</p>
                     </div>
                 </div>`;
                 

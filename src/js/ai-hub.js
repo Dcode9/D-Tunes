@@ -11,6 +11,11 @@
 
     const searchCache = new Map();
 
+    let _lastRenderedUserId = null;
+    let _lastRenderedDateKey = null;
+    let _isRenderingAIHome = false;
+    let _cachedDailyPlaylists = null;
+
     /**
      * Searches for a track and strictly validates both the playable audio track
      * and album artwork. If either is missing, invalid, or fallback art, returns null
@@ -140,6 +145,8 @@
                         (window.dverse && window.dverse.getSession ? await window.dverse.getSession() : null);
 
         if (!session || !session.user || !session.user.id) {
+            _lastRenderedUserId = null;
+            _cachedDailyPlaylists = null;
             renderSignedOutState(container);
             return;
         }
@@ -147,6 +154,15 @@
         const userId = session.user.id;
         const now = new Date();
         const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+        // If recommendations are already rendered for today and same user, and forceRefresh is false, do NOT reload!
+        const hasExistingCards = Boolean(container.querySelector('.scroll-card, .daily-mix-shelf, h2'));
+        if (!forceRefresh && _lastRenderedUserId === userId && _lastRenderedDateKey === todayKey && _cachedDailyPlaylists && _cachedDailyPlaylists.length > 0 && hasExistingCards) {
+            return;
+        }
+
+        if (_isRenderingAIHome) return;
+        _isRenderingAIHome = true;
 
         // 2. Render skeletons while loading
         renderSkeletons(container);
@@ -373,11 +389,17 @@
                 });
             }, 60);
 
+            _cachedDailyPlaylists = playlists;
+            _lastRenderedUserId = userId;
+            _lastRenderedDateKey = todayKey;
+
             if (window.updateMarquees) updateMarquees();
             if (window.setupShelfNavButtons) setupShelfNavButtons();
         } catch (err) {
             console.warn("[Daily Mixes] Render error:", err);
             container.innerHTML = '';
+        } finally {
+            _isRenderingAIHome = false;
         }
     }
 
@@ -565,10 +587,23 @@
         };
     }
 
-    // Re-render when auth changes
+    // Re-render only when auth identity actually changes (ignore tab focus/token refresh)
     if (window.dverse && window.dverse.onAuthStateChange) {
-        window.dverse.onAuthStateChange(() => {
-            renderAIHome();
+        window.dverse.onAuthStateChange((event, session) => {
+            const currentUid = session?.user?.id || null;
+            if (event === 'SIGNED_OUT' || !currentUid) {
+                _lastRenderedUserId = null;
+                _cachedDailyPlaylists = null;
+                const container = document.getElementById('ai-hub-container');
+                if (container) renderSignedOutState(container);
+                return;
+            }
+            // Ignore focus-triggered token refresh or identical user events!
+            if (event === 'TOKEN_REFRESHED' || currentUid === _lastRenderedUserId) {
+                return;
+            }
+            // User identity actually changed
+            renderAIHome(false);
         });
     }
 })();

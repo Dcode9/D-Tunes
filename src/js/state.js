@@ -345,10 +345,16 @@
                 return true;
             },
             save: () => {
+                if (window.cloudLibrary?._isSigningOut) return null;
+                if (!state.currentTrack && (!state.queue || state.queue.length === 0) && (!state.userQueue || state.userQueue.length === 0)) {
+                    return null;
+                }
                 const data = persist.snapshot();
-                localStorage.setItem('playbackState', JSON.stringify(data));
-                localStorage.setItem('savedQueue', JSON.stringify(state.queue || []));
-                localStorage.setItem('savedUserQueue', JSON.stringify(state.userQueue || []));
+                try {
+                    localStorage.setItem('playbackState', JSON.stringify(data));
+                    localStorage.setItem('savedQueue', JSON.stringify(state.queue || []));
+                    localStorage.setItem('savedUserQueue', JSON.stringify(state.userQueue || []));
+                } catch (_) {}
                 window.cloudLibrary?.schedulePlaybackSave?.();
                 return data;
             },
@@ -578,7 +584,9 @@
                     }
                 } else {
                     state.avatarUrl = '';
+                    state.username = 'Guest User';
                     try { localStorage.removeItem('avatarUrl'); } catch (_) {}
+                    try { localStorage.removeItem('username'); } catch (_) {}
                     ui.updateProfileUI();
                     cloudLibrary.setStatus('Sign in to sync history, library, likes, and playlists.');
                 }
@@ -593,45 +601,30 @@
                 }
             },
             signOutAndPurgeAll: async () => {
-                try {
-                    if (window.dverse && typeof window.dverse.signOut === 'function') {
-                        await window.dverse.signOut();
-                    }
-                } catch (e) {
-                    console.warn('[DVerse] Sign-out error:', e);
-                }
+                cloudLibrary._isSigningOut = true;
 
-                // Halt playback and detach audio source
-                if (typeof audio !== 'undefined' && audio) {
-                    audio.pause();
-                    audio.removeAttribute('src');
-                    audio.load();
+                // Cancel all pending timers
+                if (cloudLibrary.playbackSaveTimer) {
+                    clearTimeout(cloudLibrary.playbackSaveTimer);
+                    cloudLibrary.playbackSaveTimer = null;
                 }
-
-                // Cancel sleep timer
-                if (typeof sleepTimer !== 'undefined' && sleepTimer.cancel) {
+                if (typeof sleepTimer !== 'undefined' && sleepTimer?.cancel) {
                     sleepTimer.cancel();
                 }
 
-                // Completely purge all local storage keys
-                const targetKeys = [
-                    'likedIds', 'libraryIds', 'likedArtists', 'playlists', 'playlistStyles',
-                    'playHistory', 'artistPlayCounts', 'recentSearches', 'searchHistory', 'username', 'avatarUrl',
-                    'songStore', 'dtunes_tester_streak', 'savedQueue', 'lastActiveTrack',
-                    'playbackState', 'equalizerSettings', 'audioQuality', 'preferredLanguage',
-                    'dverse_session_cache', 'dverse_supabase_auth_token', 'sb-supabase-auth-token',
-                    'sb-qvvnhvowffvbbhfgwypw-auth-token'
-                ];
-                targetKeys.forEach(k => localStorage.removeItem(k));
-                Object.keys(localStorage).forEach(k => {
-                    if (k.startsWith('sb-') || k.startsWith('dverse_') || k.startsWith('recommendation')) {
-                        localStorage.removeItem(k);
-                    }
-                });
+                // Halt playback and detach audio source without triggering persistence
+                if (typeof audio !== 'undefined' && audio) {
+                    try {
+                        audio.pause();
+                        audio.removeAttribute('src');
+                        audio.load();
+                    } catch (_) {}
+                }
 
-                // Clear memory state
+                // Clear memory state completely
                 state.queue = [];
                 state.userQueue = [];
+                state.savedQueue = [];
                 state.idx = -1;
                 state.playing = false;
                 state.loading = false;
@@ -640,6 +633,7 @@
                 state.likedIds = [];
                 state.libraryIds = [];
                 state.likedArtists = [];
+                state.dislikedSongs = [];
                 state.playHistory = [];
                 state.searchHistory = [];
                 state.artistPlayCounts = {};
@@ -649,8 +643,48 @@
                 state.avatarUrl = '';
                 state.forYouSongs = [];
                 state.quickPicks = [];
+                state.discoverMixes = {};
                 state.queueExpanded = false;
+
                 if (typeof songStore !== 'undefined' && songStore.clear) songStore.clear();
+
+                // Clear Universal Storage & Cookie memory
+                if (window.dverse?.universalStorage?.clear) {
+                    try { window.dverse.universalStorage.clear(); } catch (_) {}
+                }
+
+                // Completely purge all local storage keys
+                const targetKeys = [
+                    'likedIds', 'libraryIds', 'likedArtists', 'playlists', 'playlistStyles',
+                    'playHistory', 'artistPlayCounts', 'recentSearches', 'searchHistory', 'username', 'avatarUrl',
+                    'songStore', 'dtunes_tester_streak', 'savedQueue', 'savedUserQueue', 'lastActiveTrack', 'lastTrackIndex',
+                    'playbackState', 'equalizerSettings', 'audioQuality', 'preferredLanguage',
+                    'dverse_session_cache', 'dverse_tokens_cookie', 'dverse_auth_tokens',
+                    'dverse_supabase_auth_token', 'sb-supabase-auth-token', 'dislikedSongs',
+                    'dtunes_ai_playlists_cache_v2', 'dverse_auth_return_to', 'dverse.auth.returnTo',
+                    'sb-qvvnhvowffvbbhfgwypw-auth-token', 'dverse_desktop_auth'
+                ];
+                targetKeys.forEach(k => {
+                    try { localStorage.removeItem(k); } catch (_) {}
+                    try { sessionStorage.removeItem(k); } catch (_) {}
+                });
+                try {
+                    Object.keys(localStorage).forEach(k => {
+                        if (k.startsWith('sb-') || k.startsWith('dverse') || k.startsWith('dtunes') || k.startsWith('recommendation')) {
+                            localStorage.removeItem(k);
+                        }
+                    });
+                    sessionStorage.clear();
+                } catch (_) {}
+
+                // Explicit D'Verse client sign out
+                try {
+                    if (window.dverse && typeof window.dverse.signOut === 'function') {
+                        await window.dverse.signOut();
+                    }
+                } catch (e) {
+                    console.warn('[DVerse] Sign-out error:', e);
+                }
 
                 cloudLibrary.session = null;
                 cloudLibrary.user = null;
@@ -678,7 +712,7 @@
                 cloudLibrary.updateUI();
                 ui.switchView('home');
 
-                // Immediately purge and hide personalized shelves on the homepage without requiring page reload
+                // Immediately purge and hide personalized shelves on the homepage
                 document.getElementById('section-for-you')?.classList.add('hidden');
                 document.getElementById('for-you-actions')?.classList.add('hidden');
                 const forYouGrid = document.getElementById('for-you-grid');
@@ -692,9 +726,33 @@
                 const recentGrid = document.getElementById('recent-grid');
                 if (recentGrid) recentGrid.innerHTML = '';
 
-                state.discoverMixes = {};
-                homeView.renderDiscoverSection(true);
+                const aiContainer = document.getElementById('ai-hub-container');
+                if (aiContainer) {
+                    aiContainer.innerHTML = `
+                        <div class="pt-2 animate-fade-in px-4 md:px-8">
+                            <div class="p-6 md:p-8 rounded-2xl glass-panel border border-white/10 flex flex-col md:flex-row items-center justify-between gap-6 bg-gradient-to-r from-purple-900/30 via-black/40 to-emerald-900/30">
+                                <div class="max-w-xl">
+                                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white text-xs font-semibold mb-3">
+                                        <span>Daily Mixes</span>
+                                    </div>
+                                    <h2 class="text-2xl md:text-3xl font-black text-white tracking-tight">Your Music, Tailored For You</h2>
+                                    <p class="text-sm text-neutral-300 mt-2 leading-relaxed">Sign in to unlock personalized daily mixes based on your listening history, favorite tracks, and custom playlists.</p>
+                                </div>
+                                <button onclick="if(window.dverse && dverse.signInWithGoogle) dverse.signInWithGoogle();" class="px-6 py-3 rounded-full bg-[var(--accent-color)] text-black font-bold text-sm hover:scale-105 active:scale-95 transition shadow-lg flex-shrink-0 cursor-pointer flex items-center gap-2">
+                                    <span>Sign In to D-Tunes</span>
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }
 
+                state.discoverMixes = {};
+                if (window.homeView?.renderDiscoverSection) {
+                    homeView.renderDiscoverSection(true);
+                }
+
+                cloudLibrary._isSigningOut = false;
                 if (ui.showToast) ui.showToast('Account data cleared and signed out', 'info');
             },
             init: async () => {
@@ -712,6 +770,7 @@
                 };
 
                 window.dverse.onAuthStateChange(async (_event, session) => {
+                    if (cloudLibrary._isSigningOut) return;
                     cloudLibrary.session = session;
                     cloudLibrary.updateUI();
                     if (session) await triggerLoadOnce(_event, session);

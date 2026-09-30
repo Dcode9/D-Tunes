@@ -901,12 +901,20 @@ html[data-ui-mode="mobile"] .group:not(.swipe-song):not(.swipe-song-card):hover,
 html[data-ui-mode="mobile"] [class*="hover:"]:not(.swipe-song-card):not(.swipe-song):not(.album-art-card) {
     transform: none !important;
 }
-html[data-ui-mode="mobile"] .group-hover\:opacity-100,
 html[data-ui-mode="mobile"] .group-hover\:scale-100,
 html[data-ui-mode="mobile"] .group-hover\:scale-105,
 html[data-ui-mode="mobile"] .group-hover\:scale-110 {
-    opacity: inherit;
     transform: none !important;
+}
+
+/* Touch / Mobile: Ensure card hover overlays never stay stuck or automatically enabled */
+@media (hover: none) {
+    .scroll-card .opacity-0.group-hover\:opacity-100 {
+        opacity: 0 !important;
+    }
+}
+html[data-ui-mode="mobile"] .scroll-card .opacity-0.group-hover\:opacity-100 {
+    opacity: 0 !important;
 }
 .queue-drag-handle {
     flex: 0 0 auto;

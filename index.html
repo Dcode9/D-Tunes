@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
-    <title>D'Tunes (Beta 1.3)</title>
+    <title>D'Tunes (Beta 1.3.1)</title>
     <link rel="icon" type="image/svg+xml" href="DTunes.svg">
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon.png">
     <link rel="shortcut icon" href="favicon.ico">
@@ -47,7 +47,13 @@
     <!-- Playlist Creator Modal -->
     <div id="playlist-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
         <div class="glass-panel p-6 rounded-2xl w-full max-w-lg shadow-2xl border border-white/10 transform transition-transform flex flex-col max-h-[90vh]">
-            <h3 class="text-xl font-bold text-white mb-4 flex-shrink-0">Create Playlist</h3>
+            <div class="flex items-center justify-between mb-4 flex-shrink-0">
+                <h3 class="text-xl font-bold text-white">Create Playlist</h3>
+                <button type="button" onclick="ui.toggleModal(false); ui.toggleVibeMixModal(true);" class="text-xs text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 transition cursor-pointer">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    Try Vibe Mix
+                </button>
+            </div>
             <input type="text" id="new-playlist-name" placeholder="My Awesome Mix" class="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white mb-4 focus:outline-none focus:border-[var(--accent-color)] transition flex-shrink-0" autocomplete="off">
 
             <div class="mb-4 flex-shrink-0 space-y-3">
@@ -90,6 +96,80 @@
             <div class="flex justify-end gap-3 border-t border-white/5 pt-4 flex-shrink-0">
                 <button onclick="ui.toggleModal(false)" class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition font-medium">Cancel</button>
                 <button onclick="ui.createPlaylist()" class="px-6 py-2 rounded-lg bg-[var(--accent-color)] text-black font-bold hover:scale-105 transition shadow-lg shadow-cyan-500/30">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIBE MIX MODAL -->
+    <div id="vibe-mix-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 backdrop-blur-md hidden" onclick="if(event.target === this) ui.toggleVibeMixModal(false)">
+        <div class="glass-panel p-6 rounded-3xl w-full max-w-lg shadow-2xl border border-white/10 transform transition-all flex flex-col max-h-[92vh] overflow-hidden mx-4">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between gap-3 mb-4 flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-cyan-500/25">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-black text-white">Vibe Mix</h3>
+                        <p class="text-xs text-gray-400">Tell us a feeling, mood, or moment. We'll craft the soundtrack.</p>
+                    </div>
+                </div>
+                <button onclick="ui.toggleVibeMixModal(false)" class="text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition" aria-label="Close Vibe Mix Modal">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <!-- Scrollable Body -->
+            <div class="overflow-y-auto custom-scrollbar flex flex-col gap-4 flex-1 pr-1">
+                <!-- Prompt Input -->
+                <div>
+                    <label for="vibe-input" class="text-xs font-bold text-gray-300 mb-1.5 block">What vibe are you feeling?</label>
+                    <textarea id="vibe-input" rows="2" placeholder="e.g. Rainy midnight drive through the neon city, 90s acoustic chill, high-energy gym cardio..." class="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-[var(--accent-color)] transition resize-none text-sm"></textarea>
+                </div>
+
+                <!-- Quick Vibe Pills -->
+                <div>
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2 block">Quick Vibes & Moods</span>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" onclick="ui.selectVibeChip('Cozy acoustic afternoon coffee', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">☕ Cozy Chill</button>
+                        <button type="button" onclick="ui.selectVibeChip('High energy workout motivation', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">⚡ High Energy</button>
+                        <button type="button" onclick="ui.selectVibeChip('Late night neon highway cruise', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">🌙 Late Night</button>
+                        <button type="button" onclick="ui.selectVibeChip('Deep focus flow and ambient beats', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">🎯 Deep Focus</button>
+                        <button type="button" onclick="ui.selectVibeChip('Musical Time Capsule: Forgotten favorites & deep cuts', true)" class="vibe-chip px-3 py-1.5 rounded-full bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/40 text-xs text-cyan-300 font-semibold transition cursor-pointer">⏳ Time Capsule</button>
+                        <button type="button" onclick="ui.selectVibeChip('Sunny coastal road trip anthems', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">🚗 Road Trip</button>
+                    </div>
+                </div>
+
+                <!-- Taste Infusion Toggle -->
+                <div class="p-3 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-bold text-white">Tune to my musical taste</p>
+                        <p class="text-[11px] text-gray-400">Infuses your favorite artists & history while obeying exclusions</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="vibe-infuse-taste" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[var(--accent-color)]"></div>
+                    </label>
+                </div>
+
+                <!-- Generation Status & Spinner -->
+                <div id="vibe-loading-status" class="hidden flex-col items-center justify-center p-4 rounded-2xl bg-white/5 border border-white/10 text-center gap-2">
+                    <div class="w-8 h-8 border-3 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+                    <p id="vibe-loading-text" class="text-xs font-semibold text-gray-200">Curating the perfect soundtrack...</p>
+                    <p class="text-[10px] text-gray-400">Matching verified audio streams and artwork</p>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="flex items-center justify-between border-t border-white/10 pt-4 mt-3 flex-shrink-0">
+                <span class="text-[11px] text-gray-400">8–10 tracks curated</span>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="ui.toggleVibeMixModal(false)" class="px-4 py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition">Cancel</button>
+                    <button type="button" id="btn-create-vibe-mix" onclick="ui.submitVibeMix()" class="px-6 py-2.5 rounded-xl bg-[var(--accent-color)] text-black text-xs font-black hover:scale-105 transition shadow-lg shadow-cyan-500/25 flex items-center gap-2 cursor-pointer">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        <span>Curate Vibe</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -315,60 +395,115 @@
                 </button>
             </div>
 
-            <div class="overflow-y-auto custom-scrollbar flex flex-col gap-4 flex-1 pr-1">
-                <!-- Version 0.1.3 (Beta 1.3) -->
-                <div class="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col gap-3">
-                    <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-1 rounded-full bg-[var(--accent-color)] text-black text-xs font-black">0.1.3</span>
-                        <span class="text-sm font-bold text-white">Beta 1.3</span>
-                        <span class="px-2 py-0.5 rounded-full bg-white/10 text-gray-400 text-[10px] font-bold">Latest</span>
+            <div class="overflow-y-auto custom-scrollbar flex flex-col gap-3 flex-1 pr-1">
+                <!-- Version 0.1.3.1 (Beta 1.3.1) - Latest Patch Release -->
+                <div class="p-4 rounded-2xl bg-gradient-to-br from-cyan-950/40 via-white/5 to-purple-950/30 border border-cyan-500/30 flex flex-col gap-3 shadow-lg shadow-cyan-950/20">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2.5 py-0.5 rounded-full bg-[var(--accent-color)] text-black text-xs font-black">0.1.3.1</span>
+                            <span class="text-sm font-bold text-white">Beta 1.3.1</span>
+                            <span class="px-2 py-0.5 rounded-full bg-cyan-400/20 text-cyan-300 text-[10px] font-bold border border-cyan-500/30">Latest • Patch</span>
+                        </div>
+                        <span class="text-[11px] text-gray-400 font-mono">Minor Update</span>
                     </div>
-                    <ul class="text-xs text-gray-300 space-y-1.5 leading-relaxed">
-                        <li>• 📱 <strong>Android-Style Swipe Gestures</strong>: Cards physically move in your swipe direction with expanding action panels for "Play Next" and "Add to Queue".</li>
-                        <li>• 🎛️ <strong>Redesigned Full-Screen Mobile Player</strong>: Album art on top, clean song details with like button, audio controls, and separate Queue, History & Lyrics tabs — controls always visible.</li>
-                        <li>• 🎧 <strong>Personalised Daily Mixes</strong>: Daily listening recommendations curated from your taste and listening patterns, cached and refreshed once per day.</li>
-                        <li>• ⚡ <strong>Continuation Autoplay</strong>: Seamlessly continues playing when your queue runs out.</li>
-                        <li>• ✅ <strong>Audio & Artwork Reliability</strong>: Only songs with confirmed audio and artwork are shown on your homepage.</li>
-                        <li>• 🚫 <strong>Taste Controls</strong>: "Don't recommend this" option to refine your recommendations over time.</li>
-                        <li>• 🔍 <strong>Dedicated Search</strong>: Full-screen search with recent searches, quick results as you type on mobile and desktop.</li>
-                        <li>• 🎨 <strong>Album Carousel</strong>: Swipe album art in the full-screen player to skip tracks, with neighbouring art visible as a preview.</li>
-                        <li>• 🎚️ <strong>Equalizer</strong>: Quick-access sound presets and per-band control from the player or settings.</li>
-                        <li>• 📜 <strong>Queue & History</strong>: Full scrollable queue and playback history available right from the player.</li>
-                    </ul>
+                    <div class="grid grid-cols-1 gap-2 text-xs text-gray-200">
+                        <div class="flex items-start gap-2.5 p-2.5 rounded-xl bg-white/5 border border-white/5">
+                            <span class="text-base leading-none">⚡</span>
+                            <div>
+                                <strong class="text-white">Seamless Tab Focus & Stability</strong>: AI recommendations remain locked in place without flickering, reloading, or showing skeletons when you switch tabs or minimize the browser.
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-2.5 p-2.5 rounded-xl bg-white/5 border border-white/5">
+                            <span class="text-base leading-none">🪄</span>
+                            <div>
+                                <strong class="text-white">Vibe Mix Playlist Generator</strong>: Create custom curated playlists from any mood, prompt, or nostalgic <em>Time Capsule</em>, tuned directly to your personal listening taste.
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-2.5 p-2.5 rounded-xl bg-white/5 border border-white/5">
+                            <span class="text-base leading-none">📑</span>
+                            <div>
+                                <strong class="text-white">Streamlined Release Notes</strong>: Compact, categorized changelog navigation with collapsible historical archives to keep updates clear and non-overwhelming.
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- Version 0.1.2 (Beta 1.2) -->
-                <div class="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col gap-3">
-                    <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-1 rounded-full bg-[var(--accent-color)] text-black text-xs font-black">0.1.2</span>
-                        <span class="text-sm font-bold text-white">Beta 1.2</span>
-                    </div>
-                    <ul class="text-xs text-gray-300 space-y-1.5 leading-relaxed">
-                        <li>• 🎵 <strong>Real-Time Synchronized Lyrics Engine</strong>: Live lyrics drawer with auto-scrolling line highlight and tap-to-seek playback.</li>
-                        <li>• ⚡ <strong>Cross-Platform Audio Resilience</strong>: Audio playback optimizations across Windows desktop, iOS Safari, and Android Chrome.</li>
-                        <li>• 📜 <strong>Isolated Scrolling</strong>: Clean separation of vertical page scrolling and horizontal music shelves without scroll hijacking.</li>
-                        <li>• 🎨 <strong>Accent Color Stability</strong>: App accent color remains fixed and stable without dynamic album art palette overrides.</li>
-                        <li>• 🪟 <strong>Refined Glassmorphic Player Dock</strong>: Transparent backdrop blur for the now playing dock with pure rounded corners and clean native logo.</li>
-                        <li>• 🔐 <strong>Seamless Authentication Flow</strong>: Isolated web sign-in and automated desktop redirection via deep links.</li>
-                    </ul>
+                <!-- Past Releases Header -->
+                <div class="flex items-center justify-between pt-2 pb-0.5 px-1">
+                    <span class="text-xs font-bold uppercase tracking-wider text-gray-400">Previous Releases</span>
+                    <span class="text-[11px] text-gray-500">Tap to expand</span>
                 </div>
 
-                <!-- Version 0.1.1 (Beta 1.1) -->
-                <div class="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col gap-3">
-                    <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-1 rounded-full bg-[var(--accent-color)] text-black text-xs font-black">0.1.1</span>
-                        <span class="text-sm font-bold text-white">Beta 1.1</span>
+                <!-- Version 0.1.3 (Beta 1.3) Collapsible -->
+                <details class="group rounded-2xl bg-white/5 border border-white/10 overflow-hidden transition-all duration-200">
+                    <summary class="p-3.5 flex items-center justify-between cursor-pointer select-none hover:bg-white/5 transition list-none">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded-full bg-white/10 text-gray-300 text-xs font-bold">0.1.3</span>
+                            <span class="text-sm font-semibold text-white">Beta 1.3</span>
+                            <span class="text-xs text-gray-400 font-normal hidden sm:inline ml-1">• Swipe Gestures & Daily Mixes</span>
+                        </div>
+                        <svg class="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </summary>
+                    <div class="px-4 pb-4 pt-1 border-t border-white/5">
+                        <ul class="text-xs text-gray-300 space-y-1.5 leading-relaxed">
+                            <li>• 📱 <strong>Android-Style Swipe Gestures</strong>: Cards physically move in your swipe direction with expanding action panels for "Play Next" and "Add to Queue".</li>
+                            <li>• 🎛️ <strong>Redesigned Full-Screen Mobile Player</strong>: Album art on top, clean song details with like button, audio controls, and separate Queue, History & Lyrics tabs — controls always visible.</li>
+                            <li>• 🎧 <strong>Personalised Daily Mixes</strong>: Daily listening recommendations curated from your taste and listening patterns, cached and refreshed once per day.</li>
+                            <li>• ⚡ <strong>Continuation Autoplay</strong>: Seamlessly continues playing when your queue runs out.</li>
+                            <li>• ✅ <strong>Audio & Artwork Reliability</strong>: Only songs with confirmed audio and artwork are shown on your homepage.</li>
+                            <li>• 🚫 <strong>Taste Controls</strong>: "Don't recommend this" option to refine your recommendations over time.</li>
+                            <li>• 🔍 <strong>Dedicated Search</strong>: Full-screen search with recent searches, quick results as you type on mobile and desktop.</li>
+                            <li>• 🎨 <strong>Album Carousel</strong>: Swipe album art in the full-screen player to skip tracks, with neighbouring art visible as a preview.</li>
+                            <li>• 🎚️ <strong>Equalizer</strong>: Quick-access sound presets and per-band control from the player or settings.</li>
+                            <li>• 📜 <strong>Queue & History</strong>: Full scrollable queue and playback history available right from the player.</li>
+                        </ul>
                     </div>
-                    <ul class="text-xs text-gray-300 space-y-1.5 leading-relaxed">
-                        <li>• ⏱️ <strong>Sleep Timer with Volume Fadeout</strong>: Automatic smooth 10s audio fade and pause.</li>
-                        <li>• 💿 <strong>Dedicated Album & Artist Pages</strong>: Discography, top songs, track numbers, and direct queueing.</li>
-                        <li>• 📝 <strong>Playlist Viewer & Procedural Editor</strong>: Total duration calculations, drag reordering, and custom cover geometries.</li>
-                        <li>• 🔗 <strong>Spotify Link Importer</strong>: Paste Spotify playlist/track links with real-time JioSaavn matching.</li>
-                        <li>• 🔍 <strong>Top Search & Floating Player</strong>: Keyboard-adaptive floating mini-player with downward results.</li>
-                        <li>• 👆 <strong>Swipe-to-Action Gestures</strong>: Smooth touch swipe on songs to Play Next (green) or Add to Queue (cyan).</li>
-                        <li>• ☁️ <strong>Clean Auth & Account Switcher</strong>: Deep sign-out protocol that wipes all cached storage for a 100% fresh guest slate.</li>
-                    </ul>
-                </div>
+                </details>
+
+                <!-- Version 0.1.2 (Beta 1.2) Collapsible -->
+                <details class="group rounded-2xl bg-white/5 border border-white/10 overflow-hidden transition-all duration-200">
+                    <summary class="p-3.5 flex items-center justify-between cursor-pointer select-none hover:bg-white/5 transition list-none">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded-full bg-white/10 text-gray-300 text-xs font-bold">0.1.2</span>
+                            <span class="text-sm font-semibold text-white">Beta 1.2</span>
+                            <span class="text-xs text-gray-400 font-normal hidden sm:inline ml-1">• Lyrics & Audio Resilience</span>
+                        </div>
+                        <svg class="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </summary>
+                    <div class="px-4 pb-4 pt-1 border-t border-white/5">
+                        <ul class="text-xs text-gray-300 space-y-1.5 leading-relaxed">
+                            <li>• 🎵 <strong>Real-Time Synchronized Lyrics Engine</strong>: Live lyrics drawer with auto-scrolling line highlight and tap-to-seek playback.</li>
+                            <li>• ⚡ <strong>Cross-Platform Audio Resilience</strong>: Audio playback optimizations across Windows desktop, iOS Safari, and Android Chrome.</li>
+                            <li>• 📜 <strong>Isolated Scrolling</strong>: Clean separation of vertical page scrolling and horizontal music shelves without scroll hijacking.</li>
+                            <li>• 🎨 <strong>Accent Color Stability</strong>: App accent color remains fixed and stable without dynamic album art palette overrides.</li>
+                            <li>• 🪟 <strong>Refined Glassmorphic Player Dock</strong>: Transparent backdrop blur for the now playing dock with pure rounded corners and clean native logo.</li>
+                            <li>• 🔐 <strong>Seamless Authentication Flow</strong>: Isolated web sign-in and automated desktop redirection via deep links.</li>
+                        </ul>
+                    </div>
+                </details>
+
+                <!-- Version 0.1.1 (Beta 1.1) Collapsible -->
+                <details class="group rounded-2xl bg-white/5 border border-white/10 overflow-hidden transition-all duration-200">
+                    <summary class="p-3.5 flex items-center justify-between cursor-pointer select-none hover:bg-white/5 transition list-none">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded-full bg-white/10 text-gray-300 text-xs font-bold">0.1.1</span>
+                            <span class="text-sm font-semibold text-white">Beta 1.1</span>
+                            <span class="text-xs text-gray-400 font-normal hidden sm:inline ml-1">• Sleep Timer & Procedural Editor</span>
+                        </div>
+                        <svg class="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </summary>
+                    <div class="px-4 pb-4 pt-1 border-t border-white/5">
+                        <ul class="text-xs text-gray-300 space-y-1.5 leading-relaxed">
+                            <li>• ⏱️ <strong>Sleep Timer with Volume Fadeout</strong>: Automatic smooth 10s audio fade and pause.</li>
+                            <li>• 💿 <strong>Dedicated Album & Artist Pages</strong>: Discography, top songs, track numbers, and direct queueing.</li>
+                            <li>• 📝 <strong>Playlist Viewer & Procedural Editor</strong>: Total duration calculations, drag reordering, and custom cover geometries.</li>
+                            <li>• 🔗 <strong>Spotify Link Importer</strong>: Paste Spotify playlist/track links with real-time JioSaavn matching.</li>
+                            <li>• 🔍 <strong>Top Search & Floating Player</strong>: Keyboard-adaptive floating mini-player with downward results.</li>
+                            <li>• 👆 <strong>Swipe-to-Action Gestures</strong>: Smooth touch swipe on songs to Play Next (green) or Add to Queue (cyan).</li>
+                            <li>• ☁️ <strong>Clean Auth & Account Switcher</strong>: Deep sign-out protocol that wipes all cached storage for a 100% fresh guest slate.</li>
+                        </ul>
+                    </div>
+                </details>
 
                 <!-- Attribution -->
                 <div class="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between text-xs text-gray-400">
@@ -455,7 +590,7 @@
         <div id="app-logo" class="flex items-center gap-2.5 text-xl md:text-2xl font-bold text-white cursor-pointer w-auto flex-shrink-0 min-w-max relative z-50 pointer-events-auto" onclick="ui.goHome();">
             <img src="DTunes.svg" alt="D'Tunes logo" class="w-8 h-8 md:w-10 md:h-10 object-contain">
             <span>D'Tunes</span>
-            <button onclick="event.stopPropagation(); ui.toggleChangelogModal(true);" class="beta-label hover:scale-105 active:scale-95 transition cursor-pointer" aria-label="D'Tunes beta version changelog">Beta 1.3</button>
+            <button onclick="event.stopPropagation(); ui.toggleChangelogModal(true);" class="beta-label hover:scale-105 active:scale-95 transition cursor-pointer" aria-label="D'Tunes beta version changelog">Beta 1.3.1</button>
         </div>
 
         <!-- Desktop layout placeholder where search *would* be -->
@@ -595,10 +730,16 @@
                         <h2 class="text-3xl md:text-5xl font-black text-white mb-2 tracking-tight">Your Library</h2>
                         <p class="text-sm md:text-base text-gray-300 font-medium" id="library-stats-text">Playlists, your collection, liked artists, and listening history.</p>
                     </div>
-                    <button onclick="ui.toggleModal(true)" class="mt-6 md:mt-0 px-6 py-3 rounded-full bg-[var(--accent-color)] text-black text-sm font-black hover:scale-105 transition shadow-lg shadow-cyan-500/30 flex items-center gap-2">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                        Create Playlist
-                    </button>
+                    <div class="flex items-center gap-3 mt-6 md:mt-0 flex-wrap justify-center md:justify-end">
+                        <button onclick="ui.toggleVibeMixModal(true)" class="px-5 py-3 rounded-full bg-gradient-to-r from-cyan-500/20 to-indigo-500/20 hover:from-cyan-500/30 hover:to-indigo-500/30 text-cyan-300 text-sm font-bold hover:scale-105 transition border border-cyan-500/40 shadow-lg shadow-cyan-950/40 flex items-center gap-2 cursor-pointer">
+                            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                            Vibe Mix
+                        </button>
+                        <button onclick="ui.toggleModal(true)" class="px-6 py-3 rounded-full bg-[var(--accent-color)] text-black text-sm font-black hover:scale-105 transition shadow-lg shadow-cyan-500/30 flex items-center gap-2 cursor-pointer">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            Create Playlist
+                        </button>
+                    </div>
                 </div>
             </div>
 

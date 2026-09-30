@@ -63,7 +63,9 @@ test('CHALLENGER M1: Adversarial Stress Test Suite', async (t) => {
     // 2. MERGE CONFLICT RESOLUTION & RECOMMENDATION CLIENT ADVERSARIAL TESTING
     // =========================================================================
     await t.test('Section 2: RecommendationClient conflict resolution and API event pipeline', async (st) => {
-        const filePath = path.join(rootDir, 'src', 'recommendationClient.js');
+        const filePath = fs.existsSync(path.join(rootDir, 'src', 'js', 'recommendationClient.js'))
+            ? path.join(rootDir, 'src', 'js', 'recommendationClient.js')
+            : path.join(rootDir, 'src', 'recommendationClient.js');
         const code = fs.readFileSync(filePath, 'utf8');
 
         // Verify zero git conflict markers

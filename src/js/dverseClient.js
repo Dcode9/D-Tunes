@@ -23,9 +23,17 @@
 
   function deleteCookie(name) {
     if (typeof document === 'undefined') return;
-    const isDverse = typeof window !== 'undefined' && window.location.hostname.endsWith('d-verse.in');
-    const domainAttr = isDverse ? '; domain=.d-verse.in' : '';
-    document.cookie = `${encodeURIComponent(name)}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/${domainAttr}; SameSite=Lax; Secure`;
+    const encoded = encodeURIComponent(name);
+    const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : '';
+    const domains = ['', '; domain=' + host];
+    if (host.endsWith('d-verse.in')) {
+      domains.push('; domain=.d-verse.in');
+    }
+    domains.forEach(d => {
+      document.cookie = `${encoded}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/${d}; SameSite=Lax`;
+      document.cookie = `${encoded}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/${d}; SameSite=Lax; Secure`;
+      document.cookie = `${encoded}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/${d}; SameSite=None; Secure`;
+    });
   }
 
   const universalStorage = {
@@ -68,6 +76,11 @@
       try { localStorage.removeItem(key); } catch (_) {}
       try { sessionStorage.removeItem(key); } catch (_) {}
       try { deleteCookie(key); } catch (_) {}
+    },
+    clear: () => {
+      memoryStorage.clear();
+      try { localStorage.clear(); } catch (_) {}
+      try { sessionStorage.clear(); } catch (_) {}
     }
   };
 
@@ -124,49 +137,101 @@
       }
     } catch (_) {}
 
+    // 4. Fallback: check Supabase persisted auth token in storage
+    try {
+      const rawSb = localStorage.getItem('dverse_supabase_auth_token');
+      if (rawSb) {
+        const parsed = JSON.parse(rawSb);
+        const tok = parsed?.currentSession || parsed;
+        if (tok?.refresh_token) {
+          return {
+            access_token: tok.access_token || '',
+            refresh_token: tok.refresh_token,
+            expires_at: tok.expires_at || null,
+            user_id: tok.user?.id || null,
+            email: tok.user?.email || null
+          };
+        }
+      }
+    } catch (_) {}
+
     return null;
   }
 
   function clearPersistedTokens() {
     deleteCookie(DVERSE_TOKENS_COOKIE);
+    deleteCookie(DVERSE_SESSION_CACHE);
+    deleteCookie('dverse_supabase_auth_token');
+    deleteCookie('dverse_auth_return_to');
+    deleteCookie('dverse.auth.returnTo');
     try { localStorage.removeItem(DVERSE_SESSION_CACHE); } catch (_) {}
     try { localStorage.removeItem(DVERSE_TOKENS_COOKIE); } catch (_) {}
+    try { localStorage.removeItem('dverse_supabase_auth_token'); } catch (_) {}
     try { sessionStorage.removeItem(DVERSE_SESSION_CACHE); } catch (_) {}
+    try { sessionStorage.removeItem('dverse_supabase_auth_token'); } catch (_) {}
+    memoryStorage.delete(DVERSE_SESSION_CACHE);
+    memoryStorage.delete(DVERSE_TOKENS_COOKIE);
+    memoryStorage.delete('dverse_supabase_auth_token');
   }
+
+  let activeRefreshPromise = null;
 
   async function restoreOrRefreshSession(tokens) {
     if (!client || !tokens?.refresh_token) return null;
 
-    // 1. If access_token exists, attempt setSession
-    if (tokens.access_token) {
+    if (activeRefreshPromise) {
+      return activeRefreshPromise;
+    }
+
+    activeRefreshPromise = (async () => {
+      // 1. If access_token exists and is unexpired (>60s remaining), attempt setSession
+      const expiresAtMs = (tokens.expires_at || 0) * 1000;
+      const isAccessTokenValid = Boolean(
+        tokens.access_token &&
+        (expiresAtMs === 0 || expiresAtMs > (Date.now() + 60000))
+      );
+
+      if (isAccessTokenValid) {
+        try {
+          const { data, error } = await client.auth.setSession({
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token
+          });
+          if (!error && data?.session) {
+            currentSession = data.session;
+            persistTokens(currentSession);
+            return currentSession;
+          }
+        } catch (_) {}
+      }
+
+      // 2. If access_token was expired or setSession failed, refresh using refresh_token!
       try {
-        const { data, error } = await client.auth.setSession({
-          access_token: tokens.access_token,
+        const { data: refreshed, error: refreshErr } = await client.auth.refreshSession({
           refresh_token: tokens.refresh_token
         });
-        if (!error && data?.session) {
-          currentSession = data.session;
+        if (!refreshErr && refreshed?.session) {
+          currentSession = refreshed.session;
           persistTokens(currentSession);
           return currentSession;
+        } else if (refreshErr) {
+          const msg = String(refreshErr?.message || '').toLowerCase();
+          // If refresh token is explicitly revoked / not found by Supabase, purge dead tokens
+          if (msg.includes('invalid') || msg.includes('revoked') || msg.includes('not found') || msg.includes('already used')) {
+            console.warn('[DVerse] Refresh token expired or revoked, clearing tokens:', refreshErr.message);
+            clearPersistedTokens();
+          }
         }
-      } catch (_) {}
-    }
-
-    // 2. If access_token was expired or setSession failed, refresh using refresh_token!
-    try {
-      const { data: refreshed, error: refreshErr } = await client.auth.refreshSession({
-        refresh_token: tokens.refresh_token
-      });
-      if (!refreshErr && refreshed?.session) {
-        currentSession = refreshed.session;
-        persistTokens(currentSession);
-        return currentSession;
+      } catch (err) {
+        console.warn('[DVerse] Exception refreshing session from persistent memory:', err);
       }
-    } catch (err) {
-      console.warn('[DVerse] Failed to refresh session from persistent memory:', err);
-    }
 
-    return null;
+      return null;
+    })().finally(() => {
+      activeRefreshPromise = null;
+    });
+
+    return activeRefreshPromise;
   }
 
   const ready = Boolean(window.supabase && SUPABASE_ANON_KEY);
@@ -526,12 +591,23 @@
     try {
       const { data, error } = await client.auth.getSession();
       if (!error && data?.session) {
-        currentSession = data.session;
-        if (client?.rest?.headers && currentSession?.access_token) {
-          client.rest.headers['Authorization'] = `Bearer ${currentSession.access_token}`;
+        const expiresAtMs = (data.session.expires_at || 0) * 1000;
+        const isValid = expiresAtMs === 0 || expiresAtMs > (Date.now() + 60000);
+        if (isValid) {
+          currentSession = data.session;
+          if (client?.rest?.headers && currentSession?.access_token) {
+            client.rest.headers['Authorization'] = `Bearer ${currentSession.access_token}`;
+          }
+          persistTokens(currentSession);
+          return currentSession;
+        } else if (data.session.refresh_token) {
+          // Token is expired! Refresh immediately!
+          const refreshed = await restoreOrRefreshSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token
+          });
+          if (refreshed) return refreshed;
         }
-        persistTokens(currentSession);
-        return currentSession;
       }
     } catch (_) {}
 
@@ -675,20 +751,40 @@
     }, 1500).catch((error) => console.warn('[DVerse] Portal session sync failed:', error));
   }
 
+  let activeGetSessionPromise = null;
+
   async function getSession() {
     if (!client) return null;
     if (currentSession) {
       const expiresAtMs = (currentSession.expires_at || 0) * 1000;
-      if (expiresAtMs === 0 || expiresAtMs > Date.now()) {
+      if (expiresAtMs === 0 || expiresAtMs > (Date.now() + 60000)) {
         return currentSession;
       }
     }
-    return bootstrapFromPortal();
+    if (activeGetSessionPromise) {
+      return activeGetSessionPromise;
+    }
+    activeGetSessionPromise = bootstrapFromPortal()
+      .then((session) => {
+        if (session) {
+          currentSession = session;
+          persistTokens(session);
+        }
+        return session;
+      })
+      .finally(() => {
+        activeGetSessionPromise = null;
+      });
+    return activeGetSessionPromise;
   }
 
   function onAuthStateChange(callback) {
     if (!client || typeof callback !== 'function') return { unsubscribe() {} };
     const { data } = client.auth.onAuthStateChange((event, session) => {
+      // Do not allow an unconfirmed INITIAL_SESSION null to blow away an in-flight bootstrap
+      if (event === 'INITIAL_SESSION' && !session && (activeGetSessionPromise || readPersistedTokens())) {
+        return;
+      }
       currentSession = session || null;
       if (session && client?.rest?.headers && session.access_token) {
         client.rest.headers['Authorization'] = `Bearer ${session.access_token}`;
@@ -698,8 +794,11 @@
         syncSessionToPortal(session);
         handleDesktopHandoffIfRequested(session);
       }
-      if (event === 'SIGNED_OUT' && isExplicitSignOut) {
-        clearPersistedTokens();
+      if (event === 'SIGNED_OUT') {
+        currentSession = null;
+        if (isExplicitSignOut) {
+          clearPersistedTokens();
+        }
       }
       callback(event, session);
     });
@@ -787,7 +886,7 @@
     if (!client) return;
     isExplicitSignOut = true;
     clearPersistedTokens();
-    try { universalStorage.removeItem('dverse_supabase_auth_token'); } catch (_) {}
+    universalStorage.clear();
     currentSession = null;
     const { error } = await client.auth.signOut();
     if (error) console.warn('[DVerse] signOut warning:', error);
@@ -1201,6 +1300,7 @@
   window.dverse = {
     supabase: client,
     isConfigured: ready,
+    universalStorage,
     getSession,
     bootstrapFromPortal,
     onAuthStateChange,
