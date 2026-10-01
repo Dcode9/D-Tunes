@@ -307,9 +307,16 @@
         ? `dtunes://auth?code=${encodeURIComponent(code)}`
         : `dtunes://auth?access_token=${encodeURIComponent(accessToken)}&refresh_token=${encodeURIComponent(refreshToken)}`;
 
+      const isAndroid = /Android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
+      const intentUrl = code
+        ? `intent://auth?code=${encodeURIComponent(code)}#Intent;scheme=dtunes;package=com.dcode9.dtunes;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`
+        : `intent://auth?access_token=${encodeURIComponent(accessToken)}&refresh_token=${encodeURIComponent(refreshToken)}#Intent;scheme=dtunes;package=com.dcode9.dtunes;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`;
+
+      const primaryUrl = isAndroid ? intentUrl : deepLinkUrl;
+
       // 1. Immediately trigger deep link navigation to hand off to Android/desktop app without delay
       try {
-        window.location.replace(deepLinkUrl);
+        window.location.replace(primaryUrl);
       } catch (_) {
         try { window.location.href = deepLinkUrl; } catch (__) {}
       }
@@ -325,9 +332,9 @@
 
       // 3. Render desktop handoff UI in browser as fallback
       if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => renderDesktopHandoffUI(deepLinkUrl));
+        document.addEventListener('DOMContentLoaded', () => renderDesktopHandoffUI(primaryUrl));
       } else {
-        renderDesktopHandoffUI(deepLinkUrl);
+        renderDesktopHandoffUI(primaryUrl);
       }
     }
   }
@@ -680,19 +687,24 @@
     // 1. Notify desktop app via loopback server on port 49200
     notifyDesktopAppIfRunning(session);
 
-    // 2. Build deep link URL
+    // 2. Build deep link URLs
+    const isAndroid = /Android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
     const deepLinkUrl = `dtunes://auth?access_token=${encodeURIComponent(session.access_token)}&refresh_token=${encodeURIComponent(session.refresh_token)}`;
+    const intentUrl = `intent://auth?access_token=${encodeURIComponent(session.access_token)}&refresh_token=${encodeURIComponent(session.refresh_token)}#Intent;scheme=dtunes;package=com.dcode9.dtunes;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`;
+    const primaryUrl = isAndroid ? intentUrl : deepLinkUrl;
 
     // 3. Render desktop handoff UI in browser
-    renderDesktopHandoffUI(deepLinkUrl);
+    renderDesktopHandoffUI(primaryUrl);
 
     // 4. Trigger deep link navigation
     try {
-      window.location.href = deepLinkUrl;
-    } catch (_) {}
+      window.location.replace(primaryUrl);
+    } catch (_) {
+      try { window.location.href = deepLinkUrl; } catch (__) {}
+    }
   }
 
-  function renderDesktopHandoffUI(deepLinkUrl) {
+  function renderDesktopHandoffUI(primaryUrl) {
     if (typeof document === 'undefined') return;
     const existing = document.getElementById('dtunes-desktop-handoff-overlay');
     if (existing) {
@@ -705,17 +717,17 @@
 
     const overlay = document.createElement('div');
     overlay.id = 'dtunes-desktop-handoff-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999999;background:rgba(9,9,11,0.94);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);display:flex;align-items:center;justify-content:center;padding:1.5rem;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f4f4f5;';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999999;background:rgba(9,9,11,0.94);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);display:flex;align-items:center;justify-content:center;padding:1.5rem;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f4f4f5;cursor:pointer;';
 
     overlay.innerHTML = `
-      <div style="background:rgba(24,24,30,0.96);border:1px solid rgba(255,255,255,0.14);border-radius:1.5rem;padding:2.5rem 2.25rem;max-width:440px;width:100%;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.7);">
+      <div style="background:rgba(24,24,30,0.96);border:1px solid rgba(255,255,255,0.14);border-radius:1.5rem;padding:2.5rem 2.25rem;max-width:440px;width:100%;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.7);cursor:default;">
         <div style="width:60px;height:60px;border-radius:50%;background:rgba(34,211,238,0.15);color:#22d3ee;display:inline-flex;align-items:center;justify-content:center;font-size:30px;margin-bottom:1.25rem;border:1px solid rgba(34,211,238,0.3);">✓</div>
         <h2 style="font-size:1.4rem;font-weight:700;margin:0 0 0.5rem;color:#ffffff;">Signed In Successfully</h2>
         <p style="color:#a1a1aa;font-size:0.95rem;margin:0 0 1.75rem;line-height:1.5;">
-          Redirecting back to your <strong>D'Tunes Windows app</strong>. Your library, playlists, and history are now syncing...
+          Redirecting back to your <strong>D'Tunes app</strong>. Your library, playlists, and history are now syncing...
         </p>
         <div style="display:flex;flex-direction:column;gap:0.75rem;">
-          <a id="dtunes-open-app-btn" href="${deepLinkUrl}" style="display:block;background:#22d3ee;color:#09090b;font-weight:700;font-size:0.95rem;padding:0.8rem 1.5rem;border-radius:9999px;text-decoration:none;box-shadow:0 4px 20px rgba(34,211,238,0.35);">Open D'Tunes App</a>
+          <a id="dtunes-open-app-btn" href="${primaryUrl}" style="display:block;background:#22d3ee;color:#09090b;font-weight:700;font-size:0.95rem;padding:0.8rem 1.5rem;border-radius:9999px;text-decoration:none;box-shadow:0 4px 20px rgba(34,211,238,0.35);cursor:pointer;">Open D'Tunes App</a>
           <button id="dtunes-dismiss-handoff-btn" style="background:transparent;color:#71717a;border:none;font-size:0.85rem;cursor:pointer;padding:0.5rem;">Continue in Web Player</button>
         </div>
       </div>
@@ -723,9 +735,15 @@
 
     document.body.appendChild(overlay);
 
+    const openBtn = overlay.querySelector('#dtunes-open-app-btn');
+    if (openBtn) {
+      try { openBtn.click(); } catch (_) {}
+    }
+
     const dismissBtn = overlay.querySelector('#dtunes-dismiss-handoff-btn');
     if (dismissBtn) {
-      dismissBtn.addEventListener('click', () => {
+      dismissBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
         if (typeof overlay.remove === 'function') {
           overlay.remove();
         } else if (overlay.parentElement && typeof overlay.parentElement.removeChild === 'function') {
@@ -733,6 +751,12 @@
         }
       });
     }
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target !== dismissBtn && !dismissBtn?.contains(e.target)) {
+        try { window.location.href = primaryUrl; } catch (_) {}
+      }
+    });
 
     setTimeout(() => {
       try { window.close(); } catch (_) {}

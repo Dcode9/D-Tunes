@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Authenticating | D'Tunes</title>
+  <link rel="icon" type="image/svg+xml" href="DTunes.svg">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      background-color: #09090b;
+      color: #f4f4f5;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      overflow: hidden;
+      cursor: pointer;
+    }
+    .card {
+      background: rgba(24, 24, 30, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 1.75rem;
+      padding: 2.5rem 2rem;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      animation: fadeIn 0.4s ease-out;
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.96) translateY(8px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .icon-wrapper {
+      position: relative;
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pulse-ring {
+      position: absolute;
+      inset: -6px;
+      border-radius: 50%;
+      border: 2px solid rgba(34, 211, 238, 0.4);
+      animation: pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.15); opacity: 0.2; }
+    }
+    .icon-circle {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: linear-gradient(135deg, rgba(34, 211, 238, 0.2), rgba(6, 182, 212, 0.05));
+      border: 1px solid rgba(34, 211, 238, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #22d3ee;
+      font-size: 32px;
+      box-shadow: 0 0 25px rgba(34, 211, 238, 0.25);
+    }
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: #ffffff;
+      letter-spacing: -0.01em;
+    }
+    p {
+      color: #a1a1aa;
+      font-size: 0.92rem;
+      line-height: 1.5;
+      margin-bottom: 1.75rem;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 0.9rem 1.5rem;
+      background: #22d3ee;
+      color: #09090b;
+      font-weight: 700;
+      font-size: 1rem;
+      border-radius: 9999px;
+      text-decoration: none;
+      box-shadow: 0 6px 24px rgba(34, 211, 238, 0.35);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      cursor: pointer;
+      border: none;
+    }
+    .btn:hover, .btn:active {
+      transform: scale(0.98);
+      box-shadow: 0 4px 16px rgba(34, 211, 238, 0.25);
+    }
+    .hint {
+      margin-top: 1.25rem;
+      font-size: 0.78rem;
+      color: #71717a;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-wrapper">
+      <div class="pulse-ring"></div>
+      <div class="icon-circle">✓</div>
+    </div>
+    <h1 id="title">Signed In Successfully</h1>
+    <p id="desc">Returning to your D'Tunes app…</p>
+    <a id="open-app-btn" class="btn" href="#">Open D'Tunes App</a>
+    <div class="hint">Tap anywhere on screen if the app doesn't open automatically.</div>
+  </div>
+
+  <script>
+    (function () {
+      const searchParams = new URLSearchParams(window.location.search);
+      const hash = window.location.hash ? window.location.hash.replace(/^#\/?/, '') : '';
+      const hashParams = new URLSearchParams(hash.startsWith('?') ? hash.slice(1) : hash);
+
+      const allParams = new URLSearchParams();
+      searchParams.forEach((val, key) => allParams.set(key, val));
+      hashParams.forEach((val, key) => allParams.set(key, val));
+
+      const qs = allParams.toString();
+      const dtunesUrl = 'dtunes://auth' + (qs ? '?' + qs : '');
+      const intentUrl = 'intent://auth' + (qs ? '?' + qs : '') +
+        '#Intent;scheme=dtunes;package=com.dcode9.dtunes;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end';
+
+      const isAndroid = /Android/i.test(navigator.userAgent);
+      const primaryUrl = isAndroid ? intentUrl : dtunesUrl;
+
+      // 1. Post to local desktop port 49200 (if running on desktop Electron app)
+      if (allParams.get('code') || (allParams.get('access_token') && allParams.get('refresh_token'))) {
+        try {
+          const payload = {};
+          allParams.forEach((v, k) => { payload[k] = v; });
+          fetch('http://127.0.0.1:49200/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          }).catch(function () {});
+        } catch (_) {}
+      }
+
+      // 2. Setup button href
+      const btn = document.getElementById('open-app-btn');
+      if (btn) {
+        btn.href = primaryUrl;
+      }
+
+      // 3. Launch function
+      function launchApp() {
+        try {
+          window.location.replace(primaryUrl);
+        } catch (e1) {
+          try {
+            window.location.href = dtunesUrl;
+          } catch (e2) {}
+        }
+      }
+
+      // 4. Immediate attempt
+      launchApp();
+
+      // 5. Secondary click on button
+      if (btn) {
+        try { btn.click(); } catch (_) {}
+      }
+
+      // 6. User gesture fallback: tapping anywhere triggers the intent
+      document.body.addEventListener('click', function () {
+        launchApp();
+      });
+      document.body.addEventListener('touchend', function () {
+        launchApp();
+      });
+
+      // 7. Periodic retries
+      setTimeout(launchApp, 400);
+      setTimeout(launchApp, 1200);
+    })();
+  </script>
+</body>
+</html>
