@@ -17,6 +17,119 @@
     <meta name="theme-color" content="#050505">
     <link rel="manifest" href="manifest.json">
     
+    <!-- Immediate App / Desktop Auth Handoff Interceptor -->
+    <script>
+      (function() {
+        try {
+          var search = window.location.search || '';
+          var hash = window.location.hash ? window.location.hash.slice(1) : '';
+          var sParams = new URLSearchParams(search);
+          var hParams = new URLSearchParams(hash.startsWith('?') ? hash.slice(1) : hash);
+
+          var isAndroid = /Android/i.test(navigator.userAgent || '');
+          var isDesktopAuth = sParams.get('desktop_auth') === '1' || hParams.get('desktop_auth') === '1';
+
+          var dverseSession = sParams.get('dverse_session') || hParams.get('dverse_session');
+          var code = sParams.get('code') || hParams.get('code');
+          var accessToken = hParams.get('access_token') || sParams.get('access_token');
+          var refreshToken = hParams.get('refresh_token') || sParams.get('refresh_token');
+
+          if (dverseSession && (!accessToken || !refreshToken)) {
+            try {
+              var norm = String(dverseSession).replace(/-/g, '+').replace(/_/g, '/');
+              var pad = norm.padEnd(norm.length + ((4 - (norm.length % 4)) % 4), '=');
+              var dec = JSON.parse(decodeURIComponent(escape(atob(pad))));
+              if (dec && dec.access_token) {
+                accessToken = dec.access_token;
+                refreshToken = dec.refresh_token || refreshToken;
+              }
+            } catch (_) {}
+          }
+
+          var hasAuth = Boolean(code || (accessToken && refreshToken) || dverseSession);
+          if (hasAuth && (isAndroid || isDesktopAuth)) {
+            window.__STOP_DVERSE_WEB_APP__ = true;
+            try { sessionStorage.removeItem('dverse_desktop_auth'); } catch (_) {}
+
+            var all = new URLSearchParams();
+            if (code) all.set('code', code);
+            if (accessToken) all.set('access_token', accessToken);
+            if (refreshToken) all.set('refresh_token', refreshToken);
+            if (dverseSession) all.set('dverse_session', dverseSession);
+            var exp = hParams.get('expires_in') || sParams.get('expires_in');
+            if (exp) all.set('expires_in', exp);
+            var tt = hParams.get('token_type') || sParams.get('token_type');
+            if (tt) all.set('token_type', tt);
+
+            var qs = all.toString();
+            var dtunesUrl = 'dtunes://auth?' + qs;
+            var intentUrl = 'intent://auth?' + qs + '#Intent;scheme=dtunes;package=com.dcode9.dtunes;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end';
+            var primaryUrl = isAndroid ? intentUrl : dtunesUrl;
+
+            // Trigger immediately
+            try {
+              window.location.replace(primaryUrl);
+            } catch (_) {
+              try { window.location.href = dtunesUrl; } catch (__) {}
+            }
+
+            // Electron desktop post
+            if (code || (accessToken && refreshToken)) {
+              try {
+                fetch('http://127.0.0.1:49200/token', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(code ? { code: code } : { access_token: accessToken, refresh_token: refreshToken })
+                }).catch(function() {});
+              } catch (_) {}
+            }
+
+            // Immediately style body to hide web app and show clean handoff
+            var style = document.createElement('style');
+            style.textContent = 'body > *:not(#dtunes-app-handoff-screen) { display: none !important; } html, body { background: #09090b !important; margin: 0; padding: 0; min-height: 100vh; overflow: hidden; }';
+            document.head.appendChild(style);
+
+            function mountHandoffUI() {
+              if (document.getElementById('dtunes-app-handoff-screen')) return;
+              var d = document.createElement('div');
+              d.id = 'dtunes-app-handoff-screen';
+              d.style.cssText = 'position:fixed;inset:0;z-index:99999999;background:#09090b;display:flex;align-items:center;justify-content:center;padding:1.5rem;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f4f4f5;cursor:pointer;';
+              d.innerHTML = '<div style="background:rgba(24,24,30,0.96);border:1px solid rgba(255,255,255,0.14);border-radius:1.75rem;padding:2.5rem 2rem;max-width:420px;width:100%;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.85);cursor:default;">' +
+                '<div style="width:64px;height:64px;border-radius:50%;background:rgba(34,211,238,0.15);color:#22d3ee;display:inline-flex;align-items:center;justify-content:center;font-size:30px;margin-bottom:1.5rem;border:1px solid rgba(34,211,238,0.35);">✓</div>' +
+                '<h1 style="font-size:1.35rem;font-weight:700;margin:0 0 0.5rem;color:#ffffff;">Signed In Successfully</h1>' +
+                '<p style="color:#a1a1aa;font-size:0.92rem;line-height:1.5;margin:0 0 1.75rem;">Returning to your D\'Tunes app…</p>' +
+                '<a id="dtunes-early-open-btn" href="' + primaryUrl + '" style="display:block;width:100%;box-sizing:border-box;background:#22d3ee;color:#09090b;font-weight:700;font-size:1rem;padding:0.9rem 1.5rem;border-radius:9999px;text-decoration:none;box-shadow:0 6px 24px rgba(34,211,238,0.35);cursor:pointer;">Open D\'Tunes App</a>' +
+                '<div style="margin-top:1.25rem;font-size:0.78rem;color:#71717a;">Tap anywhere on screen if the app doesn\'t open automatically.</div>' +
+                '</div>';
+              document.body.appendChild(d);
+
+              var btn = d.querySelector('#dtunes-early-open-btn');
+              if (btn) { try { btn.click(); } catch (_) {} }
+
+              function trigger() {
+                try { window.location.replace(primaryUrl); } catch (_) {
+                  try { window.location.href = dtunesUrl; } catch (__) {}
+                }
+              }
+              d.addEventListener('click', trigger);
+              d.addEventListener('touchend', trigger);
+              setTimeout(trigger, 300);
+              setTimeout(trigger, 800);
+              setTimeout(trigger, 1600);
+            }
+
+            if (document.readyState === 'loading') {
+              document.addEventListener('DOMContentLoaded', mountHandoffUI);
+            } else {
+              mountHandoffUI();
+            }
+          }
+        } catch (e) {
+          console.error('[DTunes Early Handoff Intercept Error]', e);
+        }
+      })();
+    </script>
+    
     <!-- Libraries -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.2/color-thief.umd.js?v=1789798237"></script>

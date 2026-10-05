@@ -272,85 +272,111 @@
     }
   } catch (_) {}
 
-  // Immediate Desktop OAuth Return Handler:
-  // When returning from Google OAuth in the external system browser with desktop_auth=1,
-  // do NOT attempt PKCE code exchange in this browser (the PKCE code_verifier was generated
-  // and stored inside the Electron app). Immediately hand off code or tokens to the Windows app
-  // via loopback server (http://127.0.0.1:49200/token) and custom protocol (dtunes://auth).
+  function base64UrlDecode(value) {
+    try {
+      const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+      const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=');
+      const binary = atob(padded);
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Immediate App / Desktop OAuth Return Handler:
+  // When returning from Google OAuth in the external system browser with desktop_auth=1 or on Android,
+  // do NOT attempt PKCE code exchange in this browser and do NOT log into the web music player.
+  // Immediately hand off code or tokens to the Android or Windows app via custom protocol
+  // (dtunes://auth), Android intent, and loopback server (http://127.0.0.1:49200/token).
   function checkImmediateDesktopAuthHandoff() {
     if (typeof window === 'undefined' || window.electronAPI || !window.location) return;
     const searchParams = new URLSearchParams(window.location.search);
     const hashText = window.location.hash ? window.location.hash.slice(1) : '';
     const hashParams = new URLSearchParams(hashText.startsWith('?') ? hashText.slice(1) : hashText);
 
-    const isDesktopAuth = searchParams.get('desktop_auth') === '1';
+    const isDesktopAuth = searchParams.get('desktop_auth') === '1' || hashParams.get('desktop_auth') === '1';
+    const isAndroid = /Android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
 
-    if (!isDesktopAuth) return;
+    const dverseSession = searchParams.get('dverse_session') || hashParams.get('dverse_session');
+    let code = searchParams.get('code') || hashParams.get('code');
+    let accessToken = hashParams.get('access_token') || searchParams.get('access_token');
+    let refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token');
 
-    const code = searchParams.get('code') || hashParams.get('code');
-    const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
-    const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token');
+    if (dverseSession && (!accessToken || !refreshToken)) {
+      try {
+        const decoded = base64UrlDecode(dverseSession);
+        if (decoded && decoded.access_token) {
+          accessToken = decoded.access_token;
+          refreshToken = decoded.refresh_token || refreshToken;
+        }
+      } catch (_) {}
+    }
 
+    const hasAuthPayload = Boolean(code || (accessToken && refreshToken) || dverseSession);
+    if (!hasAuthPayload) return;
+    if (!isDesktopAuth && !isAndroid) return;
+
+    window.__STOP_DVERSE_WEB_APP__ = true;
+    try { sessionStorage.removeItem('dverse_desktop_auth'); } catch (_) {}
+
+    const allParams = new URLSearchParams();
+    if (code) allParams.set('code', code);
+    if (accessToken) allParams.set('access_token', accessToken);
+    if (refreshToken) allParams.set('refresh_token', refreshToken);
+    if (dverseSession) allParams.set('dverse_session', dverseSession);
+    const expiresIn = hashParams.get('expires_in') || searchParams.get('expires_in');
+    if (expiresIn) allParams.set('expires_in', expiresIn);
+    const tokenType = hashParams.get('token_type') || searchParams.get('token_type');
+    if (tokenType) allParams.set('token_type', tokenType);
+
+    const qs = allParams.toString();
+    const deepLinkUrl = 'dtunes://auth?' + qs;
+    const intentUrl = 'intent://auth?' + qs + '#Intent;scheme=dtunes;package=com.dcode9.dtunes;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end';
+    const primaryUrl = isAndroid ? intentUrl : deepLinkUrl;
+
+    // 1. Immediately trigger deep link navigation to hand off to Android/desktop app without delay
+    try {
+      window.location.replace(primaryUrl);
+    } catch (_) {
+      try { window.location.href = deepLinkUrl; } catch (__) {}
+    }
+
+    // 2. Post to loopback server on port 49200 (for desktop Electron app)
     if (code || (accessToken && refreshToken)) {
-      try { sessionStorage.removeItem('dverse_desktop_auth'); } catch (_) {}
-
-      const payload = code
-        ? { code }
-        : {
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            expires_in: hashParams.get('expires_in') || searchParams.get('expires_in'),
-            token_type: hashParams.get('token_type') || searchParams.get('token_type')
-          };
-
-      const deepLinkUrl = code
-        ? `dtunes://auth?code=${encodeURIComponent(code)}`
-        : `dtunes://auth?access_token=${encodeURIComponent(accessToken)}&refresh_token=${encodeURIComponent(refreshToken)}`;
-
-      const isAndroid = /Android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
-      const intentUrl = code
-        ? `intent://auth?code=${encodeURIComponent(code)}#Intent;scheme=dtunes;package=com.dcode9.dtunes;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`
-        : `intent://auth?access_token=${encodeURIComponent(accessToken)}&refresh_token=${encodeURIComponent(refreshToken)}#Intent;scheme=dtunes;package=com.dcode9.dtunes;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`;
-
-      const primaryUrl = isAndroid ? intentUrl : deepLinkUrl;
-
-      // 1. Immediately trigger deep link navigation to hand off to Android/desktop app without delay
       try {
-        window.location.replace(primaryUrl);
-      } catch (_) {
-        try { window.location.href = deepLinkUrl; } catch (__) {}
-      }
-
-      // 2. Post to loopback server on port 49200 (for desktop Electron app)
-      try {
+        const payload = code
+          ? { code }
+          : {
+              access_token: accessToken,
+              refresh_token: refreshToken,
+              expires_in: expiresIn,
+              token_type: tokenType
+            };
         fetch('http://127.0.0.1:49200/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         }).catch(() => {});
       } catch (_) {}
+    }
 
-      // 3. Render desktop handoff UI in browser as fallback
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => renderDesktopHandoffUI(primaryUrl));
-      } else {
-        renderDesktopHandoffUI(primaryUrl);
-      }
+    // 3. Render desktop/Android handoff UI in browser as fallback
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => renderDesktopHandoffUI(primaryUrl));
+    } else {
+      renderDesktopHandoffUI(primaryUrl);
     }
   }
   checkImmediateDesktopAuthHandoff();
 
-  function base64UrlDecode(value) {
-    const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=');
-    const binary = atob(padded);
-    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    return JSON.parse(new TextDecoder().decode(bytes));
-  }
-
   function takeSessionHandoffFromUrl() {
     if (checkedUrlHandoff || typeof window === 'undefined') return null;
     checkedUrlHandoff = true;
+
+    if (window.__STOP_DVERSE_WEB_APP__) {
+      return null;
+    }
 
     // 1. Check for ?dverse_session=... in search query
     const searchParams = new URLSearchParams(window.location.search);
@@ -672,8 +698,11 @@
     if (!session || typeof window === 'undefined' || window.electronAPI) return;
 
     const searchParams = new URLSearchParams(window.location.search);
-    const isDesktopAuth = searchParams.get('desktop_auth') === '1';
-    if (!isDesktopAuth) return;
+    const hashText = window.location.hash ? window.location.hash.slice(1) : '';
+    const hashParams = new URLSearchParams(hashText.startsWith('?') ? hashText.slice(1) : hashText);
+    const isDesktopAuth = searchParams.get('desktop_auth') === '1' || hashParams.get('desktop_auth') === '1';
+    const isAndroid = /Android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
+    if (!isDesktopAuth && !isAndroid) return;
 
     try { sessionStorage.removeItem('dverse_desktop_auth'); } catch (_) {}
 
@@ -688,7 +717,6 @@
     notifyDesktopAppIfRunning(session);
 
     // 2. Build deep link URLs
-    const isAndroid = /Android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
     const deepLinkUrl = `dtunes://auth?access_token=${encodeURIComponent(session.access_token)}&refresh_token=${encodeURIComponent(session.refresh_token)}`;
     const intentUrl = `intent://auth?access_token=${encodeURIComponent(session.access_token)}&refresh_token=${encodeURIComponent(session.refresh_token)}#Intent;scheme=dtunes;package=com.dcode9.dtunes;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`;
     const primaryUrl = isAndroid ? intentUrl : deepLinkUrl;
@@ -751,6 +779,15 @@
         }
       });
     }
+
+    function retriggerLaunch(e) {
+      if (dismissBtn && (e.target === dismissBtn || dismissBtn.contains(e.target))) return;
+      try { window.location.replace(primaryUrl); } catch (_) {
+        try { window.location.href = primaryUrl; } catch (__) {}
+      }
+    }
+    overlay.addEventListener('click', retriggerLaunch);
+    overlay.addEventListener('touchend', retriggerLaunch);
 
     overlay.addEventListener('click', (e) => {
       if (e.target !== dismissBtn && !dismissBtn?.contains(e.target)) {
@@ -844,7 +881,8 @@
           provider: 'google',
           options: {
             redirectTo: loopbackRedirect,
-            skipBrowserRedirect: true
+            skipBrowserRedirect: true,
+            queryParams: { prompt: 'select_account' }
           }
         });
         if (error) throw error;
@@ -879,7 +917,8 @@
         const { data, error } = await client.auth.signInWithOAuth({
           provider: 'google',
           options: {
-            redirectTo: redirectUrl
+            redirectTo: redirectUrl,
+            queryParams: { prompt: 'select_account' }
           }
         });
         if (error) throw error;
@@ -903,7 +942,7 @@
       localStorage.setItem('dverse.auth.returnTo', returnUrl);
       sessionStorage.setItem('dverse.auth.returnTo', returnUrl);
     } catch (_) {}
-    window.location.href = `${PORTAL_ORIGIN}/?dverse_return_to=${encodeURIComponent(returnUrl)}`;
+    window.location.href = `${PORTAL_ORIGIN}/?dverse_return_to=${encodeURIComponent(returnUrl)}&prompt=select_account`;
   }
 
   async function signOut() {
