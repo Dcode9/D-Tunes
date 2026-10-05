@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.dcode9.dtunes",
+      "sha256_cert_fingerprints": [
+        "0A:C6:FE:9C:60:44:B7:C8:AE:10:78:90:6D:AB:B5:17:7E:FA:49:B5:EF:84:97:26:DB:86:A9:72:0E:C9:62:07"
+      ]
+    }
+  }
+]

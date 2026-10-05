@@ -315,7 +315,9 @@
 
     const hasAuthPayload = Boolean(code || (accessToken && refreshToken) || dverseSession);
     if (!hasAuthPayload) return;
-    if (!isDesktopAuth && !isAndroid) return;
+    // Only hand off when an app explicitly asked for it. Android *browser* users signing in
+    // to the web player must stay on the web, not be bounced into an intent:// URL.
+    if (!isDesktopAuth) return;
 
     window.__STOP_DVERSE_WEB_APP__ = true;
     try { sessionStorage.removeItem('dverse_desktop_auth'); } catch (_) {}
@@ -702,7 +704,7 @@
     const hashParams = new URLSearchParams(hashText.startsWith('?') ? hashText.slice(1) : hashText);
     const isDesktopAuth = searchParams.get('desktop_auth') === '1' || hashParams.get('desktop_auth') === '1';
     const isAndroid = /Android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
-    if (!isDesktopAuth && !isAndroid) return;
+    if (!isDesktopAuth) return;
 
     try { sessionStorage.removeItem('dverse_desktop_auth'); } catch (_) {}
 

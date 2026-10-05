@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Authenticating | D'Tunes</title>
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex">
+  <title>Signing in | D'Tunes</title>
   <link rel="icon" type="image/svg+xml" href="DTunes.svg">
   <style>
     * {
@@ -17,12 +19,12 @@
       color: #f4f4f5;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       min-height: 100vh;
+      min-height: 100dvh;
       display: flex;
       align-items: center;
       justify-content: center;
       padding: 1.5rem;
       overflow: hidden;
-      cursor: pointer;
     }
     .card {
       background: rgba(24, 24, 30, 0.85);
@@ -35,7 +37,7 @@
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
-      animation: fadeIn 0.4s ease-out;
+      animation: fadeIn 0.4s cubic-bezier(0.2, 0, 0, 1);
     }
     @keyframes fadeIn {
       from { opacity: 0; transform: scale(0.96) translateY(8px); }
@@ -74,6 +76,13 @@
       font-size: 32px;
       box-shadow: 0 0 25px rgba(34, 211, 238, 0.25);
     }
+    .error .pulse-ring { display: none; }
+    .error .icon-circle {
+      color: #fca5a5;
+      background: linear-gradient(135deg, rgba(248, 113, 113, 0.18), rgba(248, 113, 113, 0.04));
+      border-color: rgba(248, 113, 113, 0.4);
+      box-shadow: 0 0 25px rgba(248, 113, 113, 0.2);
+    }
     h1 {
       font-size: 1.35rem;
       font-weight: 700;
@@ -102,10 +111,11 @@
       cursor: pointer;
       border: none;
     }
-    .btn:hover, .btn:active {
+    .btn:active {
       transform: scale(0.98);
       box-shadow: 0 4px 16px rgba(34, 211, 238, 0.25);
     }
+    .btn[hidden] { display: none; }
     .hint {
       margin-top: 1.25rem;
       font-size: 0.78rem;
@@ -114,64 +124,87 @@
   </style>
 </head>
 <body>
-  <div class="card">
+  <main class="card" id="card">
     <div class="icon-wrapper">
       <div class="pulse-ring"></div>
-      <div class="icon-circle">✓</div>
+      <div class="icon-circle" id="icon">✓</div>
     </div>
-    <h1 id="title">Signed In Successfully</h1>
-    <p id="desc">Returning to your D'Tunes app…</p>
-    <a id="open-app-btn" class="btn" href="#">Open D'Tunes App</a>
-    <div class="hint">Tap anywhere on screen if the app doesn't open automatically.</div>
-  </div>
+    <h1 id="title">Signed in</h1>
+    <p id="desc">Returning you to the D'Tunes app…</p>
+    <a id="open-app-btn" class="btn" href="#">Open D'Tunes</a>
+    <div class="hint" id="hint">If the app didn't open, tap the button above.</div>
+  </main>
 
   <script>
     (function () {
+      var PACKAGE = 'com.dcode9.dtunes';
+
       function base64UrlDecode(value) {
         try {
-          const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
-          const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=');
-          const binary = atob(padded);
-          const bytes = Uint8Array.from(binary, function (char) { return char.charCodeAt(0); });
+          var normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+          var padded = normalized + '==='.slice((normalized.length + 3) % 4);
+          var binary = atob(padded);
+          var bytes = Uint8Array.from(binary, function (c) { return c.charCodeAt(0); });
           return JSON.parse(new TextDecoder().decode(bytes));
         } catch (e) {
           return null;
         }
       }
 
-      const searchParams = new URLSearchParams(window.location.search);
-      const hash = window.location.hash ? window.location.hash.replace(/^#\/?/, '') : '';
-      const hashParams = new URLSearchParams(hash.startsWith('?') ? hash.slice(1) : hash);
+      var searchParams = new URLSearchParams(window.location.search);
+      var hash = window.location.hash ? window.location.hash.replace(/^#\/?/, '') : '';
+      var hashParams = new URLSearchParams(hash.charAt(0) === '?' ? hash.slice(1) : hash);
 
-      const allParams = new URLSearchParams();
-      searchParams.forEach((val, key) => allParams.set(key, val));
-      hashParams.forEach((val, key) => allParams.set(key, val));
+      var allParams = new URLSearchParams();
+      searchParams.forEach(function (val, key) { allParams.set(key, val); });
+      hashParams.forEach(function (val, key) { allParams.set(key, val); });
+      allParams.delete('desktop_auth');
 
-      // Decode dverse_session if present to ensure tokens are populated
-      const dverseSession = allParams.get('dverse_session');
-      if (dverseSession) {
-        const decoded = base64UrlDecode(dverseSession);
-        if (decoded && decoded.access_token) {
-          if (!allParams.get('access_token')) allParams.set('access_token', decoded.access_token);
-          if (!allParams.get('refresh_token') && decoded.refresh_token) allParams.set('refresh_token', decoded.refresh_token);
-          if (!allParams.get('expires_in') && decoded.expires_in) allParams.set('expires_in', String(decoded.expires_in));
-          if (!allParams.get('token_type') && decoded.token_type) allParams.set('token_type', decoded.token_type);
-        }
+      // Tokens must not linger in the address bar or browser history.
+      try { window.history.replaceState(null, document.title, window.location.pathname); } catch (_) {}
+
+      var card = document.getElementById('card');
+      var btn = document.getElementById('open-app-btn');
+
+      function showError(message) {
+        card.classList.add('error');
+        document.getElementById('icon').textContent = '!';
+        document.getElementById('title').textContent = "Sign-in didn't finish";
+        document.getElementById('desc').textContent = message;
+        document.getElementById('hint').textContent = 'Go back to D\'Tunes and tap "Sign in with Google" again.';
+        btn.hidden = true;
       }
 
-      const qs = allParams.toString();
-      const dtunesUrl = 'dtunes://auth' + (qs ? '?' + qs : '');
-      const intentUrl = 'intent://auth' + (qs ? '?' + qs : '') +
-        '#Intent;scheme=dtunes;package=com.dcode9.dtunes;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end';
+      var providerError = allParams.get('error_description') || allParams.get('error');
+      if (providerError) {
+        showError(providerError.replace(/\+/g, ' '));
+        return;
+      }
 
-      const isAndroid = /Android/i.test(navigator.userAgent);
-      const primaryUrl = isAndroid ? intentUrl : dtunesUrl;
+      var dverseSession = allParams.get('dverse_session');
+      var decoded = dverseSession ? base64UrlDecode(dverseSession) : null;
+      var hasTokens = Boolean(
+        (decoded && decoded.access_token) ||
+        (allParams.get('access_token') && allParams.get('refresh_token')) ||
+        allParams.get('code')
+      );
+      if (!hasTokens) {
+        showError('No session was returned from Google. This can happen if the sign-in tab was reopened.');
+        return;
+      }
 
-      // 1. Post to local desktop port 49200 (if running on desktop Electron app)
-      if (allParams.get('code') || (allParams.get('access_token') && allParams.get('refresh_token'))) {
+      // Desktop (Electron) listener; harmless no-op elsewhere.
+      if (!/Android/i.test(navigator.userAgent)) {
         try {
-          const payload = {};
-          allParams.forEach((v, k) => { payload[k] = v; });
+          var payload = {};
+          if (decoded && decoded.access_token) {
+            payload.access_token = decoded.access_token;
+            payload.refresh_token = decoded.refresh_token;
+            payload.expires_in = decoded.expires_in;
+            payload.token_type = decoded.token_type;
+          } else {
+            allParams.forEach(function (v, k) { payload[k] = v; });
+          }
           fetch('http://127.0.0.1:49200/token', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -180,49 +213,28 @@
         } catch (_) {}
       }
 
-      // 2. Setup button href
-      const btn = document.getElementById('open-app-btn');
-      if (btn) {
-        btn.href = primaryUrl;
-      }
+      var qs = allParams.toString();
+      var dtunesUrl = 'dtunes://auth?' + qs;
+      var intentUrl = 'intent://auth?' + qs +
+        '#Intent;scheme=dtunes;package=' + PACKAGE +
+        ';action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end';
+      var primaryUrl = /Android/i.test(navigator.userAgent) ? intentUrl : dtunesUrl;
 
-      // 3. Launch function
+      btn.href = primaryUrl;
+
+      var launched = false;
       function launchApp() {
-        try {
-          window.location.replace(primaryUrl);
-        } catch (e1) {
-          try {
-            window.location.href = dtunesUrl;
-          } catch (e2) {}
-        }
-        try {
-          const a = document.createElement('a');
-          a.href = primaryUrl;
-          a.rel = 'noopener';
-          a.click();
-        } catch (_) {}
+        try { window.location.href = primaryUrl; } catch (_) {}
       }
 
-      // 4. Immediate attempt
+      // Chrome allows this when it follows the user's tap on the Google account picker.
+      // If it's blocked, the button below provides the user gesture it needs.
       launchApp();
+      setTimeout(function () { if (!launched) launchApp(); }, 600);
 
-      // 5. Secondary click on button
-      if (btn) {
-        try { btn.click(); } catch (_) {}
-      }
-
-      // 6. User gesture fallback: tapping anywhere triggers the intent
-      document.body.addEventListener('click', function () {
-        launchApp();
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'hidden') launched = true;
       });
-      document.body.addEventListener('touchend', function () {
-        launchApp();
-      });
-
-      // 7. Periodic retries
-      setTimeout(launchApp, 300);
-      setTimeout(launchApp, 800);
-      setTimeout(launchApp, 1600);
     })();
   </script>
 </body>
