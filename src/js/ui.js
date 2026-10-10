@@ -545,7 +545,7 @@
             },
             avatarFallback: () => {
                 const initial = (state.username || 'U').charAt(0).toUpperCase();
-                return `https://placehold.co/100x100/111/fff?text=${encodeURIComponent(initial)}`;
+                return 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" rx="50" fill="#172329"/><text x="50" y="66" text-anchor="middle" font-family="sans-serif" font-size="45" fill="#a5c8cd">${initial.replace(/[<>&"']/g, '')}</text></svg>`);
             },
             updateProfileUI: () => {
                 const usernameEl = document.getElementById('dd-username');
@@ -1912,4 +1912,3 @@
                 }
             }
         };
-
