@@ -1085,9 +1085,33 @@
             await homeView.init();
             requestAnimationFrame(viz.render);
             deviceMode.apply();
-            setupShelfNavButtons();
+  setupShelfNavButtons();
 
-            window.addEventListener('resize', () => { 
+  // Give the next control a quick, non-disruptive preview of the upcoming track.
+  const nextButton = document.getElementById('btn-next');
+  const queueWrapper = document.getElementById('queue-wrapper');
+  const previewPill = document.getElementById('queue-preview-pill');
+  const previewSlot = document.getElementById('queue-preview-slot');
+  const showNextPreview = () => {
+    const nextTrack = getUpcomingTrack();
+    if (!nextTrack || state.queueExpanded || !previewPill || !queueWrapper) return;
+    previewPill.innerHTML = ui.createSongPillInner(nextTrack);
+    previewPill.className = 'glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/90 transition-all duration-400';
+    previewPill.setAttribute('aria-label', `Up next: ${nextTrack.name || 'Unknown track'} by ${nextTrack.artist || 'Unknown artist'}`);
+    previewSlot?.classList.remove('hidden');
+    queueWrapper.classList.add('preview-expanded');
+    updateMarquees();
+  };
+  const hideNextPreview = () => {
+    if (!queueWrapper || state.upNextTriggered) return;
+    queueWrapper.classList.remove('preview-expanded');
+  };
+  nextButton?.addEventListener('pointerenter', showNextPreview);
+  nextButton?.addEventListener('focus', showNextPreview);
+  nextButton?.addEventListener('pointerleave', hideNextPreview);
+  nextButton?.addEventListener('blur', hideNextPreview);
+  
+  window.addEventListener('resize', () => {
                 deviceMode.apply(); 
                 ui.updateMobileSearchPosition(); 
                 updateMarquees(); 
