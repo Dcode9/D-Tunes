@@ -1260,7 +1260,7 @@
                     <span id="icon-play" class="flex ml-1"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></span>
                     <span id="icon-pause" class="hidden"><svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg></span>
                 </button>
-                <button class="text-gray-300 hover:text-white disabled:opacity-30 flex-shrink-0" onclick="player.next()" id="btn-next" disabled>
+                <button class="text-gray-300 hover:text-white disabled:opacity-30 flex-shrink-0" onclick="player.next()" id="btn-next" disabled aria-label="Play next track" aria-describedby="up-next-label">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></svg>
                 </button>
                 <button class="text-gray-400 hover:text-white disabled:opacity-30 transition" onclick="player.toggleRepeat()" id="btn-repeat" disabled>
