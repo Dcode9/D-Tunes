@@ -681,8 +681,12 @@
                             let nextTrack = getUpcomingTrack();
                             primeNextTrack();
                             if (nextTrack) {
-                                document.getElementById('queue-preview-pill').innerHTML = ui.createSongPillInner(nextTrack);
-                                document.getElementById('queue-preview-pill').className = "glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/90 transition-all duration-400";
+                                const previewSlot = document.getElementById('queue-preview-slot');
+                                const previewPill = document.getElementById('queue-preview-pill');
+                                previewPill.innerHTML = ui.createSongPillInner(nextTrack);
+                                previewPill.className = "glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/90 transition-all duration-400";
+                                previewPill.setAttribute('aria-label', `Up next: ${nextTrack.name || 'Unknown track'} by ${nextTrack.artist || 'Unknown artist'}`);
+                                previewSlot?.classList.remove('hidden');
                                 wrap.classList.add('preview-expanded');
                                 updateMarquees();
                             }
@@ -690,6 +694,7 @@
                     } else if (state.upNextTriggered && timeRemaining > 10) {
                         state.upNextTriggered = false;
                         wrap.classList.remove('preview-expanded');
+                        document.getElementById('queue-preview-slot')?.classList.add('hidden');
                     }
                 }
             });
@@ -1105,6 +1110,7 @@
   const hideNextPreview = () => {
     if (!queueWrapper || state.upNextTriggered) return;
     queueWrapper.classList.remove('preview-expanded');
+    previewSlot?.classList.add('hidden');
   };
   nextButton?.addEventListener('pointerenter', showNextPreview);
   nextButton?.addEventListener('focus', showNextPreview);
