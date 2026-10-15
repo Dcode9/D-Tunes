@@ -115,12 +115,65 @@
                 if (match) {
                     const type = match[1].toLowerCase();
                     const id = match[2];
-                    try {
-                        const embedUrl = `https://open.spotify.com/embed/${type}/${id}`;
-                        const res = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(embedUrl)}`).catch(() => null);
-                        if (res && res.ok) {
-                            const html = await res.text();
-                            const scriptMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+                    const embedUrl = `https://open.spotify.com/embed/${type}/${id}`;
+                    let html = null;
+
+                    // Tier 1: Desktop Electron IPC (bypass browser CORS completely)
+                    if (window.electronAPI && typeof window.electronAPI.fetchSpotifyEmbed === 'function') {
+                        try {
+                            const res = await window.electronAPI.fetchSpotifyEmbed(embedUrl);
+                            if (res && res.ok && res.html) {
+                                html = res.html;
+                            }
+                        } catch (e) {
+                            console.warn('[SpotifyImporter] Desktop IPC fetch error:', e);
+                        }
+                    }
+
+                    // Tier 2: Internal server endpoint
+                    if (!html) {
+                        try {
+                            const serverRes = await fetch(`/api/music/spotify-playlist?url=${encodeURIComponent(trimmed)}`).catch(() => null);
+                            if (serverRes && serverRes.ok) {
+                                const data = await serverRes.json().catch(() => null);
+                                if (data && data.ok && Array.isArray(data.tracks) && data.tracks.length > 0) {
+                                    return {
+                                        title: data.title || title,
+                                        tracks: data.tracks,
+                                        isSpotifyUrl: true
+                                    };
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('[SpotifyImporter] Server endpoint error:', e);
+                        }
+                    }
+
+                    // Tier 3: Resilient public CORS proxies
+                    if (!html) {
+                        const proxies = [
+                            `https://api.allorigins.win/raw?url=${encodeURIComponent(embedUrl)}`,
+                            `https://corsproxy.io/?url=${encodeURIComponent(embedUrl)}`,
+                            `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(embedUrl)}`
+                        ];
+                        for (const proxyUrl of proxies) {
+                            try {
+                                const proxyRes = await fetch(proxyUrl, { headers: { 'Accept': 'text/html' } }).catch(() => null);
+                                if (proxyRes && proxyRes.ok) {
+                                    const text = await proxyRes.text();
+                                    if (text && text.includes('__NEXT_DATA__')) {
+                                        html = text;
+                                        break;
+                                    }
+                                }
+                            } catch (_) {}
+                        }
+                    }
+
+                    // Parse JSON from embed HTML
+                    if (html) {
+                        try {
+                            const scriptMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
                             if (scriptMatch && scriptMatch[1]) {
                                 const json = JSON.parse(scriptMatch[1]);
                                 const pageProps = json.props?.pageProps;
@@ -128,7 +181,7 @@
                                 const entity = stateData?.entity || pageProps?.entity || stateData?.[type];
                                 if (entity) {
                                     title = entity.name || entity.title || `Spotify ${type}`;
-                                    const trackList = entity.trackList;
+                                    const trackList = entity.trackList || stateData?.playlist?.trackList || stateData?.album?.trackList;
                                     if (Array.isArray(trackList)) {
                                         tracks = trackList.map(t => {
                                             const songTitle = t.title || t.name || '';
@@ -143,27 +196,40 @@
                                     }
                                 }
                             }
+                        } catch (err) {
+                            console.warn('[SpotifyImporter] Embed parse fallback', err);
                         }
-                    } catch (err) {
-                        console.warn('[SpotifyImporter] Embed parse fallback', err);
                     }
+
+                    // If still empty, try Spotify oEmbed for title
+                    if (tracks.length === 0) {
+                        try {
+                            const oembedRes = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(trimmed)}`).catch(() => null);
+                            if (oembedRes && oembedRes.ok) {
+                                const oembed = await oembedRes.json().catch(() => null);
+                                if (oembed && oembed.title) title = oembed.title;
+                            }
+                        } catch (_) {}
+                    }
+
+                    // Policy 10.1.2.10 FIX: NEVER treat the URL itself as a track name when parsing a Spotify link!
+                    return { title, tracks, isSpotifyUrl: true };
                 }
 
-                if (tracks.length === 0) {
-                    const lines = trimmed.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-                    tracks = lines.map(line => {
-                        if (line.includes(' - ')) {
-                            const parts = line.split(' - ');
-                            return { title: parts[1].trim(), artist: parts[0].trim() };
-                        } else if (/ by /i.test(line)) {
-                            const parts = line.split(/ by /i);
-                            return { title: parts[0].trim(), artist: parts[1].trim() };
-                        }
-                        return { title: line, artist: '' };
-                    });
-                }
+                // Plain text track entries (e.g. "Song - Artist" or "Song by Artist")
+                const lines = trimmed.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+                tracks = lines.map(line => {
+                    if (line.includes(' - ')) {
+                        const parts = line.split(' - ');
+                        return { title: parts[1].trim(), artist: parts[0].trim() };
+                    } else if (/ by /i.test(line)) {
+                        const parts = line.split(/ by /i);
+                        return { title: parts[0].trim(), artist: parts[1].trim() };
+                    }
+                    return { title: line, artist: '' };
+                });
 
-                return { title, tracks };
+                return { title, tracks, isSpotifyUrl: false };
             },
             startImport: async () => {
                 const inputEl = document.getElementById('sp-link-input');
@@ -192,7 +258,10 @@
 
                 const tracks = extracted.tracks;
                 if (tracks.length === 0) {
-                    listEl.innerHTML = '<div class="text-xs text-red-400 py-3 text-center">No tracks could be found. Please check your link or paste song titles.</div>';
+                    const failMsg = extracted.isSpotifyUrl
+                        ? 'Could not extract tracks from this Spotify link. Please ensure the playlist is public and try again.'
+                        : 'No tracks could be found. Please enter song titles (e.g. "Song - Artist").';
+                    listEl.innerHTML = `<div class="text-xs text-red-400 py-4 text-center px-4 font-semibold">${failMsg}</div>`;
                     if (btn) btn.disabled = false;
                     if (spinner) spinner.classList.add('hidden');
                     return;

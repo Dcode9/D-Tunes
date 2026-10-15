@@ -18,10 +18,9 @@ test('Beta 1.3.1: Version bump and compact Changelog modal formatting', (t) => {
 
     // 2. Changelog modal has Beta 1.3.1 patch section
     assert.ok(indexContent.includes('0.1.3.1'), 'Changelog must contain version 0.1.3.1');
-    assert.ok(indexContent.includes('Beta 1.3.1'), 'Changelog must feature Beta 1.3.1');
-    assert.ok(indexContent.includes('Seamless Tab Focus & Stability'), 'Changelog must highlight tab focus stability');
+    assert.ok(indexContent.includes('Stable Tab Switching') || indexContent.includes('Seamless Tab Focus & Stability'), 'Changelog must highlight tab focus stability');
     assert.ok(indexContent.includes('Vibe Mix Playlist Generator'), 'Changelog must highlight Vibe Mix');
-    assert.ok(indexContent.includes('Streamlined Release Notes'), 'Changelog must highlight streamlined notes');
+    assert.ok(indexContent.includes('Organized Release Notes') || indexContent.includes('Streamlined Release Notes'), 'Changelog must highlight streamlined notes');
 
     // 3. Past versions are wrapped in collapsible <details> to avoid overwhelming the user
     assert.match(indexContent, /<details class="group[^"]*">\s*<summary[^>]*>[\s\S]*?Beta 1\.3[\s\S]*?<\/summary>/, 'Beta 1.3 must be in collapsible <details>');

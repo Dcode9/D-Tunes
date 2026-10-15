@@ -24,6 +24,20 @@
                         menu.classList.add('hidden');
                     };
                 }
+                const cmReportAi = document.getElementById('cm-report-ai');
+                if (cmReportAi) {
+                    cmReportAi.onclick = () => {
+                        const s = songStore.get(ctxMenu.activeStoreId);
+                        menu.classList.add('hidden');
+                        if (window.aiReportManager) {
+                            window.aiReportManager.openReportModal({
+                                feature: 'Song Recommendation / Track Output',
+                                contentSummary: s ? `Track: "${s.name || s.title}" by ${s.artist || 'Unknown'}` : 'Track output',
+                                context: s || {}
+                            });
+                        }
+                    };
+                }
                 document.getElementById('cm-pl-play').onclick = () => { ui.playPlaylist(ctxMenu.activePlaylistName); };
                 const cmPlNext = document.getElementById('cm-pl-play-next');
                 if (cmPlNext) cmPlNext.onclick = () => { player.addPlaylistNext(ctxMenu.activePlaylistName); };

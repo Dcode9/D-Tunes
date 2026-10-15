@@ -184,6 +184,70 @@ async function handleApi(req, res, url) {
     }
   }
 
+  if (req.method === 'GET' && url.pathname === '/api/music/spotify-playlist') {
+    const rawUrl = url.searchParams.get('url');
+    if (!rawUrl) {
+      return sendJson(res, 400, { error: 'url parameter is required' });
+    }
+    try {
+      const spotifyUrlRegex = /(?:https?:\/\/)?(?:open\.spotify\.com\/(?:embed\/)?|spotify:)(playlist|album|track)[/:]([a-zA-Z0-9]+)/i;
+      const match = rawUrl.trim().match(spotifyUrlRegex);
+      if (!match) {
+        return sendJson(res, 400, { error: 'Invalid Spotify URL' });
+      }
+      const type = match[1].toLowerCase();
+      const id = match[2];
+      const embedUrl = `https://open.spotify.com/embed/${type}/${id}`;
+      
+      const fetchResponse = await fetch(embedUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        }
+      });
+      
+      if (!fetchResponse.ok) {
+        return sendJson(res, fetchResponse.status, { error: `Spotify embed returned HTTP ${fetchResponse.status}` });
+      }
+      
+      const html = await fetchResponse.text();
+      let title = `Spotify ${type}`;
+      let tracks = [];
+      
+      const scriptMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+      if (scriptMatch && scriptMatch[1]) {
+        try {
+          const json = JSON.parse(scriptMatch[1]);
+          const pageProps = json.props?.pageProps;
+          const stateData = pageProps?.state?.data;
+          const entity = stateData?.entity || pageProps?.entity || stateData?.[type];
+          if (entity) {
+            title = entity.name || entity.title || title;
+            const trackList = entity.trackList || stateData?.playlist?.trackList || stateData?.album?.trackList;
+            if (Array.isArray(trackList)) {
+              tracks = trackList.map(t => {
+                const songTitle = t.title || t.name || '';
+                const subtitle = t.subtitle || (Array.isArray(t.artists) ? t.artists.map(a => a.name).join(', ') : '');
+                return { title: songTitle, artist: subtitle };
+              }).filter(t => t.title);
+            } else if (type === 'track') {
+              tracks = [{
+                title: entity.name || entity.title || '',
+                artist: entity.subtitle || (Array.isArray(entity.artists) ? entity.artists.map(a => a.name).join(', ') : '')
+              }];
+            }
+          }
+        } catch (parseErr) {
+          console.warn('[Server Spotify] Parse __NEXT_DATA__ error:', parseErr);
+        }
+      }
+      
+      return sendJson(res, 200, { ok: true, title, tracks });
+    } catch (err) {
+      return sendJson(res, 500, { error: err.message || 'Failed to fetch Spotify playlist' });
+    }
+  }
+
   return sendJson(res, 404, { error: 'Not found' });
 }
 
