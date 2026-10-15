@@ -1083,6 +1083,24 @@
             ui.updateShuffleBtn();
             await cloudLibrary.init();
             await homeView.init();
+
+            // Direct deep-link support (?view=reviews or #reviews)
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const rawHash = (window.location.hash || '').replace(/^#\/?/, '').trim().toLowerCase();
+                const requestedView = (urlParams.get('view') || (rawHash && !rawHash.includes('=') ? rawHash : '')).toLowerCase();
+                if (['reviews', 'settings', 'library', 'stats'].includes(requestedView)) {
+                    ui.switchView(requestedView);
+                }
+            } catch (e) {}
+
+            window.addEventListener('hashchange', () => {
+                const h = (window.location.hash || '').replace(/^#\/?/, '').trim().toLowerCase();
+                if (['reviews', 'settings', 'library', 'stats', 'home'].includes(h)) {
+                    ui.switchView(h);
+                }
+            });
+
             requestAnimationFrame(viz.render);
             deviceMode.apply();
             setupShelfNavButtons();
