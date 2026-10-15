@@ -1084,19 +1084,77 @@
             await cloudLibrary.init();
             await homeView.init();
 
-            // Direct deep-link support (?view=reviews or #reviews)
+            // Secret Developer Mode & Deep Link Support
+            const checkDevAccess = () => {
+                try {
+                    return localStorage.getItem('dtunes_dev_mode') === 'true';
+                } catch (e) { return false; }
+            };
+
+            const enableDevMode = (silent = false) => {
+                try {
+                    localStorage.setItem('dtunes_dev_mode', 'true');
+                    document.getElementById('profile-dropdown-reviews')?.classList.remove('hidden');
+                    if (!silent && window.toastManager) {
+                        toastManager.show({ message: '🛠️ Dev Mode Active: Reviews Dashboard Unlocked', type: 'success' });
+                    }
+                } catch (e) {}
+            };
+
+            // Restore dev menu visibility if previously unlocked
+            if (checkDevAccess()) {
+                document.getElementById('profile-dropdown-reviews')?.classList.remove('hidden');
+            }
+
+            // Secret Logo 5-click easter egg
+            let devLogoClicks = 0;
+            let devLogoTimer = null;
+            window.handleDevLogoClick = () => {
+                devLogoClicks++;
+                clearTimeout(devLogoTimer);
+                devLogoTimer = setTimeout(() => { devLogoClicks = 0; }, 2500);
+                if (devLogoClicks >= 5) {
+                    devLogoClicks = 0;
+                    if (checkDevAccess()) {
+                        try {
+                            localStorage.removeItem('dtunes_dev_mode');
+                            document.getElementById('profile-dropdown-reviews')?.classList.add('hidden');
+                            if (window.toastManager) toastManager.show({ message: '🔒 Dev Mode Deactivated', type: 'info' });
+                        } catch (e) {}
+                    } else {
+                        enableDevMode(false);
+                        ui.switchView('reviews');
+                    }
+                }
+            };
+
+            // Deep-link handling (reviews view is secretive to devs: ?dev=reviews or #dev-reviews)
             try {
                 const urlParams = new URLSearchParams(window.location.search);
                 const rawHash = (window.location.hash || '').replace(/^#\/?/, '').trim().toLowerCase();
-                const requestedView = (urlParams.get('view') || (rawHash && !rawHash.includes('=') ? rawHash : '')).toLowerCase();
-                if (['reviews', 'settings', 'library', 'stats'].includes(requestedView)) {
-                    ui.switchView(requestedView);
+                const isSecretDevUrl = urlParams.get('dev') === 'reviews' || rawHash === 'dev-reviews';
+
+                if (isSecretDevUrl) {
+                    enableDevMode(true);
+                    ui.switchView('reviews');
+                } else {
+                    const requestedView = (urlParams.get('view') || (rawHash && !rawHash.includes('=') ? rawHash : '')).toLowerCase();
+                    if (requestedView === 'reviews') {
+                        if (checkDevAccess()) ui.switchView('reviews');
+                    } else if (['settings', 'library', 'stats'].includes(requestedView)) {
+                        ui.switchView(requestedView);
+                    }
                 }
             } catch (e) {}
 
             window.addEventListener('hashchange', () => {
                 const h = (window.location.hash || '').replace(/^#\/?/, '').trim().toLowerCase();
-                if (['reviews', 'settings', 'library', 'stats', 'home'].includes(h)) {
+                if (h === 'dev-reviews') {
+                    enableDevMode(true);
+                    ui.switchView('reviews');
+                } else if (h === 'reviews') {
+                    if (checkDevAccess()) ui.switchView('reviews');
+                } else if (['settings', 'library', 'stats', 'home'].includes(h)) {
                     ui.switchView(h);
                 }
             });
