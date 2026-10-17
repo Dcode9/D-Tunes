@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="referrer" content="no-referrer">
+  <meta name="robots" content="noindex">
+  <title>Signing in | D'Tunes</title>
+  <link rel="icon" type="image/svg+xml" href="DTunes.svg">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      background-color: #09090b;
+      color: #f4f4f5;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      overflow: hidden;
+    }
+    .card {
+      background: rgba(24, 24, 30, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 1.75rem;
+      padding: 2.5rem 2rem;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      animation: fadeIn 0.4s cubic-bezier(0.2, 0, 0, 1);
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.96) translateY(8px); }
+      to { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .icon-wrapper {
+      position: relative;
+      width: 72px;
+      height: 72px;
+      margin: 0 auto 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .pulse-ring {
+      position: absolute;
+      inset: -6px;
+      border-radius: 50%;
+      border: 2px solid rgba(34, 211, 238, 0.4);
+      animation: pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+    }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 0.8; }
+      50% { transform: scale(1.15); opacity: 0.2; }
+    }
+    .icon-circle {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: linear-gradient(135deg, rgba(34, 211, 238, 0.2), rgba(6, 182, 212, 0.05));
+      border: 1px solid rgba(34, 211, 238, 0.35);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #22d3ee;
+      font-size: 32px;
+      box-shadow: 0 0 25px rgba(34, 211, 238, 0.25);
+    }
+    .error .pulse-ring { display: none; }
+    .error .icon-circle {
+      color: #fca5a5;
+      background: linear-gradient(135deg, rgba(248, 113, 113, 0.18), rgba(248, 113, 113, 0.04));
+      border-color: rgba(248, 113, 113, 0.4);
+      box-shadow: 0 0 25px rgba(248, 113, 113, 0.2);
+    }
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      color: #ffffff;
+      letter-spacing: -0.01em;
+    }
+    p {
+      color: #a1a1aa;
+      font-size: 0.92rem;
+      line-height: 1.5;
+      margin-bottom: 1.75rem;
+    }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 0.9rem 1.5rem;
+      background: #22d3ee;
+      color: #09090b;
+      font-weight: 700;
+      font-size: 1rem;
+      border-radius: 9999px;
+      text-decoration: none;
+      box-shadow: 0 6px 24px rgba(34, 211, 238, 0.35);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      cursor: pointer;
+      border: none;
+    }
+    .btn:active {
+      transform: scale(0.98);
+      box-shadow: 0 4px 16px rgba(34, 211, 238, 0.25);
+    }
+    .btn[hidden] { display: none; }
+    .hint {
+      margin-top: 1.25rem;
+      font-size: 0.78rem;
+      color: #71717a;
+    }
+  </style>
+</head>
+<body>
+  <main class="card" id="card">
+    <div class="icon-wrapper">
+      <div class="pulse-ring"></div>
+      <div class="icon-circle" id="icon">✓</div>
+    </div>
+    <h1 id="title">Signed in</h1>
+    <p id="desc">Returning you to the D'Tunes app…</p>
+    <a id="open-app-btn" class="btn" href="#">Open D'Tunes</a>
+    <div class="hint" id="hint">If the app didn't open, tap the button above.</div>
+  </main>
+
+  <script>
+    (function () {
+      var PACKAGE = 'com.dcode9.dtunes';
+
+      function base64UrlDecode(value) {
+        try {
+          var normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+          var padded = normalized + '==='.slice((normalized.length + 3) % 4);
+          var binary = atob(padded);
+          var bytes = Uint8Array.from(binary, function (c) { return c.charCodeAt(0); });
+          return JSON.parse(new TextDecoder().decode(bytes));
+        } catch (e) {
+          return null;
+        }
+      }
+
+      var searchParams = new URLSearchParams(window.location.search);
+      var hash = window.location.hash ? window.location.hash.replace(/^#\/?/, '') : '';
+      var hashParams = new URLSearchParams(hash.charAt(0) === '?' ? hash.slice(1) : hash);
+
+      var allParams = new URLSearchParams();
+      searchParams.forEach(function (val, key) { allParams.set(key, val); });
+      hashParams.forEach(function (val, key) { allParams.set(key, val); });
+      allParams.delete('desktop_auth');
+
+      // Tokens must not linger in the address bar or browser history.
+      try { window.history.replaceState(null, document.title, window.location.pathname); } catch (_) {}
+
+      var card = document.getElementById('card');
+      var btn = document.getElementById('open-app-btn');
+
+      function showError(message) {
+        card.classList.add('error');
+        document.getElementById('icon').textContent = '!';
+        document.getElementById('title').textContent = "Sign-in didn't finish";
+        document.getElementById('desc').textContent = message;
+        document.getElementById('hint').textContent = 'Go back to D\'Tunes and tap "Sign in with Google" again.';
+        btn.hidden = true;
+      }
+
+      var providerError = allParams.get('error_description') || allParams.get('error');
+      if (providerError) {
+        showError(providerError.replace(/\+/g, ' '));
+        return;
+      }
+
+      var dverseSession = allParams.get('dverse_session');
+      var decoded = dverseSession ? base64UrlDecode(dverseSession) : null;
+      var hasTokens = Boolean(
+        (decoded && decoded.access_token) ||
+        (allParams.get('access_token') && allParams.get('refresh_token')) ||
+        allParams.get('code')
+      );
+      if (!hasTokens) {
+        showError('No session was returned from Google. This can happen if the sign-in tab was reopened.');
+        return;
+      }
+
+      // Desktop (Electron) listener; harmless no-op elsewhere.
+      if (!/Android/i.test(navigator.userAgent)) {
+        try {
+          var payload = {};
+          if (decoded && decoded.access_token) {
+            payload.access_token = decoded.access_token;
+            payload.refresh_token = decoded.refresh_token;
+            payload.expires_in = decoded.expires_in;
+            payload.token_type = decoded.token_type;
+          } else {
+            allParams.forEach(function (v, k) { payload[k] = v; });
+          }
+          fetch('http://127.0.0.1:49200/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          }).catch(function () {});
+        } catch (_) {}
+      }
+
+      var qs = allParams.toString();
+      var dtunesUrl = 'dtunes://auth?' + qs;
+      var intentUrl = 'intent://auth?' + qs +
+        '#Intent;scheme=dtunes;package=' + PACKAGE +
+        ';action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end';
+      var primaryUrl = /Android/i.test(navigator.userAgent) ? intentUrl : dtunesUrl;
+
+      btn.href = primaryUrl;
+
+      var launched = false;
+      function launchApp() {
+        try { window.location.href = primaryUrl; } catch (_) {}
+      }
+
+      // Chrome allows this when it follows the user's tap on the Google account picker.
+      // If it's blocked, the button below provides the user gesture it needs.
+      launchApp();
+      setTimeout(function () { if (!launched) launchApp(); }, 600);
+
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'hidden') launched = true;
+      });
+    })();
+  </script>
+</body>
+</html>

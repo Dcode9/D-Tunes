@@ -1,4 +1,4 @@
-        function initApp() {
+        async function initApp() {
             installGlobalImageFallback();
 
             const vCanvas = document.getElementById('visualizer-canvas'); visualizerCtx = vCanvas.getContext('2d');
@@ -1081,8 +1081,39 @@
             if (ui.updateAlbumCarouselPeeks) ui.updateAlbumCarouselPeeks();
             ui.updateRepeatBtn();
             ui.updateShuffleBtn();
-            homeView.init();
-            cloudLibrary.init();
+            await cloudLibrary.init();
+            await homeView.init();
+
+            // Developer Reviews Access: strictly restricted to 9dhairy@gmail.com
+            if (window.isAuthorizedDev && window.isAuthorizedDev()) {
+                document.getElementById('profile-dropdown-reviews')?.classList.remove('hidden');
+            }
+
+            // Direct deep-link support (?view=reviews or #reviews)
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const rawHash = (window.location.hash || '').replace(/^#\/?/, '').trim().toLowerCase();
+                const requestedView = (urlParams.get('view') || (rawHash && !rawHash.includes('=') ? rawHash : '')).toLowerCase();
+                if (requestedView === 'reviews') {
+                    if (window.isAuthorizedDev && window.isAuthorizedDev()) {
+                        ui.switchView('reviews');
+                    }
+                } else if (['settings', 'library', 'stats'].includes(requestedView)) {
+                    ui.switchView(requestedView);
+                }
+            } catch (e) {}
+
+            window.addEventListener('hashchange', () => {
+                const h = (window.location.hash || '').replace(/^#\/?/, '').trim().toLowerCase();
+                if (h === 'reviews') {
+                    if (window.isAuthorizedDev && window.isAuthorizedDev()) {
+                        ui.switchView('reviews');
+                    }
+                } else if (['settings', 'library', 'stats', 'home'].includes(h)) {
+                    ui.switchView(h);
+                }
+            });
+
             requestAnimationFrame(viz.render);
             deviceMode.apply();
             setupShelfNavButtons();
@@ -1096,4 +1127,31 @@
             });
         }
 
-        initApp();
+        const daiReady = initApp();
+
+        // D'Ai bridge: search (and optionally play the top hit) from the D'Ai Apps sidebar,
+        // via ?q=song&play=1 or a postMessage from D'Ai.
+        (function daiBridge() {
+            const run = async (q, play) => {
+                const query = String(q || '').trim().slice(0, 120);
+                if (!query) return;
+                try { await daiReady; } catch (e) { /* app failed to start */ }
+                try {
+                    searchManager.performFullSearch(query);
+                    if (play) {
+                        const songs = await jiosaavnAPI.searchSongs(query, 1);
+                        if (songs && songs[0]) window.playSongById(songStore.add(songs[0]));
+                    }
+                } catch (e) { console.warn('[dai-bridge]', e); }
+            };
+            try {
+                const p = new URLSearchParams(location.search);
+                run(p.get('q'), p.get('play') === '1');
+            } catch (e) { /* ignore */ }
+            window.addEventListener('message', (ev) => {
+                if (!/^https:\/\/(ai\.d-verse\.in|d-ai[\w-]*\.vercel\.app)$/.test(ev.origin)) return;
+                const d = ev.data;
+                if (d && d.type === 'dai:search') run(d.q, !!d.play);
+            });
+        })();
+

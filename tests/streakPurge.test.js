@@ -31,15 +31,17 @@ test('R1: Tester Streak Purge & Codebase Cleanliness Suite', async (t) => {
     });
 
     await t.test('Tier 1 - R1-F2: src/recommendationClient.js has zero git merge conflict markers', () => {
-        const filePath = path.join(rootDir, 'src', 'recommendationClient.js');
-        assert.ok(fs.existsSync(filePath), 'src/recommendationClient.js must exist');
+        const filePath = fs.existsSync(path.join(rootDir, 'src', 'js', 'recommendationClient.js'))
+            ? path.join(rootDir, 'src', 'js', 'recommendationClient.js')
+            : path.join(rootDir, 'src', 'recommendationClient.js');
+        assert.ok(fs.existsSync(filePath), 'recommendationClient.js must exist');
         const content = fs.readFileSync(filePath, 'utf8');
 
         const hasConflictStart = content.includes('<<<<<<<');
         const hasConflictMid = content.includes('=======');
         const hasConflictEnd = content.includes('>>>>>>>');
         const hasAnyConflict = hasConflictStart || hasConflictMid || hasConflictEnd;
-        assert.equal(hasAnyConflict, false, 'src/recommendationClient.js must not contain git merge conflict markers');
+        assert.equal(hasAnyConflict, false, 'recommendationClient.js must not contain git merge conflict markers');
 
         // Verify normalized seed variables are used
         assert.ok(content.includes('seedSongId'), 'recommendationClient.js must retain seedSongId handling');
@@ -47,8 +49,10 @@ test('R1: Tester Streak Purge & Codebase Cleanliness Suite', async (t) => {
     });
 
     await t.test('Tier 1 - R1-F3: src/dverseClient.js does not sync streak data or export streak functions', () => {
-        const filePath = path.join(rootDir, 'src', 'dverseClient.js');
-        assert.ok(fs.existsSync(filePath), 'src/dverseClient.js must exist');
+        const filePath = fs.existsSync(path.join(rootDir, 'src', 'js', 'dverseClient.js'))
+            ? path.join(rootDir, 'src', 'js', 'dverseClient.js')
+            : path.join(rootDir, 'src', 'dverseClient.js');
+        assert.ok(fs.existsSync(filePath), 'dverseClient.js must exist');
         const content = fs.readFileSync(filePath, 'utf8');
 
         assert.equal(content.includes('dtunes_tester_streaks'), false, 'dverseClient must not reference dtunes_tester_streaks table');
@@ -57,13 +61,15 @@ test('R1: Tester Streak Purge & Codebase Cleanliness Suite', async (t) => {
     });
 
     await t.test('Tier 1 - R1-F4: src/app.js does not contain testerStreakManager or UI streak modal methods', () => {
-        const filePath = path.join(rootDir, 'src', 'app.js');
-        assert.ok(fs.existsSync(filePath), 'src/app.js must exist');
+        const filePath = fs.existsSync(path.join(rootDir, 'src', 'app.js'))
+            ? path.join(rootDir, 'src', 'app.js')
+            : path.join(rootDir, 'src', 'js', 'state.js');
+        assert.ok(fs.existsSync(filePath), 'application state file must exist');
         const content = fs.readFileSync(filePath, 'utf8');
 
-        assert.equal(content.includes('testerStreakManager'), false, 'src/app.js must not declare or reference testerStreakManager');
-        assert.equal(content.includes('toggleTesterStreakModal'), false, 'src/app.js must not contain toggleTesterStreakModal');
-        assert.equal(content.includes('renderTesterStreakModal'), false, 'src/app.js must not contain renderTesterStreakModal');
+        assert.equal(content.includes('testerStreakManager'), false, 'must not declare or reference testerStreakManager');
+        assert.equal(content.includes('toggleTesterStreakModal'), false, 'must not contain toggleTesterStreakModal');
+        assert.equal(content.includes('renderTesterStreakModal'), false, 'must not contain renderTesterStreakModal');
     });
 
     await t.test('Tier 1 - R1-F5: src/styles.css does not contain streak-specific modal or badge CSS rules', () => {

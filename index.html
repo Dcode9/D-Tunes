@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
-    <title>D'Tunes (Beta 1.3)</title>
+    <title>D'Tunes (Beta 1.3.1)</title>
     <link rel="icon" type="image/svg+xml" href="DTunes.svg">
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon.png">
     <link rel="shortcut icon" href="favicon.ico">
@@ -16,6 +16,119 @@
     <meta name="application-name" content="D'Tunes">
     <meta name="theme-color" content="#050505">
     <link rel="manifest" href="manifest.json">
+    
+    <!-- Immediate App / Desktop Auth Handoff Interceptor -->
+    <script>
+      (function() {
+        try {
+          var search = window.location.search || '';
+          var hash = window.location.hash ? window.location.hash.slice(1) : '';
+          var sParams = new URLSearchParams(search);
+          var hParams = new URLSearchParams(hash.startsWith('?') ? hash.slice(1) : hash);
+
+          var isAndroid = /Android/i.test(navigator.userAgent || '');
+          var isDesktopAuth = sParams.get('desktop_auth') === '1' || hParams.get('desktop_auth') === '1';
+
+          var dverseSession = sParams.get('dverse_session') || hParams.get('dverse_session');
+          var code = sParams.get('code') || hParams.get('code');
+          var accessToken = hParams.get('access_token') || sParams.get('access_token');
+          var refreshToken = hParams.get('refresh_token') || sParams.get('refresh_token');
+
+          if (dverseSession && (!accessToken || !refreshToken)) {
+            try {
+              var norm = String(dverseSession).replace(/-/g, '+').replace(/_/g, '/');
+              var pad = norm.padEnd(norm.length + ((4 - (norm.length % 4)) % 4), '=');
+              var dec = JSON.parse(decodeURIComponent(escape(atob(pad))));
+              if (dec && dec.access_token) {
+                accessToken = dec.access_token;
+                refreshToken = dec.refresh_token || refreshToken;
+              }
+            } catch (_) {}
+          }
+
+          var hasAuth = Boolean(code || (accessToken && refreshToken) || dverseSession);
+          if (hasAuth && (isAndroid || isDesktopAuth)) {
+            window.__STOP_DVERSE_WEB_APP__ = true;
+            try { sessionStorage.removeItem('dverse_desktop_auth'); } catch (_) {}
+
+            var all = new URLSearchParams();
+            if (code) all.set('code', code);
+            if (accessToken) all.set('access_token', accessToken);
+            if (refreshToken) all.set('refresh_token', refreshToken);
+            if (dverseSession) all.set('dverse_session', dverseSession);
+            var exp = hParams.get('expires_in') || sParams.get('expires_in');
+            if (exp) all.set('expires_in', exp);
+            var tt = hParams.get('token_type') || sParams.get('token_type');
+            if (tt) all.set('token_type', tt);
+
+            var qs = all.toString();
+            var dtunesUrl = 'dtunes://auth?' + qs;
+            var intentUrl = 'intent://auth?' + qs + '#Intent;scheme=dtunes;package=com.dcode9.dtunes;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end';
+            var primaryUrl = isAndroid ? intentUrl : dtunesUrl;
+
+            // Trigger immediately
+            try {
+              window.location.replace(primaryUrl);
+            } catch (_) {
+              try { window.location.href = dtunesUrl; } catch (__) {}
+            }
+
+            // Electron desktop post
+            if (code || (accessToken && refreshToken)) {
+              try {
+                fetch('http://127.0.0.1:49200/token', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(code ? { code: code } : { access_token: accessToken, refresh_token: refreshToken })
+                }).catch(function() {});
+              } catch (_) {}
+            }
+
+            // Immediately style body to hide web app and show clean handoff
+            var style = document.createElement('style');
+            style.textContent = 'body > *:not(#dtunes-app-handoff-screen) { display: none !important; } html, body { background: #09090b !important; margin: 0; padding: 0; min-height: 100vh; overflow: hidden; }';
+            document.head.appendChild(style);
+
+            function mountHandoffUI() {
+              if (document.getElementById('dtunes-app-handoff-screen')) return;
+              var d = document.createElement('div');
+              d.id = 'dtunes-app-handoff-screen';
+              d.style.cssText = 'position:fixed;inset:0;z-index:99999999;background:#09090b;display:flex;align-items:center;justify-content:center;padding:1.5rem;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f4f4f5;cursor:pointer;';
+              d.innerHTML = '<div style="background:rgba(24,24,30,0.96);border:1px solid rgba(255,255,255,0.14);border-radius:1.75rem;padding:2.5rem 2rem;max-width:420px;width:100%;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.85);cursor:default;">' +
+                '<div style="width:64px;height:64px;border-radius:50%;background:rgba(34,211,238,0.15);color:#22d3ee;display:inline-flex;align-items:center;justify-content:center;font-size:30px;margin-bottom:1.5rem;border:1px solid rgba(34,211,238,0.35);">✓</div>' +
+                '<h1 style="font-size:1.35rem;font-weight:700;margin:0 0 0.5rem;color:#ffffff;">Signed In Successfully</h1>' +
+                '<p style="color:#a1a1aa;font-size:0.92rem;line-height:1.5;margin:0 0 1.75rem;">Returning to your D\'Tunes app…</p>' +
+                '<a id="dtunes-early-open-btn" href="' + primaryUrl + '" style="display:block;width:100%;box-sizing:border-box;background:#22d3ee;color:#09090b;font-weight:700;font-size:1rem;padding:0.9rem 1.5rem;border-radius:9999px;text-decoration:none;box-shadow:0 6px 24px rgba(34,211,238,0.35);cursor:pointer;">Open D\'Tunes App</a>' +
+                '<div style="margin-top:1.25rem;font-size:0.78rem;color:#71717a;">Tap anywhere on screen if the app doesn\'t open automatically.</div>' +
+                '</div>';
+              document.body.appendChild(d);
+
+              var btn = d.querySelector('#dtunes-early-open-btn');
+              if (btn) { try { btn.click(); } catch (_) {} }
+
+              function trigger() {
+                try { window.location.replace(primaryUrl); } catch (_) {
+                  try { window.location.href = dtunesUrl; } catch (__) {}
+                }
+              }
+              d.addEventListener('click', trigger);
+              d.addEventListener('touchend', trigger);
+              setTimeout(trigger, 300);
+              setTimeout(trigger, 800);
+              setTimeout(trigger, 1600);
+            }
+
+            if (document.readyState === 'loading') {
+              document.addEventListener('DOMContentLoaded', mountHandoffUI);
+            } else {
+              mountHandoffUI();
+            }
+          }
+        } catch (e) {
+          console.error('[DTunes Early Handoff Intercept Error]', e);
+        }
+      })();
+    </script>
     
     <!-- Libraries -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -35,7 +148,7 @@
     <!-- Profile Edit Modal -->
     <div id="profile-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
         <div class="glass-panel p-6 rounded-2xl w-full max-w-sm shadow-2xl border border-white/10 transform transition-transform flex flex-col">
-            <h3 class="text-xl font-bold text-white mb-4 flex-shrink-0">Edit Profile</h3>
+            <h3 class="text-xl font-medium text-white mb-4 flex-shrink-0">Edit Profile</h3>
             <input type="text" id="edit-username-input" placeholder="Your Name" class="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white mb-6 focus:outline-none focus:border-[var(--accent-color)] transition flex-shrink-0" autocomplete="off" maxlength="20">
             <div class="flex justify-end gap-3 pt-2">
                 <button onclick="ui.toggleProfileModal(false)" class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition font-medium">Cancel</button>
@@ -47,7 +160,13 @@
     <!-- Playlist Creator Modal -->
     <div id="playlist-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
         <div class="glass-panel p-6 rounded-2xl w-full max-w-lg shadow-2xl border border-white/10 transform transition-transform flex flex-col max-h-[90vh]">
-            <h3 class="text-xl font-bold text-white mb-4 flex-shrink-0">Create Playlist</h3>
+            <div class="flex items-center justify-between mb-4 flex-shrink-0">
+                <h3 class="text-xl font-medium text-white">Create Playlist</h3>
+                <button type="button" onclick="ui.toggleModal(false); ui.toggleVibeMixModal(true);" class="text-xs text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 transition cursor-pointer">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    Try Vibe Mix
+                </button>
+            </div>
             <input type="text" id="new-playlist-name" placeholder="My Awesome Mix" class="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white mb-4 focus:outline-none focus:border-[var(--accent-color)] transition flex-shrink-0" autocomplete="off">
 
             <div class="mb-4 flex-shrink-0 space-y-3">
@@ -94,10 +213,89 @@
         </div>
     </div>
 
+    <!-- VIBE MIX MODAL -->
+    <div id="vibe-mix-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 backdrop-blur-md hidden" onclick="if(event.target === this) ui.toggleVibeMixModal(false)">
+        <div class="glass-panel p-6 rounded-3xl w-full max-w-lg shadow-2xl border border-white/10 transform transition-all flex flex-col max-h-[92vh] overflow-hidden mx-4">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between gap-3 mb-4 flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-cyan-500/25">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-semibold text-white">Vibe Mix</h3>
+                        <p class="text-xs text-gray-400">Tell us a feeling, mood, or moment. We'll craft the soundtrack.</p>
+                    </div>
+                </div>
+                <button onclick="ui.toggleVibeMixModal(false)" class="text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition" aria-label="Close Vibe Mix Modal">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <!-- Scrollable Body -->
+            <div class="overflow-y-auto custom-scrollbar flex flex-col gap-4 flex-1 pr-1">
+                <!-- Prompt Input -->
+                <div>
+                    <label for="vibe-input" class="text-xs font-bold text-gray-300 mb-1.5 block">What vibe are you feeling?</label>
+                    <textarea id="vibe-input" rows="2" placeholder="e.g. Rainy midnight drive through the neon city, 90s acoustic chill, high-energy gym cardio..." class="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-[var(--accent-color)] transition resize-none text-sm"></textarea>
+                </div>
+
+                <!-- Quick Vibe Pills -->
+                <div>
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2 block">Quick Vibes & Moods</span>
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" onclick="ui.selectVibeChip('Cozy acoustic afternoon coffee', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">Cozy Chill</button>
+                        <button type="button" onclick="ui.selectVibeChip('High energy workout motivation', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">High Energy</button>
+                        <button type="button" onclick="ui.selectVibeChip('Late night neon highway cruise', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">Late Night</button>
+                        <button type="button" onclick="ui.selectVibeChip('Deep focus flow and ambient beats', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">Deep Focus</button>
+                        <button type="button" onclick="ui.selectVibeChip('Musical Time Capsule: Forgotten favorites & deep cuts', true)" class="vibe-chip px-3 py-1.5 rounded-full bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/40 text-xs text-cyan-300 font-semibold transition cursor-pointer">Time Capsule</button>
+                        <button type="button" onclick="ui.selectVibeChip('Sunny coastal road trip anthems', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">Road Trip</button>
+                    </div>
+                </div>
+
+                <!-- Taste Infusion Toggle -->
+                <div class="p-3 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between">
+                    <div>
+                        <p class="text-xs font-bold text-white">Tune to my musical taste</p>
+                        <p class="text-[11px] text-gray-400">Infuses your favorite artists & history while obeying exclusions</p>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="vibe-infuse-taste" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[var(--accent-color)]"></div>
+                    </label>
+                </div>
+
+                <!-- Generation Status & Spinner -->
+                <div id="vibe-loading-status" class="hidden flex-col items-center justify-center p-4 rounded-2xl bg-white/5 border border-white/10 text-center gap-2">
+                    <div class="w-8 h-8 border-3 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+                    <p id="vibe-loading-text" class="text-xs font-semibold text-gray-200">Curating the perfect soundtrack...</p>
+                    <p class="text-[10px] text-gray-400">Matching verified audio streams and artwork</p>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between border-t border-white/10 pt-4 mt-3 flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <span class="text-[11px] text-gray-400">8–10 tracks curated</span>
+                    <button type="button" onclick="ui.toggleVibeMixModal(false); if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Vibe Mix Generator', contentSummary: 'Vibe Mix Prompt: ' + (document.getElementById('vibe-input')?.value || 'Prompt') })" class="text-[11px] text-amber-400/90 hover:text-amber-300 underline flex items-center gap-1 cursor-pointer" title="Report inappropriate AI-generated content (Policy 11.16)">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                        <span>Report AI Output</span>
+                    </button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="ui.toggleVibeMixModal(false)" class="px-4 py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition">Cancel</button>
+                    <button type="button" id="btn-create-vibe-mix" onclick="ui.submitVibeMix()" class="px-6 py-2.5 rounded-xl bg-[var(--accent-color)] text-black text-xs font-black hover:scale-105 transition shadow-lg shadow-cyan-500/25 flex items-center gap-2 cursor-pointer">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        <span>Curate Vibe</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Playlist Selector Modal -->
     <div id="playlist-selector-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden" onclick="if(event.target === this) this.classList.add('hidden')">
         <div class="glass-panel p-6 rounded-2xl w-full max-w-sm shadow-2xl border border-white/10">
-            <h3 class="text-xl font-bold text-white mb-4" id="pl-sel-title">Add to Playlist</h3>
+            <h3 class="text-xl font-medium text-white mb-4" id="pl-sel-title">Add to Playlist</h3>
             <div id="playlist-selector-list" class="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar mb-4"></div>
             <button onclick="document.getElementById('playlist-selector-modal').classList.add('hidden')" class="w-full px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition font-medium">Cancel</button>
         </div>
@@ -112,7 +310,7 @@
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
                     </div>
                     <div>
-                        <h3 class="text-xl font-black text-white">Equalizer</h3>
+                        <h3 class="text-xl font-semibold text-white">Equalizer</h3>
                         <p class="text-xs text-gray-400">Adjust the sound to your taste</p>
                     </div>
                 </div>
@@ -146,7 +344,7 @@
                         <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.24 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.6.18-1.2.72-1.38 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.239.54-.959.72-1.56.3z"/></svg>
                     </div>
                     <div>
-                        <h3 class="text-xl font-black text-white">Import from Spotify</h3>
+                        <h3 class="text-xl font-semibold text-white">Import from Spotify</h3>
                         <p class="text-xs text-gray-400">Paste any Spotify playlist, album, or track link</p>
                     </div>
                 </div>
@@ -176,7 +374,7 @@
             <div id="sp-match-section" class="hidden flex-col flex-1 overflow-hidden">
                 <div class="flex items-center justify-between py-2 border-b border-white/5 mb-2">
                     <div>
-                        <h4 id="sp-imported-title" class="text-sm font-bold text-white truncate max-w-[240px]">Spotify Playlist</h4>
+                        <h4 id="sp-imported-title" class="text-sm font-medium text-white truncate max-w-[240px]">Spotify Playlist</h4>
                         <p id="sp-match-counter" class="text-xs text-[#1DB954] font-medium">Matching 0 / 0 tracks...</p>
                     </div>
                     <div id="sp-match-spinner" class="w-5 h-5 border-2 border-[#1DB954] border-t-transparent rounded-full animate-spin"></div>
@@ -207,7 +405,7 @@
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                     </div>
                     <div>
-                        <h3 class="text-lg font-black text-white">Sleep Timer</h3>
+                        <h3 class="text-lg font-semibold text-white">Sleep Timer</h3>
                         <p class="text-xs text-gray-400">Fade out and pause playback</p>
                     </div>
                 </div>
@@ -250,7 +448,7 @@
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
                     </div>
                     <div>
-                        <h3 class="text-xl font-black text-white">Edit Playlist</h3>
+                        <h3 class="text-xl font-semibold text-white">Edit Playlist</h3>
                         <p class="text-xs text-gray-400">Customize title, cover, and songs</p>
                     </div>
                 </div>
@@ -361,7 +559,7 @@
                 <div class="flex items-center gap-3">
                     <img src="DTunes.svg" alt="D'Tunes" class="w-8 h-8 object-contain">
                     <div>
-                        <h3 class="text-xl font-black text-white">What's New in D'Tunes</h3>
+                        <h3 class="text-xl font-semibold text-white">What's New in D'Tunes</h3>
                         <p class="text-xs text-gray-400">Release Notes & Changelog</p>
                     </div>
                 </div>
@@ -370,13 +568,36 @@
                 </button>
             </div>
 
-            <div class="overflow-y-auto custom-scrollbar flex flex-col gap-4 flex-1 pr-1">
-                <!-- Version 0.1.3 (Beta 1.3) -->
-                <div class="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col gap-3">
-                    <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-1 rounded-full bg-[var(--accent-color)] text-black text-xs font-black">0.1.3</span>
-                        <span class="text-sm font-bold text-white">Beta 1.3</span>
-                        <span class="px-2 py-0.5 rounded-full bg-white/10 text-gray-400 text-[10px] font-bold">Latest</span>
+            <div class="overflow-y-auto custom-scrollbar flex flex-col gap-3 flex-1 pr-1">
+                <!-- Version 0.1.3.1 (Beta 1.3.1) - Latest Patch Release -->
+                <div class="p-4 rounded-2xl bg-gradient-to-br from-cyan-950/40 via-white/5 to-purple-950/30 border border-cyan-500/30 flex flex-col gap-3 shadow-lg shadow-cyan-950/20">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2.5 py-0.5 rounded-full bg-[var(--accent-color)] text-black text-xs font-black">0.1.3.1</span>
+                            <span class="text-sm font-bold text-white">Beta 1.3.1</span>
+                            <span class="px-2 py-0.5 rounded-full bg-cyan-400/20 text-cyan-300 text-[10px] font-bold border border-cyan-500/30">Latest • Patch</span>
+                        </div>
+                        <span class="text-[11px] text-gray-400 font-mono">Minor Update</span>
+                    </div>
+                    <div class="grid grid-cols-1 gap-2 text-xs text-gray-200">
+                        <div class="flex items-start gap-2.5 p-2.5 rounded-xl bg-white/5 border border-white/5">
+                            <span class="text-base leading-none"></span>
+                            <div>
+                                <strong class="text-white">Stable Tab Switching</strong>: AI recommendations remain locked in place without flickering, reloading, or showing skeletons when you switch tabs or minimize the browser.
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-2.5 p-2.5 rounded-xl bg-white/5 border border-white/5">
+                            <span class="text-base leading-none"></span>
+                            <div>
+                                <strong class="text-white">Vibe Mix Playlist Generator</strong>: Create custom curated playlists from any mood, prompt, or nostalgic <em>Time Capsule</em>, tuned directly to your personal listening taste.
+                            </div>
+                        </div>
+                        <div class="flex items-start gap-2.5 p-2.5 rounded-xl bg-white/5 border border-white/5">
+                            <span class="text-base leading-none"></span>
+                            <div>
+                                <strong class="text-white">Organized Release Notes</strong>: Compact, categorized changelog navigation with collapsible historical archives to keep updates clear and non-overwhelming.
+                            </div>
+                        </div>
                     </div>
                     <ul class="text-xs text-gray-300 space-y-1.5 leading-relaxed">
                         <li>• 🪟 <strong>Microsoft Store Launch</strong>: D'Tunes is now live on the Microsoft Store for Windows! Enjoy hardware media keys, background playback, and system tray integration.</li>
@@ -393,38 +614,82 @@
                     </ul>
                 </div>
 
-                <!-- Version 0.1.2 (Beta 1.2) -->
-                <div class="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col gap-3">
-                    <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-1 rounded-full bg-[var(--accent-color)] text-black text-xs font-black">0.1.2</span>
-                        <span class="text-sm font-bold text-white">Beta 1.2</span>
-                    </div>
-                    <ul class="text-xs text-gray-300 space-y-1.5 leading-relaxed">
-                        <li>• 🎵 <strong>Real-Time Synchronized Lyrics Engine</strong>: Live lyrics drawer with auto-scrolling line highlight and tap-to-seek playback.</li>
-                        <li>• ⚡ <strong>Cross-Platform Audio Resilience</strong>: Audio playback optimizations across Windows desktop, iOS Safari, and Android Chrome.</li>
-                        <li>• 📜 <strong>Isolated Scrolling</strong>: Clean separation of vertical page scrolling and horizontal music shelves without scroll hijacking.</li>
-                        <li>• 🎨 <strong>Accent Color Stability</strong>: App accent color remains fixed and stable without dynamic album art palette overrides.</li>
-                        <li>• 🪟 <strong>Refined Glassmorphic Player Dock</strong>: Transparent backdrop blur for the now playing dock with pure rounded corners and clean native logo.</li>
-                        <li>• 🔐 <strong>Seamless Authentication Flow</strong>: Isolated web sign-in and automated desktop redirection via deep links.</li>
-                    </ul>
+                <!-- Past Releases Header -->
+                <div class="flex items-center justify-between pt-2 pb-0.5 px-1">
+                    <span class="text-xs font-bold uppercase tracking-wider text-gray-400">Previous Releases</span>
+                    <span class="text-[11px] text-gray-500">Tap to expand</span>
                 </div>
 
-                <!-- Version 0.1.1 (Beta 1.1) -->
-                <div class="p-4 rounded-2xl bg-white/5 border border-white/10 flex flex-col gap-3">
-                    <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-1 rounded-full bg-[var(--accent-color)] text-black text-xs font-black">0.1.1</span>
-                        <span class="text-sm font-bold text-white">Beta 1.1</span>
+                <!-- Version 0.1.3 (Beta 1.3) Collapsible -->
+                <details class="group rounded-2xl bg-white/5 border border-white/10 overflow-hidden transition-all duration-200">
+                    <summary class="p-3.5 flex items-center justify-between cursor-pointer select-none hover:bg-white/5 transition list-none">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded-full bg-white/10 text-gray-300 text-xs font-bold">0.1.3</span>
+                            <span class="text-sm font-semibold text-white">Beta 1.3</span>
+                            <span class="text-xs text-gray-400 font-normal hidden sm:inline ml-1">• Swipe Gestures & Daily Mixes</span>
+                        </div>
+                        <svg class="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </summary>
+                    <div class="px-4 pb-4 pt-1 border-t border-white/5">
+                        <ul class="text-xs text-gray-300 space-y-1.5 leading-relaxed">
+                            <li>•  <strong>Android-Style Swipe Gestures</strong>: Cards physically move in your swipe direction with expanding action panels for "Play Next" and "Add to Queue".</li>
+                            <li>•  <strong>Redesigned Full-Screen Mobile Player</strong>: Album art on top, clean song details with like button, audio controls, and separate Queue, History & Lyrics tabs - controls always visible.</li>
+                            <li>•  <strong>Personalised Daily Mixes</strong>: Daily listening recommendations curated from your taste and listening patterns, cached and refreshed once per day.</li>
+                            <li>•  <strong>Continuation Autoplay</strong>: Continues playing when your queue runs out.</li>
+                            <li>•  <strong>Audio & Artwork Reliability</strong>: Only songs with confirmed audio and artwork are shown on your homepage.</li>
+                            <li>•  <strong>Taste Controls</strong>: "Don't recommend this" option to refine your recommendations over time.</li>
+                            <li>•  <strong>Dedicated Search</strong>: Full-screen search with recent searches, quick results as you type on mobile and desktop.</li>
+                            <li>•  <strong>Album Carousel</strong>: Swipe album art in the full-screen player to skip tracks, with neighbouring art visible as a preview.</li>
+                            <li>•  <strong>Equalizer</strong>: Quick-access sound presets and per-band control from the player or settings.</li>
+                            <li>•  <strong>Queue & History</strong>: Full scrollable queue and playback history available right from the player.</li>
+                        </ul>
                     </div>
-                    <ul class="text-xs text-gray-300 space-y-1.5 leading-relaxed">
-                        <li>• ⏱️ <strong>Sleep Timer with Volume Fadeout</strong>: Automatic smooth 10s audio fade and pause.</li>
-                        <li>• 💿 <strong>Dedicated Album & Artist Pages</strong>: Discography, top songs, track numbers, and direct queueing.</li>
-                        <li>• 📝 <strong>Playlist Viewer & Procedural Editor</strong>: Total duration calculations, drag reordering, and custom cover geometries.</li>
-                        <li>• 🔗 <strong>Spotify Link Importer</strong>: Paste Spotify playlist/track links with real-time JioSaavn matching.</li>
-                        <li>• 🔍 <strong>Top Search & Floating Player</strong>: Keyboard-adaptive floating mini-player with downward results.</li>
-                        <li>• 👆 <strong>Swipe-to-Action Gestures</strong>: Smooth touch swipe on songs to Play Next (green) or Add to Queue (cyan).</li>
-                        <li>• ☁️ <strong>Clean Auth & Account Switcher</strong>: Deep sign-out protocol that wipes all cached storage for a 100% fresh guest slate.</li>
-                    </ul>
-                </div>
+                </details>
+
+                <!-- Version 0.1.2 (Beta 1.2) Collapsible -->
+                <details class="group rounded-2xl bg-white/5 border border-white/10 overflow-hidden transition-all duration-200">
+                    <summary class="p-3.5 flex items-center justify-between cursor-pointer select-none hover:bg-white/5 transition list-none">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded-full bg-white/10 text-gray-300 text-xs font-bold">0.1.2</span>
+                            <span class="text-sm font-semibold text-white">Beta 1.2</span>
+                            <span class="text-xs text-gray-400 font-normal hidden sm:inline ml-1">• Lyrics & Audio Resilience</span>
+                        </div>
+                        <svg class="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </summary>
+                    <div class="px-4 pb-4 pt-1 border-t border-white/5">
+                        <ul class="text-xs text-gray-300 space-y-1.5 leading-relaxed">
+                            <li>•  <strong>Real-Time Synchronized Lyrics Engine</strong>: Live lyrics drawer with auto-scrolling line highlight and tap-to-seek playback.</li>
+                            <li>•  <strong>Cross-Platform Audio Resilience</strong>: Audio playback optimizations across Windows desktop, iOS Safari, and Android Chrome.</li>
+                            <li>•  <strong>Isolated Scrolling</strong>: Clean separation of vertical page scrolling and horizontal music shelves without scroll hijacking.</li>
+                            <li>•  <strong>Accent Color Stability</strong>: App accent color remains fixed and stable without dynamic album art palette overrides.</li>
+                            <li>•  <strong>Refined Glassmorphic Player Dock</strong>: Transparent backdrop blur for the now playing dock with pure rounded corners and clean native logo.</li>
+                            <li>•  <strong>Web & Desktop Sign-In</strong>: Isolated web sign-in and automated desktop redirection via deep links.</li>
+                        </ul>
+                    </div>
+                </details>
+
+                <!-- Version 0.1.1 (Beta 1.1) Collapsible -->
+                <details class="group rounded-2xl bg-white/5 border border-white/10 overflow-hidden transition-all duration-200">
+                    <summary class="p-3.5 flex items-center justify-between cursor-pointer select-none hover:bg-white/5 transition list-none">
+                        <div class="flex items-center gap-2">
+                            <span class="px-2 py-0.5 rounded-full bg-white/10 text-gray-300 text-xs font-bold">0.1.1</span>
+                            <span class="text-sm font-semibold text-white">Beta 1.1</span>
+                            <span class="text-xs text-gray-400 font-normal hidden sm:inline ml-1">• Sleep Timer & Procedural Editor</span>
+                        </div>
+                        <svg class="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                    </summary>
+                    <div class="px-4 pb-4 pt-1 border-t border-white/5">
+                        <ul class="text-xs text-gray-300 space-y-1.5 leading-relaxed">
+                            <li>• ⏱ <strong>Sleep Timer with Volume Fadeout</strong>: Automatic smooth 10s audio fade and pause.</li>
+                            <li>•  <strong>Dedicated Album & Artist Pages</strong>: Discography, top songs, track numbers, and direct queueing.</li>
+                            <li>•  <strong>Playlist Viewer & Procedural Editor</strong>: Total duration calculations, drag reordering, and custom cover geometries.</li>
+                            <li>•  <strong>Spotify Link Importer</strong>: Paste Spotify playlist/track links with real-time JioSaavn matching.</li>
+                            <li>•  <strong>Top Search & Floating Player</strong>: Keyboard-adaptive floating mini-player with downward results.</li>
+                            <li>•  <strong>Swipe-to-Action Gestures</strong>: Smooth touch swipe on songs to Play Next (green) or Add to Queue (cyan).</li>
+                            <li>•  <strong>Clean Auth & Account Switcher</strong>: Deep sign-out protocol that wipes all cached storage for a 100% fresh guest slate.</li>
+                        </ul>
+                    </div>
+                </details>
 
                 <!-- Attribution -->
                 <div class="p-3 rounded-xl bg-white/5 border border-white/10 flex items-center justify-between text-xs text-gray-400">
@@ -450,7 +715,7 @@
                         <img id="lyrics-modal-art-img" src="" class="w-full h-full object-cover" onerror="this.src='DTunes.svg'">
                     </div>
                     <div class="min-w-0">
-                        <h3 class="text-lg font-bold text-white truncate" id="lyrics-modal-title">Track Title</h3>
+                        <h3 class="text-lg font-medium text-white truncate" id="lyrics-modal-title">Track Title</h3>
                         <p class="text-xs text-gray-400 truncate mt-0.5" id="lyrics-modal-artist">Artist Name</p>
                     </div>
                 </div>
@@ -495,6 +760,7 @@
             <button id="cm-like-song" class="w-full text-left px-4 py-2 hover:bg-white/10 text-white flex items-center gap-2 transition"><svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg> <span id="cm-like-song-label">Like song</span></button>
             <button id="cm-dislike-song" class="w-full text-left px-4 py-2 hover:bg-red-500/20 text-gray-300 hover:text-red-400 flex items-center gap-2 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg> <span id="cm-dislike-song-label">Don't recommend this</span></button>
             <button id="cm-add-library" class="w-full text-left px-4 py-2 hover:bg-white/10 text-white flex items-center gap-2 transition"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg> <span id="cm-add-library-label">Add to Library</span></button>
+            <button id="cm-report-ai" class="w-full text-left px-4 py-2 hover:bg-amber-500/20 text-gray-300 hover:text-amber-300 flex items-center gap-2 transition"><svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg> <span id="cm-report-ai-label">Report AI output</span></button>
         </div>
         <div id="cm-playlist-options" class="hidden">
             <button id="cm-pl-play" class="w-full text-left px-4 py-2 hover:bg-white/10 text-white flex items-center gap-2 transition"><svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play All</button>
@@ -511,7 +777,7 @@
         <div id="app-logo" class="flex items-center gap-2.5 text-xl md:text-2xl font-bold text-white cursor-pointer w-auto flex-shrink-0 min-w-max relative z-50 pointer-events-auto" onclick="ui.goHome();">
             <img src="DTunes.svg" alt="D'Tunes logo" class="w-8 h-8 md:w-10 md:h-10 object-contain">
             <span>D'Tunes</span>
-            <button onclick="event.stopPropagation(); ui.toggleChangelogModal(true);" class="beta-label hover:scale-105 active:scale-95 transition cursor-pointer" aria-label="D'Tunes beta version changelog">Beta 1.3</button>
+            <button onclick="event.stopPropagation(); ui.toggleChangelogModal(true);" class="beta-label hover:scale-105 active:scale-95 transition cursor-pointer" aria-label="D'Tunes beta version changelog">Beta 1.3.1</button>
         </div>
 
         <!-- Desktop layout placeholder where search *would* be -->
@@ -527,7 +793,7 @@
 
             <button id="dverse-header-auth-button" class="desktop-auth-button hidden rounded-full bg-[var(--accent-color)] px-4 py-2 text-sm font-black text-black shadow-lg shadow-cyan-500/20 hover:scale-105 transition" onclick="cloudLibrary.toggleAuth()">Sign in</button>
             <button class="w-8 h-8 md:w-10 md:h-10 rounded-full border border-white/20 overflow-hidden hover:border-[var(--accent-color)] transition cursor-pointer" onclick="document.getElementById('profile-dropdown').classList.toggle('hidden')">
-                <img src="https://placehold.co/100x100/111/fff?text=U" id="header-avatar" class="w-full h-full object-cover" referrerpolicy="no-referrer" onerror="this.onerror=null; if(window.ui?.avatarFallback) this.src=window.ui.avatarFallback();">
+                <img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20width%3D%22100%22%20height%3D%22100%22%20rx%3D%2250%22%20fill%3D%22%23172329%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2236%22%20r%3D%2216%22%20fill%3D%22%23a5c8cd%22%2F%3E%3Cpath%20d%3D%22M20%2088c0-23%2013-34%2030-34s30%2011%2030%2034%22%20fill%3D%22%23a5c8cd%22%2F%3E%3C%2Fsvg%3E" id="header-avatar" class="w-full h-full object-cover" referrerpolicy="no-referrer" onerror="this.onerror=null; if(window.ui?.avatarFallback) this.src=window.ui.avatarFallback();">
             </button>
             
             <div id="profile-dropdown" class="absolute top-12 right-0 w-52 glass-panel rounded-xl shadow-2xl border border-white/10 hidden flex flex-col p-2 z-[200]">
@@ -559,6 +825,15 @@
                 <button class="w-full text-left px-3 py-2 mt-0.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition flex items-center gap-2" onclick="ui.switchView('settings'); document.getElementById('profile-dropdown').classList.add('hidden')">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                     <span>Settings</span>
+                </button>
+                <!-- Dev-only Secret Navigation for Reviews (hidden from public) -->
+                <button id="profile-dropdown-reviews" class="hidden w-full text-left px-3 py-2 mt-0.5 text-sm text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 rounded-lg transition flex items-center gap-2" onclick="ui.switchView('reviews'); document.getElementById('profile-dropdown').classList.add('hidden')">
+                    <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>
+                    <span>🛠️ Dev: Reviews</span>
+                </button>
+                <button class="w-full text-left px-3 py-2 mt-0.5 text-sm text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 rounded-lg transition flex items-center gap-2" onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'General AI Output' }); document.getElementById('profile-dropdown').classList.add('hidden')">
+                    <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    <span>Report AI Output</span>
                 </button>
                 <div class="h-px bg-white/10 my-1"></div>
                 <button class="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-red-500/15 rounded-lg transition flex items-center gap-2" onclick="cloudLibrary.signOutAndPurgeAll(); document.getElementById('profile-dropdown').classList.add('hidden')">
@@ -615,7 +890,7 @@
             <section id="section-trending" class="mb-12">
                 <div class="flex items-center justify-between px-4 md:px-8 mb-6">
                     <div>
-                        <h2 class="text-xl md:text-2xl font-bold text-white tracking-tight">Trending Right Now</h2>
+                        <h2 class="text-xl md:text-2xl font-medium text-white tracking-tight">Trending Right Now</h2>
                         <p class="text-xs text-gray-400 mt-1">Today's most played global and regional hits.</p>
                     </div>
                 </div>
@@ -630,7 +905,7 @@
             <section id="section-recent" class="mb-12 hidden">
                 <div class="flex items-center justify-between px-4 md:px-8 mb-6">
                     <div>
-                        <h2 class="text-xl md:text-2xl font-bold text-white tracking-tight">Recently Played</h2>
+                        <h2 class="text-xl md:text-2xl font-medium text-white tracking-tight">Recently Played</h2>
                         <p class="text-xs text-gray-400 mt-1">Songs you listened to recently.</p>
                     </div>
                 </div>
@@ -652,13 +927,19 @@
                 </div>
                 <div class="relative z-10 flex-1 min-w-0 text-center md:text-left flex flex-col md:flex-row items-center md:items-end justify-between w-full">
                     <div>
-                        <h2 class="text-3xl md:text-5xl font-black text-white mb-2 tracking-tight">Your Library</h2>
+                        <h2 class="text-3xl md:text-5xl font-semibold text-white mb-2 tracking-tight">Your Library</h2>
                         <p class="text-sm md:text-base text-gray-300 font-medium" id="library-stats-text">Playlists, your collection, liked artists, and listening history.</p>
                     </div>
-                    <button onclick="ui.toggleModal(true)" class="mt-6 md:mt-0 px-6 py-3 rounded-full bg-[var(--accent-color)] text-black text-sm font-black hover:scale-105 transition shadow-lg shadow-cyan-500/30 flex items-center gap-2">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-                        Create Playlist
-                    </button>
+                    <div class="flex items-center gap-3 mt-6 md:mt-0 flex-wrap justify-center md:justify-end">
+                        <button onclick="ui.toggleVibeMixModal(true)" class="px-5 py-3 rounded-full bg-gradient-to-r from-cyan-500/20 to-indigo-500/20 hover:from-cyan-500/30 hover:to-indigo-500/30 text-cyan-300 text-sm font-bold hover:scale-105 transition border border-cyan-500/40 shadow-lg shadow-cyan-950/40 flex items-center gap-2 cursor-pointer">
+                            <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                            Vibe Mix
+                        </button>
+                        <button onclick="ui.toggleModal(true)" class="px-6 py-3 rounded-full bg-[var(--accent-color)] text-black text-sm font-black hover:scale-105 transition shadow-lg shadow-cyan-500/30 flex items-center gap-2 cursor-pointer">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                            Create Playlist
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -668,7 +949,7 @@
                     <section>
                         <div class="flex items-center gap-3 mb-6">
                             <div class="p-2 bg-white/10 rounded-lg text-white"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-2v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12 0c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-2"/></svg></div>
-                            <h3 class="text-xl md:text-2xl font-bold text-white">Playlists</h3>
+                            <h3 class="text-xl md:text-2xl font-medium text-white">Playlists</h3>
                         </div>
                         <div id="playlists-grid" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 items-stretch"></div>
                     </section>
@@ -676,7 +957,7 @@
                     <section>
                         <div class="flex items-center gap-3 mb-6">
                             <div class="p-2 bg-white/10 rounded-lg text-white"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg></div>
-                            <h3 class="text-xl md:text-2xl font-bold text-white">Liked Artists</h3>
+                            <h3 class="text-xl md:text-2xl font-medium text-white">Liked Artists</h3>
                         </div>
                         <div id="library-liked-artists" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4"></div>
                     </section>
@@ -687,7 +968,7 @@
                     <section class="glass-panel p-5 rounded-2xl border border-white/5 bg-black/40">
                         <div class="flex items-center gap-3 mb-5">
                             <div class="p-2 bg-red-500/20 text-red-500 rounded-lg"><svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg></div>
-                            <h3 class="text-xl font-bold text-white">Liked Songs</h3>
+                            <h3 class="text-xl font-medium text-white">Liked Songs</h3>
                         </div>
                         <div id="library-songs" class="flex flex-col gap-2 max-h-[560px] overflow-y-auto custom-scrollbar pr-2"></div>
                     </section>
@@ -695,7 +976,7 @@
                     <section class="glass-panel p-5 rounded-2xl border border-white/5 bg-black/40">
                         <div class="flex items-center gap-3 mb-5">
                             <div class="p-2 bg-blue-500/20 text-blue-400 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
-                            <h3 class="text-xl font-bold text-white">History</h3>
+                            <h3 class="text-xl font-medium text-white">History</h3>
                         </div>
                         <div id="library-history" class="flex flex-col gap-2 max-h-[560px] overflow-y-auto custom-scrollbar pr-2"></div>
                     </section>
@@ -706,14 +987,20 @@
         <!-- ================= FULL SEARCH VIEW ================= -->
         <div id="view-search" class="hidden pb-12">
             <div class="flex items-center justify-between px-4 md:px-8 mb-6">
-                <h2 class="text-2xl md:text-3xl font-bold text-white" id="search-title">Search</h2>
-                <button id="btn-clear-search-history" onclick="searchManager.clearSearchHistory()" class="text-xs font-semibold text-[var(--accent-color)] hover:underline active:scale-95 transition hidden">Clear All</button>
+                <h2 class="text-2xl md:text-3xl font-medium text-white" id="search-title">Search</h2>
+                <div class="flex items-center gap-3">
+                    <button id="btn-report-search" onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Search & AI Autocomplete' })" class="text-xs text-amber-400/90 hover:text-amber-300 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 transition hover:bg-amber-500/20 cursor-pointer" title="Report issue with search output">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                        <span>Report Content</span>
+                    </button>
+                    <button id="btn-clear-search-history" onclick="searchManager.clearSearchHistory()" class="text-xs font-semibold text-[var(--accent-color)] hover:underline active:scale-95 transition hidden">Clear All</button>
+                </div>
             </div>
 
             <!-- Recent Searches Section (Android style) -->
             <div id="search-history-section" class="px-4 md:px-8 mb-8">
                 <div class="flex items-center justify-between py-1 mb-3">
-                    <h3 class="text-sm md:text-base font-bold text-gray-300 flex items-center gap-2">
+                    <h3 class="text-sm md:text-base font-medium text-gray-300 flex items-center gap-2">
                         <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
                         Recent Searches
                     </h3>
@@ -725,17 +1012,17 @@
             <div id="search-content" class="hidden">
                 <div class="grid grid-cols-1 lg:grid-cols-5 gap-8 mb-12 relative z-20 px-4 md:px-8">
                     <div class="lg:col-span-2 relative z-20 self-start">
-                        <h3 class="text-lg md:text-xl font-bold text-gray-300 mb-4">Top Result</h3>
+                        <h3 class="text-lg md:text-xl font-medium text-gray-300 mb-4">Top Result</h3>
                         <div id="search-top-result" class="glass-panel rounded-2xl p-6 transition hover-pause group relative overflow-hidden flex flex-col justify-between cursor-pointer h-auto"></div>
                     </div>
                     <div class="lg:col-span-3 relative z-10">
-                        <h3 class="text-lg md:text-xl font-bold text-gray-300 mb-4">Songs</h3>
+                        <h3 class="text-lg md:text-xl font-medium text-gray-300 mb-4">Songs</h3>
                         <div id="search-songs-list" class="flex flex-col gap-2"></div>
                     </div>
                 </div>
 
                 <div class="mb-12">
-                    <h3 class="text-lg md:text-xl font-bold text-gray-300 mb-4 px-4 md:px-8">Albums</h3>
+                    <h3 class="text-lg md:text-xl font-medium text-gray-300 mb-4 px-4 md:px-8">Albums</h3>
                     <div class="relative group/track">
                         <div class="row-blur-left"></div>
                         <div id="search-albums-grid" class="horizontal-scroll"></div>
@@ -743,7 +1030,7 @@
                     </div>
                 </div>
                 <div class="mb-12">
-                    <h3 class="text-lg md:text-xl font-bold text-gray-300 mb-4 px-4 md:px-8">Artists</h3>
+                    <h3 class="text-lg md:text-xl font-medium text-gray-300 mb-4 px-4 md:px-8">Artists</h3>
                     <div class="relative group/track">
                         <div class="row-blur-left"></div>
                         <div id="search-artists-grid" class="horizontal-scroll"></div>
@@ -765,7 +1052,7 @@
                             <!-- Injected by JS -->
                         </div>
                         <div class="w-full flex flex-col min-w-0">
-                            <div class="marquee-container mb-1 w-full"><h2 class="text-2xl md:text-4xl font-bold text-white marquee-text font-bold" id="playlist-view-title">Name</h2></div>
+                            <div class="marquee-container mb-1 w-full"><h2 class="text-2xl md:text-4xl font-medium text-white marquee-text font-medium" id="playlist-view-title">Name</h2></div>
                             <p class="text-gray-400 mb-4 text-sm" id="playlist-view-count">0 tracks • 0 min</p>
                             
                             <div class="flex flex-col gap-2 w-full max-w-xs mx-auto md:mx-0">
@@ -793,6 +1080,10 @@
                                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                                     </button>
                                 </div>
+                                <button id="playlist-ai-report-btn" class="w-full py-2 px-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs font-bold hover:bg-amber-500/20 transition flex items-center justify-center gap-1.5 hidden cursor-pointer" title="Report inappropriate AI content or songs (Policy 11.16)">
+                                    <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                                    <span>Report AI Playlist</span>
+                                </button>
                             </div>
                         </div>
                     </div>
@@ -816,7 +1107,7 @@
                         </div>
                         <div class="w-full flex flex-col min-w-0">
                             <span class="inline-block text-[10px] font-extrabold uppercase tracking-wider text-[var(--accent-color)] mb-1">Album</span>
-                            <div class="marquee-container mb-1 w-full"><h2 class="text-2xl md:text-3xl font-bold text-white marquee-text font-bold" id="album-view-title">Album Name</h2></div>
+                            <div class="marquee-container mb-1 w-full"><h2 class="text-2xl md:text-3xl font-medium text-white marquee-text font-medium" id="album-view-title">Album Name</h2></div>
                             <p class="text-gray-300 text-sm mb-1 font-semibold cursor-pointer hover:underline" id="album-view-artist">Artist</p>
                             <p class="text-gray-400 mb-4 text-xs" id="album-view-meta">2024 • 12 songs • 42 min</p>
 
@@ -878,40 +1169,40 @@
 
             <!-- Top Songs Section -->
             <section class="mb-10">
-                <h3 class="text-xl font-bold text-white mb-4">Top Songs</h3>
+                <h3 class="text-xl font-medium text-white mb-4">Top Songs</h3>
                 <div id="artist-top-songs-list" class="flex flex-col gap-2"></div>
             </section>
 
             <!-- Discography / Albums Section -->
             <section class="mb-10">
-                <h3 class="text-xl font-bold text-white mb-4">Albums & Singles</h3>
+                <h3 class="text-xl font-medium text-white mb-4">Albums & Singles</h3>
                 <div id="artist-albums-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4"></div>
             </section>
         </div>
 
         <!-- ================= STATS VIEW ================= -->
         <div id="view-stats" class="hidden pb-12 px-4 md:px-8">
-            <h2 class="text-2xl md:text-3xl font-bold text-white mb-2 relative z-20">Listening Stats</h2>
+            <h2 class="text-2xl md:text-3xl font-medium text-white mb-2 relative z-20">Listening Stats</h2>
             <p id="stats-subtitle" class="text-sm text-gray-400 mb-8 relative z-20">Your listening activity across D'Tunes.</p>
             <div id="stats-content" class="grid grid-cols-1 lg:grid-cols-2 gap-6 relative z-10"></div>
         </div>
 
         <!-- ================= SETTINGS VIEW ================= -->
         <div id="view-settings" class="hidden pb-12 px-4 md:px-8">
-            <h2 class="text-2xl md:text-3xl font-bold text-white mb-8 relative z-20">Settings</h2>
+            <h2 class="text-2xl md:text-3xl font-medium text-white mb-8 relative z-20">Settings</h2>
             <div class="glass-panel p-6 rounded-2xl max-w-2xl relative z-10">
                 <div class="flex flex-col gap-6">
                     <div class="accent-panel rounded-2xl p-4">
                         <div class="flex items-center justify-between gap-4">
                             <div class="min-w-0">
-                                <h3 class="text-lg font-bold text-white mb-1">D'Verse Cloud</h3>
+                                <h3 class="text-lg font-medium text-white mb-1">D'Verse Cloud</h3>
                                 <p id="dverse-settings-status" class="text-sm text-gray-300">Sign in to sync history, library, likes, and playlists.</p>
                             </div>
                             <button id="dverse-settings-auth-button" onclick="cloudLibrary.toggleAuth()" class="flex-shrink-0 rounded-full bg-[var(--accent-color)] px-4 py-2 text-sm font-black text-black shadow-lg shadow-cyan-500/20 hover:scale-105 transition">Sign in</button>
                         </div>
                     </div>
                     <div>
-                        <h3 class="text-lg font-bold text-white mb-2">Audio Quality</h3>
+                        <h3 class="text-lg font-medium text-white mb-2">Audio Quality</h3>
                         <p class="text-sm text-gray-400 mb-4">Choose the default streaming quality for your music. (Applies to next track)</p>
                         <select id="setting-audio-quality" class="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-[var(--accent-color)] transition appearance-none cursor-pointer" onchange="ui.updateSettings('quality', this.value)">
                             <option value="low" class="bg-gray-900">Low (Data Saver)</option>
@@ -923,7 +1214,7 @@
                     <div class="border-t border-white/10 pt-6">
                         <div class="flex items-center justify-between gap-3 mb-4">
                             <div>
-                                <h3 class="text-lg font-bold text-white">Equalizer</h3>
+                                <h3 class="text-lg font-medium text-white">Equalizer</h3>
                                 <p class="text-sm text-gray-400">Adjust the sound to your taste</p>
                             </div>
                             <button onclick="ui.resetEqualizer()" class="text-xs font-bold px-3 py-2 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition">Reset</button>
@@ -978,14 +1269,99 @@
                     <div class="border-t border-white/10 pt-6">
                         <div class="flex items-center justify-between gap-4 rounded-2xl border border-red-500/20 bg-red-500/10 p-4">
                             <div>
-                                <h3 class="text-lg font-bold text-white mb-1">Reset D'Tunes</h3>
+                                <h3 class="text-lg font-medium text-white mb-1">Reset D'Tunes</h3>
                                 <p class="text-sm text-gray-300">Clear playlists, likes, history, queue, settings, and saved playback from this browser.</p>
                             </div>
                             <button onclick="ui.clearAllData()" class="flex-shrink-0 rounded-full bg-red-500 px-4 py-2 text-sm font-black text-white shadow-lg shadow-red-500/20 hover:scale-105 transition">Clear All Data</button>
                         </div>
                     </div>
 
+                    <div class="border-t border-white/10 pt-6">
+                        <h3 class="text-lg font-medium text-white mb-2">Safety & Feedback</h3>
+                        <p class="text-sm text-gray-400 mb-4">Report inappropriate AI-generated content (Policy 11.16) or share feedback with the development team.</p>
+                        <div class="flex flex-wrap gap-3">
+                            <button onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Settings / App General' })" class="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-sm font-semibold text-amber-300 hover:bg-amber-500/20 transition flex items-center gap-2 cursor-pointer">
+                                <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                                <span>Report Inappropriate AI Content</span>
+                            </button>
+                            <button onclick="if(window.reviewsManager) window.reviewsManager.openSubmitModal()" class="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/10 hover:border-white/30 transition flex items-center gap-2 cursor-pointer">
+                                <svg class="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                                <span>Send Feedback</span>
+                            </button>
+                        </div>
+                    </div>
+
                 </div>
+            </div>
+        </div>
+
+        <!-- ================= REVIEWS & FEEDBACK VIEW ================= -->
+        <div id="view-reviews" class="hidden pb-12 px-4 md:px-8">
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 relative z-20">
+                <div>
+                    <h2 class="text-2xl md:text-3xl font-bold text-white tracking-tight flex items-center gap-3">
+                        <span>Community Reviews & Feedback</span>
+                        <span id="reviews-badge-count" class="text-xs px-2.5 py-1 rounded-full bg-white/10 text-gray-300 font-semibold">...</span>
+                    </h2>
+                    <p class="text-sm text-gray-400 mt-1">Real ratings, listener thoughts, and verified community impressions.</p>
+                </div>
+                <div class="flex items-center gap-3 flex-wrap">
+                    <button onclick="if(window.reviewsManager) reviewsManager.openSubmitModal()" class="bg-[var(--accent-color)] text-black px-5 py-2.5 rounded-full font-black text-sm hover:scale-105 active:scale-95 transition shadow-lg shadow-cyan-500/30 flex items-center gap-2 cursor-pointer">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                        <span>Write a Review</span>
+                    </button>
+                    <button onclick="if(window.aiReportManager) aiReportManager.openReportModal({ feature: 'Community Hub' })" class="px-4 py-2.5 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-300 text-sm font-semibold hover:bg-amber-500/20 active:scale-95 transition flex items-center gap-2 cursor-pointer" title="Report inappropriate AI-generated content (Policy 11.16)">
+                        <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                        <span>Report AI Output</span>
+                    </button>
+                    <button onclick="if(window.reviewsManager) reviewsManager.fetchReviews(true)" class="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition" title="Refresh Reviews">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Overview Metrics Banner -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                <div class="glass-panel p-5 rounded-2xl border border-white/10 flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-6 h-6 fill-current" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-black text-white" id="reviews-avg-rating">4.9 / 5.0</div>
+                        <div class="text-xs text-gray-400">Average Listener Rating</div>
+                    </div>
+                </div>
+                <div class="glass-panel p-5 rounded-2xl border border-white/10 flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-black text-white" id="reviews-total-count">0</div>
+                        <div class="text-xs text-gray-400">Total Submissions</div>
+                    </div>
+                </div>
+                <div class="glass-panel p-5 rounded-2xl border border-white/10 flex items-center gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                    </div>
+                    <div>
+                        <div class="text-2xl font-black text-white">Live Moderation</div>
+                        <div class="text-xs text-gray-400">Continuous AI & Review Audit</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Category Filter Tabs -->
+            <div class="flex items-center gap-2 mb-6 overflow-x-auto custom-scrollbar pb-2" id="reviews-filter-tabs">
+                <button onclick="if(window.reviewsManager) reviewsManager.setCategoryFilter('all')" class="reviews-tab-btn active px-4 py-1.5 rounded-full text-xs font-bold transition bg-white/15 text-white cursor-pointer" data-category="all">All Reviews</button>
+                <button onclick="if(window.reviewsManager) reviewsManager.setCategoryFilter('5star')" class="reviews-tab-btn px-4 py-1.5 rounded-full text-xs font-bold transition bg-white/5 text-gray-400 hover:text-white cursor-pointer" data-category="5star">5-Star Favorites</button>
+                <button onclick="if(window.reviewsManager) reviewsManager.setCategoryFilter('ai')" class="reviews-tab-btn px-4 py-1.5 rounded-full text-xs font-bold transition bg-white/5 text-gray-400 hover:text-white cursor-pointer" data-category="ai">AI & Features</button>
+                <button onclick="if(window.reviewsManager) reviewsManager.setCategoryFilter('general')" class="reviews-tab-btn px-4 py-1.5 rounded-full text-xs font-bold transition bg-white/5 text-gray-400 hover:text-white cursor-pointer" data-category="general">General</button>
+            </div>
+
+            <!-- Reviews Stream / Cards List -->
+            <div id="reviews-list-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="text-sm text-gray-400 py-12 col-span-full text-center">Loading reviews...</div>
             </div>
         </div>
 
@@ -1041,7 +1417,7 @@
 
                         <div id="player-track-meta" class="flex items-center justify-between flex-1 min-w-0 ml-3">
                             <div class="flex-1 min-w-0 flex flex-col justify-center cursor-pointer">
-                                <div class="marquee-container w-full"><h3 id="p-title" class="font-bold text-white text-sm marquee-text">Not Playing</h3></div>
+                                <div class="marquee-container w-full"><h3 id="p-title" class="font-medium text-white text-sm marquee-text">Not Playing</h3></div>
                                 <div class="marquee-container w-full mt-0.5"><p id="p-artist" class="text-xs text-gray-400 marquee-text">Select song</p></div>
                             </div>
                             
@@ -1171,11 +1547,187 @@
         </button>
         <button data-nav="profile" class="flex flex-col items-center gap-1 p-2 text-gray-400 hover:text-white transition-colors" onclick="ui.switchView('settings'); ui.closeMobileSearch();">
             <div class="w-6 h-6 rounded-full border-2 border-current flex items-center justify-center overflow-hidden">
-                <img src="https://placehold.co/100x100/111/fff?text=U" id="mobile-nav-avatar" class="w-full h-full object-cover" referrerpolicy="no-referrer" onerror="this.onerror=null; if(window.ui?.avatarFallback) this.src=window.ui.avatarFallback();">
+                <img src="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22100%22%20height%3D%22100%22%20viewBox%3D%220%200%20100%20100%22%3E%3Crect%20width%3D%22100%22%20height%3D%22100%22%20rx%3D%2250%22%20fill%3D%22%23172329%22%2F%3E%3Ccircle%20cx%3D%2250%22%20cy%3D%2236%22%20r%3D%2216%22%20fill%3D%22%23a5c8cd%22%2F%3E%3Cpath%20d%3D%22M20%2088c0-23%2013-34%2030-34s30%2011%2030%2034%22%20fill%3D%22%23a5c8cd%22%2F%3E%3C%2Fsvg%3E" id="mobile-nav-avatar" class="w-full h-full object-cover" referrerpolicy="no-referrer" onerror="this.onerror=null; if(window.ui?.avatarFallback) this.src=window.ui.avatarFallback();">
             </div>
             <span class="mobile-nav-label">Settings</span>
         </button>
     </nav>
+
+    <!-- AI SAFETY REPORT MODAL (Microsoft Store Policy 11.16) -->
+    <div id="ai-report-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md hidden" onclick="if(event.target === this) aiReportManager.closeReportModal()">
+        <div class="glass-panel p-6 md:p-8 rounded-3xl w-full max-w-lg shadow-2xl border border-amber-500/30 transform transition-all flex flex-col max-h-[92vh] overflow-hidden mx-4 relative">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between gap-3 mb-4 flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                            <span>Report AI Content</span>
+                            <span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">Policy 11.16</span>
+                        </h3>
+                        <p class="text-xs text-gray-400">Report inappropriate, harmful, or problematic AI output for review.</p>
+                    </div>
+                </div>
+                <button onclick="aiReportManager.closeReportModal()" class="text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition cursor-pointer" aria-label="Close Report Modal">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <!-- Error Banner -->
+            <div id="ai-report-error" class="hidden p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-xs text-red-300 mb-3"></div>
+
+            <!-- Scrollable Content -->
+            <div class="overflow-y-auto custom-scrollbar flex flex-col gap-4 flex-1 pr-1">
+                <!-- Target Feature / Summary Info -->
+                <div class="p-3 rounded-2xl bg-white/5 border border-white/10">
+                    <div class="flex items-center justify-between text-xs mb-1">
+                        <span class="text-gray-400">Target Feature</span>
+                        <span id="ai-report-feature-badge" class="font-bold text-[var(--accent-color)]">Vibe Mix</span>
+                    </div>
+                    <div class="text-xs text-gray-300 truncate" id="ai-report-summary">User-initiated AI music curation</div>
+                </div>
+
+                <!-- Issue Category Dropdown -->
+                <div>
+                    <label for="ai-report-issue-type" class="text-xs font-bold text-gray-300 mb-1.5 block">Reason for Report <span class="text-red-400">*</span></label>
+                    <select id="ai-report-issue-type" class="w-full bg-white/10 border border-white/20 rounded-xl px-3.5 py-2.5 text-white text-xs focus:outline-none focus:border-[var(--accent-color)] transition appearance-none cursor-pointer">
+                        <option value="Inappropriate Content" class="bg-gray-900">Inappropriate / Harmful Content</option>
+                        <option value="Offensive / Hate Speech" class="bg-gray-900">Offensive / Hate Speech / Profanity</option>
+                        <option value="Hallucinated or Misleading" class="bg-gray-900">Incorrect / Misleading / Hallucinated Song</option>
+                        <option value="Copyright or Licensing Issue" class="bg-gray-900">Copyright / IP Concern</option>
+                        <option value="Broken Audio / Poor Quality" class="bg-gray-900">Broken Stream / Audio Quality Defect</option>
+                        <option value="Other Safety Issue" class="bg-gray-900">Other Issue</option>
+                    </select>
+                </div>
+
+                <!-- Detailed Explanation Textarea -->
+                <div>
+                    <label for="ai-report-details" class="text-xs font-bold text-gray-300 mb-1.5 block">Details <span class="text-red-400">*</span></label>
+                    <textarea id="ai-report-details" rows="3" placeholder="Please describe specifically why this AI-generated result is inappropriate or problematic..." class="w-full bg-white/10 border border-white/20 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-[var(--accent-color)] transition resize-none text-xs" maxlength="1500"></textarea>
+                </div>
+
+                <!-- Optional Reporter Info -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label for="ai-report-name" class="text-[11px] font-semibold text-gray-400 mb-1 block">Your Name (Optional)</label>
+                        <input type="text" id="ai-report-name" placeholder="Listener" class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white placeholder-gray-500 text-xs focus:outline-none focus:border-[var(--accent-color)]">
+                    </div>
+                    <div>
+                        <label for="ai-report-email" class="text-[11px] font-semibold text-gray-400 mb-1 block">Your Email (Optional)</label>
+                        <input type="email" id="ai-report-email" placeholder="listener@example.com" class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white placeholder-gray-500 text-xs focus:outline-none focus:border-[var(--accent-color)]">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="flex items-center justify-between border-t border-white/10 pt-4 mt-3 flex-shrink-0">
+                <span class="text-[10px] text-gray-400">Reports are reviewed promptly by safety engineers.</span>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="aiReportManager.closeReportModal()" class="px-4 py-2 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition cursor-pointer">Cancel</button>
+                    <button type="button" id="btn-submit-ai-report" onclick="aiReportManager.submitReport()" class="px-5 py-2 rounded-xl bg-amber-500 text-black text-xs font-black hover:scale-105 active:scale-95 transition shadow-lg shadow-amber-500/25 flex items-center gap-1.5 cursor-pointer">
+                        <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-2h-2v2zm0-4h2V7h-2v6z"/></svg>
+                        <span>Submit Safety Report</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SUBMIT REVIEW / FEEDBACK MODAL -->
+    <div id="review-submit-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md hidden" onclick="if(event.target === this) reviewsManager.closeSubmitModal()">
+        <div class="glass-panel p-6 md:p-8 rounded-3xl w-full max-w-lg shadow-2xl border border-white/10 transform transition-all flex flex-col max-h-[92vh] overflow-hidden mx-4 relative">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between gap-3 mb-4 flex-shrink-0">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-2xl bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center justify-center flex-shrink-0">
+                        <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24"><path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="text-xl font-bold text-white">Write a Review</h3>
+                        <p class="text-xs text-gray-400">Share your listening experience, feature thoughts, or ratings.</p>
+                    </div>
+                </div>
+                <button onclick="reviewsManager.closeSubmitModal()" class="text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition cursor-pointer" aria-label="Close Review Modal">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+
+            <!-- Error Banner -->
+            <div id="review-submit-error" class="hidden p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-xs text-red-300 mb-3"></div>
+
+            <!-- Scrollable Content -->
+            <div class="overflow-y-auto custom-scrollbar flex flex-col gap-4 flex-1 pr-1">
+                <!-- Star Rating Selector -->
+                <div>
+                    <label class="text-xs font-bold text-gray-300 mb-1.5 block">Your Rating</label>
+                    <div class="flex items-center gap-2">
+                        <div id="review-star-selector" class="flex items-center gap-1">
+                            <button type="button" class="star-btn text-amber-400 p-1 hover:scale-125 transition cursor-pointer" data-value="1" onclick="reviewsManager.setSubmitRating(1)">
+                                <svg class="w-6 h-6 fill-current" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            </button>
+                            <button type="button" class="star-btn text-amber-400 p-1 hover:scale-125 transition cursor-pointer" data-value="2" onclick="reviewsManager.setSubmitRating(2)">
+                                <svg class="w-6 h-6 fill-current" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            </button>
+                            <button type="button" class="star-btn text-amber-400 p-1 hover:scale-125 transition cursor-pointer" data-value="3" onclick="reviewsManager.setSubmitRating(3)">
+                                <svg class="w-6 h-6 fill-current" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            </button>
+                            <button type="button" class="star-btn text-amber-400 p-1 hover:scale-125 transition cursor-pointer" data-value="4" onclick="reviewsManager.setSubmitRating(4)">
+                                <svg class="w-6 h-6 fill-current" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            </button>
+                            <button type="button" class="star-btn text-amber-400 p-1 hover:scale-125 transition cursor-pointer" data-value="5" onclick="reviewsManager.setSubmitRating(5)">
+                                <svg class="w-6 h-6 fill-current" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>
+                            </button>
+                        </div>
+                        <span id="review-rating-label" class="text-xs font-semibold text-gray-300">5/5 - Outstanding!</span>
+                    </div>
+                </div>
+
+                <!-- Category Selector -->
+                <div>
+                    <label for="review-category-select" class="text-xs font-bold text-gray-300 mb-1.5 block">Review Category</label>
+                    <select id="review-category-select" class="w-full bg-white/10 border border-white/20 rounded-xl px-3.5 py-2.5 text-white text-xs focus:outline-none focus:border-[var(--accent-color)] transition appearance-none cursor-pointer">
+                        <option value="general" class="bg-gray-900">🌟 General Experience</option>
+                        <option value="ai" class="bg-gray-900">🤖 AI Mixes & Recommendations</option>
+                        <option value="audio_quality" class="bg-gray-900">🎵 Audio Quality & Playback</option>
+                        <option value="feature_request" class="bg-gray-900">✨ Feature Suggestion</option>
+                        <option value="bug_report" class="bg-gray-900">🐛 Bug Report</option>
+                    </select>
+                </div>
+
+                <!-- Review Text -->
+                <div>
+                    <label for="review-text-message" class="text-xs font-bold text-gray-300 mb-1.5 block">Your Thoughts <span class="text-red-400">*</span></label>
+                    <textarea id="review-text-message" rows="3" placeholder="Tell the community what you like about D'Tunes or how we can make it even better..." class="w-full bg-white/10 border border-white/20 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-[var(--accent-color)] transition resize-none text-xs" maxlength="2000"></textarea>
+                </div>
+
+                <!-- Author details -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label for="review-author-name" class="text-[11px] font-semibold text-gray-400 mb-1 block">Display Name (Optional)</label>
+                        <input type="text" id="review-author-name" placeholder="Listener Name" class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white placeholder-gray-500 text-xs focus:outline-none focus:border-[var(--accent-color)]">
+                    </div>
+                    <div>
+                        <label for="review-author-email" class="text-[11px] font-semibold text-gray-400 mb-1 block">Email (Optional)</label>
+                        <input type="email" id="review-author-email" placeholder="name@example.com" class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white placeholder-gray-500 text-xs focus:outline-none focus:border-[var(--accent-color)]">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="flex items-center justify-between border-t border-white/10 pt-4 mt-3 flex-shrink-0">
+                <span class="text-[10px] text-gray-400">Published to the verified community stream.</span>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="reviewsManager.closeSubmitModal()" class="px-4 py-2 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition cursor-pointer">Cancel</button>
+                    <button type="button" id="btn-submit-review" onclick="reviewsManager.submitReview()" class="px-5 py-2 rounded-xl bg-[var(--accent-color)] text-black text-xs font-black hover:scale-105 active:scale-95 transition shadow-lg shadow-cyan-500/25 flex items-center gap-1.5 cursor-pointer">
+                        <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+                        <span>Publish Review</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <audio id="audio-el" crossorigin="anonymous" controls="true" preload="auto" playsinline webkit-playsinline style="position:fixed;top:-9999px;left:-9999px;opacity:0.001;pointer-events:none;width:1px;height:1px;"></audio>
 
@@ -1199,5 +1751,5 @@
     <script defer src="src/js/ms-store.js?v=1.3.4"></script>
     <script defer src="src/js/main.js?v=1.3.4"></script>
 
-</body>
-</html>
+<script src="/haptics.js" defer></script></body>
+                    </html>

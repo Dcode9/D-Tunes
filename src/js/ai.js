@@ -298,6 +298,103 @@ Return ONLY raw JSON: {"title": "Song Name", "artist": "Artist Name"}`;
         ];
     }
 
+    async function generateVibeMix(vibePrompt, options = {}) {
+        const { isTimeCapsule = false, infuseTaste = true } = options;
+        const disliked = (state.dislikedSongs || []).map(d => {
+            if (typeof d === 'object') return `"${d.name || d.title}" by ${d.artist || 'Artist'}`;
+            const s = window.songStore?.get(d);
+            return s ? `"${s.name || s.title}" by ${s.artist || 'Artist'}` : String(d);
+        });
+
+        // Gather taste context
+        let tasteContext = '';
+        if (infuseTaste) {
+            const topArtists = Object.entries(state.artistPlayCounts || {})
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 6)
+                .map(([artist]) => artist);
+
+            const likedTitles = (state.likedIds || []).slice(0, 10).map(l => {
+                const s = typeof l === 'object' ? l : (window.songStore?.get(l) || state.playHistory?.find(h => h.id === l));
+                return s ? `"${s.name || s.title}" by ${s.artist || 'Artist'}` : null;
+            }).filter(Boolean);
+
+            const recentTitles = (state.playHistory || []).slice(0, 15).map(h => {
+                return `"${h.name || h.title}" by ${h.artist || 'Artist'}`;
+            });
+
+            // Older history for Time Capsule
+            const olderHistory = (state.playHistory || []).slice(10, 40).map(h => {
+                return `"${h.name || h.title}" by ${h.artist || 'Artist'}`;
+            });
+
+            tasteContext = `
+Listener's Taste Profile:
+- Top Artists: [${topArtists.join(', ') || 'Various'}]
+- Favorite Liked Tracks: [${likedTitles.join(', ') || 'Various'}]
+- Recent Plays: [${recentTitles.join(', ') || 'Various'}]
+${isTimeCapsule ? `- Older Played Tracks (for rediscovery & time capsule nostalgia): [${olderHistory.join(', ') || likedTitles.join(', ')}]` : ''}
+`;
+        }
+
+        let systemInstruction = "You are an expert music curator and playlist architect. Return ONLY valid raw JSON with schema: {\"title\": \"string\", \"description\": \"string\", \"styleIndex\": number (0-6), \"songs\": [{\"title\": \"string\", \"artist\": \"string\"}]}. No markdown formatting.";
+
+        let userPrompt = '';
+        if (isTimeCapsule) {
+            userPrompt = `Curate a "Musical Time Capsule" playlist for this listener to rediscover forgotten favorites, signature anthems, and deep cuts from their past listening habits.
+${tasteContext}
+Strict Exclusions (NEVER recommend): [${disliked.length > 0 ? disliked.join(', ') : 'None'}]
+
+Requirements:
+- Curate an evocative, nostalgic title (e.g., "Rewind & Resonance", "Nostalgia Capsule", "Forgotten Echoes").
+- Write an engaging 1-sentence description capturing their personal music journey.
+- Include 8 to 10 real, popular songs that match their past listening era and favorite artists, blending beloved tracks with related nostalgic discoveries.
+- Ensure artist diversity (max 2 tracks per artist).
+- Strictly obey negative exclusions.`;
+        } else {
+            userPrompt = `Curate a "Vibe Mix" playlist tailored to this mood / request: "${vibePrompt || 'Feel Good Vibes'}".
+${tasteContext}
+Strict Exclusions (NEVER recommend): [${disliked.length > 0 ? disliked.join(', ') : 'None'}]
+
+Requirements:
+- Curate a human, aesthetic playlist title fitting the vibe (e.g. "Velvet Midnight", "Golden Hour Drift", "Sunday Morning Brew").
+- Write an evocative 1-sentence description.
+- Pick a styleIndex between 0 and 6.
+- Curate 8 to 10 real, popular songs available on major streaming platforms matching this exact mood and acoustic feel ${infuseTaste ? 'while aligning seamlessly with the listener\'s music taste' : ''}.
+- Ensure artist variety (no duplicate artists).
+- Strictly obey negative exclusions.`;
+        }
+
+        try {
+            const parsed = await callLLM(userPrompt, systemInstruction);
+            if (parsed && Array.isArray(parsed.songs) && parsed.songs.length > 0) {
+                return {
+                    title: parsed.title || (isTimeCapsule ? "Time Capsule" : "Vibe Mix"),
+                    description: parsed.description || "Curated for your moment.",
+                    styleIndex: typeof parsed.styleIndex === 'number' ? parsed.styleIndex : Math.floor(Math.random() * 7),
+                    songs: parsed.songs
+                };
+            }
+        } catch (e) {
+            console.warn("[VibeMix] AI generation failed, using fallback:", e);
+        }
+
+        // Fallback if network or LLM fails
+        return {
+            title: isTimeCapsule ? "Time Capsule Rewind" : (vibePrompt || "Vibe Mix"),
+            description: "Handcrafted collection curated for your mood.",
+            styleIndex: 1,
+            songs: [
+                { title: "Blinding Lights", artist: "The Weeknd" },
+                { title: "Starboy", artist: "The Weeknd" },
+                { title: "Levitating", artist: "Dua Lipa" },
+                { title: "Get Lucky", artist: "Daft Punk" },
+                { title: "Cruel Summer", artist: "Taylor Swift" },
+                { title: "Midnight City", artist: "M83" }
+            ]
+        };
+    }
+
     function clearCache() {
         localStorage.removeItem(CACHE_KEY);
     }
@@ -306,6 +403,7 @@ Return ONLY raw JSON: {"title": "Song Name", "artist": "Artist Name"}`;
         generateCustomPlaylists,
         generateQueueAutoplay,
         generateNextSimilar,
+        generateVibeMix,
         clearCache
     };
 })();

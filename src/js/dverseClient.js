@@ -23,9 +23,17 @@
 
   function deleteCookie(name) {
     if (typeof document === 'undefined') return;
-    const isDverse = typeof window !== 'undefined' && window.location.hostname.endsWith('d-verse.in');
-    const domainAttr = isDverse ? '; domain=.d-verse.in' : '';
-    document.cookie = `${encodeURIComponent(name)}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/${domainAttr}; SameSite=Lax; Secure`;
+    const encoded = encodeURIComponent(name);
+    const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : '';
+    const domains = ['', '; domain=' + host];
+    if (host.endsWith('d-verse.in')) {
+      domains.push('; domain=.d-verse.in');
+    }
+    domains.forEach(d => {
+      document.cookie = `${encoded}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/${d}; SameSite=Lax`;
+      document.cookie = `${encoded}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/${d}; SameSite=Lax; Secure`;
+      document.cookie = `${encoded}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/${d}; SameSite=None; Secure`;
+    });
   }
 
   const universalStorage = {
@@ -68,6 +76,11 @@
       try { localStorage.removeItem(key); } catch (_) {}
       try { sessionStorage.removeItem(key); } catch (_) {}
       try { deleteCookie(key); } catch (_) {}
+    },
+    clear: () => {
+      memoryStorage.clear();
+      try { localStorage.clear(); } catch (_) {}
+      try { sessionStorage.clear(); } catch (_) {}
     }
   };
 
@@ -124,49 +137,101 @@
       }
     } catch (_) {}
 
+    // 4. Fallback: check Supabase persisted auth token in storage
+    try {
+      const rawSb = localStorage.getItem('dverse_supabase_auth_token');
+      if (rawSb) {
+        const parsed = JSON.parse(rawSb);
+        const tok = parsed?.currentSession || parsed;
+        if (tok?.refresh_token) {
+          return {
+            access_token: tok.access_token || '',
+            refresh_token: tok.refresh_token,
+            expires_at: tok.expires_at || null,
+            user_id: tok.user?.id || null,
+            email: tok.user?.email || null
+          };
+        }
+      }
+    } catch (_) {}
+
     return null;
   }
 
   function clearPersistedTokens() {
     deleteCookie(DVERSE_TOKENS_COOKIE);
+    deleteCookie(DVERSE_SESSION_CACHE);
+    deleteCookie('dverse_supabase_auth_token');
+    deleteCookie('dverse_auth_return_to');
+    deleteCookie('dverse.auth.returnTo');
     try { localStorage.removeItem(DVERSE_SESSION_CACHE); } catch (_) {}
     try { localStorage.removeItem(DVERSE_TOKENS_COOKIE); } catch (_) {}
+    try { localStorage.removeItem('dverse_supabase_auth_token'); } catch (_) {}
     try { sessionStorage.removeItem(DVERSE_SESSION_CACHE); } catch (_) {}
+    try { sessionStorage.removeItem('dverse_supabase_auth_token'); } catch (_) {}
+    memoryStorage.delete(DVERSE_SESSION_CACHE);
+    memoryStorage.delete(DVERSE_TOKENS_COOKIE);
+    memoryStorage.delete('dverse_supabase_auth_token');
   }
+
+  let activeRefreshPromise = null;
 
   async function restoreOrRefreshSession(tokens) {
     if (!client || !tokens?.refresh_token) return null;
 
-    // 1. If access_token exists, attempt setSession
-    if (tokens.access_token) {
+    if (activeRefreshPromise) {
+      return activeRefreshPromise;
+    }
+
+    activeRefreshPromise = (async () => {
+      // 1. If access_token exists and is unexpired (>60s remaining), attempt setSession
+      const expiresAtMs = (tokens.expires_at || 0) * 1000;
+      const isAccessTokenValid = Boolean(
+        tokens.access_token &&
+        (expiresAtMs === 0 || expiresAtMs > (Date.now() + 60000))
+      );
+
+      if (isAccessTokenValid) {
+        try {
+          const { data, error } = await client.auth.setSession({
+            access_token: tokens.access_token,
+            refresh_token: tokens.refresh_token
+          });
+          if (!error && data?.session) {
+            currentSession = data.session;
+            persistTokens(currentSession);
+            return currentSession;
+          }
+        } catch (_) {}
+      }
+
+      // 2. If access_token was expired or setSession failed, refresh using refresh_token!
       try {
-        const { data, error } = await client.auth.setSession({
-          access_token: tokens.access_token,
+        const { data: refreshed, error: refreshErr } = await client.auth.refreshSession({
           refresh_token: tokens.refresh_token
         });
-        if (!error && data?.session) {
-          currentSession = data.session;
+        if (!refreshErr && refreshed?.session) {
+          currentSession = refreshed.session;
           persistTokens(currentSession);
           return currentSession;
+        } else if (refreshErr) {
+          const msg = String(refreshErr?.message || '').toLowerCase();
+          // If refresh token is explicitly revoked / not found by Supabase, purge dead tokens
+          if (msg.includes('invalid') || msg.includes('revoked') || msg.includes('not found') || msg.includes('already used')) {
+            console.warn('[DVerse] Refresh token expired or revoked, clearing tokens:', refreshErr.message);
+            clearPersistedTokens();
+          }
         }
-      } catch (_) {}
-    }
-
-    // 2. If access_token was expired or setSession failed, refresh using refresh_token!
-    try {
-      const { data: refreshed, error: refreshErr } = await client.auth.refreshSession({
-        refresh_token: tokens.refresh_token
-      });
-      if (!refreshErr && refreshed?.session) {
-        currentSession = refreshed.session;
-        persistTokens(currentSession);
-        return currentSession;
+      } catch (err) {
+        console.warn('[DVerse] Exception refreshing session from persistent memory:', err);
       }
-    } catch (err) {
-      console.warn('[DVerse] Failed to refresh session from persistent memory:', err);
-    }
 
-    return null;
+      return null;
+    })().finally(() => {
+      activeRefreshPromise = null;
+    });
+
+    return activeRefreshPromise;
   }
 
   const ready = Boolean(window.supabase && SUPABASE_ANON_KEY);
@@ -207,76 +272,113 @@
     }
   } catch (_) {}
 
-  // Immediate Desktop OAuth Return Handler:
-  // When returning from Google OAuth in the external system browser with desktop_auth=1,
-  // do NOT attempt PKCE code exchange in this browser (the PKCE code_verifier was generated
-  // and stored inside the Electron app). Immediately hand off code or tokens to the Windows app
-  // via loopback server (http://127.0.0.1:49200/token) and custom protocol (dtunes://auth).
+  function base64UrlDecode(value) {
+    try {
+      const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+      const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=');
+      const binary = atob(padded);
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      return JSON.parse(new TextDecoder().decode(bytes));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Immediate App / Desktop OAuth Return Handler:
+  // When returning from Google OAuth in the external system browser with desktop_auth=1 or on Android,
+  // do NOT attempt PKCE code exchange in this browser and do NOT log into the web music player.
+  // Immediately hand off code or tokens to the Android or Windows app via custom protocol
+  // (dtunes://auth), Android intent, and loopback server (http://127.0.0.1:49200/token).
   function checkImmediateDesktopAuthHandoff() {
     if (typeof window === 'undefined' || window.electronAPI || !window.location) return;
     const searchParams = new URLSearchParams(window.location.search);
     const hashText = window.location.hash ? window.location.hash.slice(1) : '';
     const hashParams = new URLSearchParams(hashText.startsWith('?') ? hashText.slice(1) : hashText);
 
-    const isDesktopAuth = searchParams.get('desktop_auth') === '1';
+    const isDesktopAuth = searchParams.get('desktop_auth') === '1' || hashParams.get('desktop_auth') === '1';
+    const isAndroid = /Android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
 
+    const dverseSession = searchParams.get('dverse_session') || hashParams.get('dverse_session');
+    let code = searchParams.get('code') || hashParams.get('code');
+    let accessToken = hashParams.get('access_token') || searchParams.get('access_token');
+    let refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token');
+
+    if (dverseSession && (!accessToken || !refreshToken)) {
+      try {
+        const decoded = base64UrlDecode(dverseSession);
+        if (decoded && decoded.access_token) {
+          accessToken = decoded.access_token;
+          refreshToken = decoded.refresh_token || refreshToken;
+        }
+      } catch (_) {}
+    }
+
+    const hasAuthPayload = Boolean(code || (accessToken && refreshToken) || dverseSession);
+    if (!hasAuthPayload) return;
+    // Only hand off when an app explicitly asked for it. Android *browser* users signing in
+    // to the web player must stay on the web, not be bounced into an intent:// URL.
     if (!isDesktopAuth) return;
 
-    const code = searchParams.get('code') || hashParams.get('code');
-    const accessToken = hashParams.get('access_token') || searchParams.get('access_token');
-    const refreshToken = hashParams.get('refresh_token') || searchParams.get('refresh_token');
+    window.__STOP_DVERSE_WEB_APP__ = true;
+    try { sessionStorage.removeItem('dverse_desktop_auth'); } catch (_) {}
 
+    const allParams = new URLSearchParams();
+    if (code) allParams.set('code', code);
+    if (accessToken) allParams.set('access_token', accessToken);
+    if (refreshToken) allParams.set('refresh_token', refreshToken);
+    if (dverseSession) allParams.set('dverse_session', dverseSession);
+    const expiresIn = hashParams.get('expires_in') || searchParams.get('expires_in');
+    if (expiresIn) allParams.set('expires_in', expiresIn);
+    const tokenType = hashParams.get('token_type') || searchParams.get('token_type');
+    if (tokenType) allParams.set('token_type', tokenType);
+
+    const qs = allParams.toString();
+    const deepLinkUrl = 'dtunes://auth?' + qs;
+    const intentUrl = 'intent://auth?' + qs + '#Intent;scheme=dtunes;package=com.dcode9.dtunes;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end';
+    const primaryUrl = isAndroid ? intentUrl : deepLinkUrl;
+
+    // 1. Immediately trigger deep link navigation to hand off to Android/desktop app without delay
+    try {
+      window.location.replace(primaryUrl);
+    } catch (_) {
+      try { window.location.href = deepLinkUrl; } catch (__) {}
+    }
+
+    // 2. Post to loopback server on port 49200 (for desktop Electron app)
     if (code || (accessToken && refreshToken)) {
-      try { sessionStorage.removeItem('dverse_desktop_auth'); } catch (_) {}
-
-      const payload = code
-        ? { code }
-        : {
-            access_token: accessToken,
-            refresh_token: refreshToken,
-            expires_in: hashParams.get('expires_in') || searchParams.get('expires_in'),
-            token_type: hashParams.get('token_type') || searchParams.get('token_type')
-          };
-
-      const deepLinkUrl = code
-        ? `dtunes://auth?code=${encodeURIComponent(code)}`
-        : `dtunes://auth?access_token=${encodeURIComponent(accessToken)}&refresh_token=${encodeURIComponent(refreshToken)}`;
-
-      // 1. Post to loopback server on port 49200
       try {
+        const payload = code
+          ? { code }
+          : {
+              access_token: accessToken,
+              refresh_token: refreshToken,
+              expires_in: expiresIn,
+              token_type: tokenType
+            };
         fetch('http://127.0.0.1:49200/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         }).catch(() => {});
       } catch (_) {}
+    }
 
-      // 2. Render desktop handoff UI in browser
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', () => renderDesktopHandoffUI(deepLinkUrl));
-      } else {
-        renderDesktopHandoffUI(deepLinkUrl);
-      }
-
-      // 3. Trigger deep link navigation to bring Windows app to front
-      try {
-        window.location.href = deepLinkUrl;
-      } catch (_) {}
+    // 3. Render desktop/Android handoff UI in browser as fallback
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', () => renderDesktopHandoffUI(primaryUrl));
+    } else {
+      renderDesktopHandoffUI(primaryUrl);
     }
   }
   checkImmediateDesktopAuthHandoff();
 
-  function base64UrlDecode(value) {
-    const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
-    const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), '=');
-    const binary = atob(padded);
-    const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    return JSON.parse(new TextDecoder().decode(bytes));
-  }
-
   function takeSessionHandoffFromUrl() {
     if (checkedUrlHandoff || typeof window === 'undefined') return null;
     checkedUrlHandoff = true;
+
+    if (window.__STOP_DVERSE_WEB_APP__) {
+      return null;
+    }
 
     // 1. Check for ?dverse_session=... in search query
     const searchParams = new URLSearchParams(window.location.search);
@@ -524,12 +626,23 @@
     try {
       const { data, error } = await client.auth.getSession();
       if (!error && data?.session) {
-        currentSession = data.session;
-        if (client?.rest?.headers && currentSession?.access_token) {
-          client.rest.headers['Authorization'] = `Bearer ${currentSession.access_token}`;
+        const expiresAtMs = (data.session.expires_at || 0) * 1000;
+        const isValid = expiresAtMs === 0 || expiresAtMs > (Date.now() + 60000);
+        if (isValid) {
+          currentSession = data.session;
+          if (client?.rest?.headers && currentSession?.access_token) {
+            client.rest.headers['Authorization'] = `Bearer ${currentSession.access_token}`;
+          }
+          persistTokens(currentSession);
+          return currentSession;
+        } else if (data.session.refresh_token) {
+          // Token is expired! Refresh immediately!
+          const refreshed = await restoreOrRefreshSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token
+          });
+          if (refreshed) return refreshed;
         }
-        persistTokens(currentSession);
-        return currentSession;
       }
     } catch (_) {}
 
@@ -587,7 +700,10 @@
     if (!session || typeof window === 'undefined' || window.electronAPI) return;
 
     const searchParams = new URLSearchParams(window.location.search);
-    const isDesktopAuth = searchParams.get('desktop_auth') === '1';
+    const hashText = window.location.hash ? window.location.hash.slice(1) : '';
+    const hashParams = new URLSearchParams(hashText.startsWith('?') ? hashText.slice(1) : hashText);
+    const isDesktopAuth = searchParams.get('desktop_auth') === '1' || hashParams.get('desktop_auth') === '1';
+    const isAndroid = /Android/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '');
     if (!isDesktopAuth) return;
 
     try { sessionStorage.removeItem('dverse_desktop_auth'); } catch (_) {}
@@ -602,19 +718,23 @@
     // 1. Notify desktop app via loopback server on port 49200
     notifyDesktopAppIfRunning(session);
 
-    // 2. Build deep link URL
+    // 2. Build deep link URLs
     const deepLinkUrl = `dtunes://auth?access_token=${encodeURIComponent(session.access_token)}&refresh_token=${encodeURIComponent(session.refresh_token)}`;
+    const intentUrl = `intent://auth?access_token=${encodeURIComponent(session.access_token)}&refresh_token=${encodeURIComponent(session.refresh_token)}#Intent;scheme=dtunes;package=com.dcode9.dtunes;action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end`;
+    const primaryUrl = isAndroid ? intentUrl : deepLinkUrl;
 
     // 3. Render desktop handoff UI in browser
-    renderDesktopHandoffUI(deepLinkUrl);
+    renderDesktopHandoffUI(primaryUrl);
 
     // 4. Trigger deep link navigation
     try {
-      window.location.href = deepLinkUrl;
-    } catch (_) {}
+      window.location.replace(primaryUrl);
+    } catch (_) {
+      try { window.location.href = deepLinkUrl; } catch (__) {}
+    }
   }
 
-  function renderDesktopHandoffUI(deepLinkUrl) {
+  function renderDesktopHandoffUI(primaryUrl) {
     if (typeof document === 'undefined') return;
     const existing = document.getElementById('dtunes-desktop-handoff-overlay');
     if (existing) {
@@ -627,17 +747,17 @@
 
     const overlay = document.createElement('div');
     overlay.id = 'dtunes-desktop-handoff-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999999;background:rgba(9,9,11,0.94);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);display:flex;align-items:center;justify-content:center;padding:1.5rem;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f4f4f5;';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999999;background:rgba(9,9,11,0.94);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);display:flex;align-items:center;justify-content:center;padding:1.5rem;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;color:#f4f4f5;cursor:pointer;';
 
     overlay.innerHTML = `
-      <div style="background:rgba(24,24,30,0.96);border:1px solid rgba(255,255,255,0.14);border-radius:1.5rem;padding:2.5rem 2.25rem;max-width:440px;width:100%;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.7);">
+      <div style="background:rgba(24,24,30,0.96);border:1px solid rgba(255,255,255,0.14);border-radius:1.5rem;padding:2.5rem 2.25rem;max-width:440px;width:100%;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.7);cursor:default;">
         <div style="width:60px;height:60px;border-radius:50%;background:rgba(34,211,238,0.15);color:#22d3ee;display:inline-flex;align-items:center;justify-content:center;font-size:30px;margin-bottom:1.25rem;border:1px solid rgba(34,211,238,0.3);">✓</div>
         <h2 style="font-size:1.4rem;font-weight:700;margin:0 0 0.5rem;color:#ffffff;">Signed In Successfully</h2>
         <p style="color:#a1a1aa;font-size:0.95rem;margin:0 0 1.75rem;line-height:1.5;">
-          Redirecting back to your <strong>D'Tunes Windows app</strong>. Your library, playlists, and history are now syncing...
+          Redirecting back to your <strong>D'Tunes app</strong>. Your library, playlists, and history are now syncing...
         </p>
         <div style="display:flex;flex-direction:column;gap:0.75rem;">
-          <a id="dtunes-open-app-btn" href="${deepLinkUrl}" style="display:block;background:#22d3ee;color:#09090b;font-weight:700;font-size:0.95rem;padding:0.8rem 1.5rem;border-radius:9999px;text-decoration:none;box-shadow:0 4px 20px rgba(34,211,238,0.35);">Open D'Tunes App</a>
+          <a id="dtunes-open-app-btn" href="${primaryUrl}" style="display:block;background:#22d3ee;color:#09090b;font-weight:700;font-size:0.95rem;padding:0.8rem 1.5rem;border-radius:9999px;text-decoration:none;box-shadow:0 4px 20px rgba(34,211,238,0.35);cursor:pointer;">Open D'Tunes App</a>
           <button id="dtunes-dismiss-handoff-btn" style="background:transparent;color:#71717a;border:none;font-size:0.85rem;cursor:pointer;padding:0.5rem;">Continue in Web Player</button>
         </div>
       </div>
@@ -645,9 +765,15 @@
 
     document.body.appendChild(overlay);
 
+    const openBtn = overlay.querySelector('#dtunes-open-app-btn');
+    if (openBtn) {
+      try { openBtn.click(); } catch (_) {}
+    }
+
     const dismissBtn = overlay.querySelector('#dtunes-dismiss-handoff-btn');
     if (dismissBtn) {
-      dismissBtn.addEventListener('click', () => {
+      dismissBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
         if (typeof overlay.remove === 'function') {
           overlay.remove();
         } else if (overlay.parentElement && typeof overlay.parentElement.removeChild === 'function') {
@@ -655,6 +781,21 @@
         }
       });
     }
+
+    function retriggerLaunch(e) {
+      if (dismissBtn && (e.target === dismissBtn || dismissBtn.contains(e.target))) return;
+      try { window.location.replace(primaryUrl); } catch (_) {
+        try { window.location.href = primaryUrl; } catch (__) {}
+      }
+    }
+    overlay.addEventListener('click', retriggerLaunch);
+    overlay.addEventListener('touchend', retriggerLaunch);
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target !== dismissBtn && !dismissBtn?.contains(e.target)) {
+        try { window.location.href = primaryUrl; } catch (_) {}
+      }
+    });
 
     setTimeout(() => {
       try { window.close(); } catch (_) {}
@@ -673,20 +814,40 @@
     }, 1500).catch((error) => console.warn('[DVerse] Portal session sync failed:', error));
   }
 
+  let activeGetSessionPromise = null;
+
   async function getSession() {
     if (!client) return null;
     if (currentSession) {
       const expiresAtMs = (currentSession.expires_at || 0) * 1000;
-      if (expiresAtMs === 0 || expiresAtMs > Date.now()) {
+      if (expiresAtMs === 0 || expiresAtMs > (Date.now() + 60000)) {
         return currentSession;
       }
     }
-    return bootstrapFromPortal();
+    if (activeGetSessionPromise) {
+      return activeGetSessionPromise;
+    }
+    activeGetSessionPromise = bootstrapFromPortal()
+      .then((session) => {
+        if (session) {
+          currentSession = session;
+          persistTokens(session);
+        }
+        return session;
+      })
+      .finally(() => {
+        activeGetSessionPromise = null;
+      });
+    return activeGetSessionPromise;
   }
 
   function onAuthStateChange(callback) {
     if (!client || typeof callback !== 'function') return { unsubscribe() {} };
     const { data } = client.auth.onAuthStateChange((event, session) => {
+      // Do not allow an unconfirmed INITIAL_SESSION null to blow away an in-flight bootstrap
+      if (event === 'INITIAL_SESSION' && !session && (activeGetSessionPromise || readPersistedTokens())) {
+        return;
+      }
       currentSession = session || null;
       if (session && client?.rest?.headers && session.access_token) {
         client.rest.headers['Authorization'] = `Bearer ${session.access_token}`;
@@ -696,8 +857,11 @@
         syncSessionToPortal(session);
         handleDesktopHandoffIfRequested(session);
       }
-      if (event === 'SIGNED_OUT' && isExplicitSignOut) {
-        clearPersistedTokens();
+      if (event === 'SIGNED_OUT') {
+        currentSession = null;
+        if (isExplicitSignOut) {
+          clearPersistedTokens();
+        }
       }
       callback(event, session);
     });
@@ -719,7 +883,8 @@
           provider: 'google',
           options: {
             redirectTo: loopbackRedirect,
-            skipBrowserRedirect: true
+            skipBrowserRedirect: true,
+            queryParams: { prompt: 'select_account' }
           }
         });
         if (error) throw error;
@@ -754,7 +919,8 @@
         const { data, error } = await client.auth.signInWithOAuth({
           provider: 'google',
           options: {
-            redirectTo: redirectUrl
+            redirectTo: redirectUrl,
+            queryParams: { prompt: 'select_account' }
           }
         });
         if (error) throw error;
@@ -778,14 +944,14 @@
       localStorage.setItem('dverse.auth.returnTo', returnUrl);
       sessionStorage.setItem('dverse.auth.returnTo', returnUrl);
     } catch (_) {}
-    window.location.href = `${PORTAL_ORIGIN}/?dverse_return_to=${encodeURIComponent(returnUrl)}`;
+    window.location.href = `${PORTAL_ORIGIN}/?dverse_return_to=${encodeURIComponent(returnUrl)}&prompt=select_account`;
   }
 
   async function signOut() {
     if (!client) return;
     isExplicitSignOut = true;
     clearPersistedTokens();
-    try { universalStorage.removeItem('dverse_supabase_auth_token'); } catch (_) {}
+    universalStorage.clear();
     currentSession = null;
     const { error } = await client.auth.signOut();
     if (error) console.warn('[DVerse] signOut warning:', error);
@@ -1199,6 +1365,7 @@
   window.dverse = {
     supabase: client,
     isConfigured: ready,
+    universalStorage,
     getSession,
     bootstrapFromPortal,
     onAuthStateChange,

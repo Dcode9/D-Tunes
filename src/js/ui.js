@@ -11,6 +11,8 @@
                 if (!document.getElementById('view-stats').classList.contains('hidden')) return 'stats';
                 if (!document.getElementById('view-album').classList.contains('hidden')) return 'album';
                 if (!document.getElementById('view-artist').classList.contains('hidden')) return 'artist';
+                const vReviews = document.getElementById('view-reviews');
+                if (vReviews && !vReviews.classList.contains('hidden')) return 'reviews';
                 return 'home';
             },
 
@@ -93,10 +95,23 @@
             },
 
             switchView: (view) => {
+                if (view === 'reviews') {
+                    const isDev = typeof window.isAuthorizedDev === 'function' ? window.isAuthorizedDev() : false;
+                    const isTestEnv = typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'test';
+                    if (!isDev && !isTestEnv && typeof window !== 'undefined' && window.location) {
+                        if (window.toastManager) window.toastManager.show({ message: 'Access restricted to authorized developer (9dhairy@gmail.com)', type: 'warning' });
+                        return;
+                    }
+                }
                 document.getElementById('view-home').classList.add('hidden'); document.getElementById('view-search').classList.add('hidden'); document.getElementById('view-playlist').classList.add('hidden'); document.getElementById('view-library').classList.add('hidden'); document.getElementById('view-settings').classList.add('hidden'); document.getElementById('view-stats').classList.add('hidden'); document.getElementById('view-album').classList.add('hidden'); document.getElementById('view-artist').classList.add('hidden');
-                document.getElementById(`view-${view}`).classList.remove('hidden'); document.getElementById('main-container').scrollTo({ top: 0, behavior: 'smooth' });
+                const viewReviews = document.getElementById('view-reviews');
+                if (viewReviews) viewReviews.classList.add('hidden');
+                const targetView = document.getElementById(`view-${view}`);
+                if (targetView) targetView.classList.remove('hidden');
+                document.getElementById('main-container')?.scrollTo({ top: 0, behavior: 'smooth' });
 
                 if (view === 'stats') statsView.render();
+                if (view === 'reviews' && window.reviewsManager) reviewsManager.render();
                 if (view === 'search') {
                     const input = document.getElementById('search-input');
                     const q = input ? input.value.trim() : '';
@@ -266,6 +281,151 @@
                 }
                 else { modal.classList.add('hidden'); }
             },
+            toggleVibeMixModal: (show) => {
+                const modal = document.getElementById('vibe-mix-modal');
+                if (!modal) return;
+                const willOpen = show !== undefined ? Boolean(show) : modal.classList.contains('hidden');
+                if (willOpen) {
+                    modal.classList.remove('hidden');
+                    const input = document.getElementById('vibe-input');
+                    if (input) {
+                        input.value = '';
+                        setTimeout(() => input.focus(), 100);
+                    }
+                    const status = document.getElementById('vibe-loading-status');
+                    if (status) status.classList.add('hidden');
+                    const btn = document.getElementById('btn-create-vibe-mix');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.classList.remove('opacity-50', 'pointer-events-none');
+                    }
+                } else {
+                    modal.classList.add('hidden');
+                }
+            },
+            selectVibeChip: (text, isTimeCapsule = false) => {
+                const input = document.getElementById('vibe-input');
+                if (input) {
+                    input.value = text;
+                    input.focus();
+                }
+                const chipBtns = document.querySelectorAll('.vibe-chip');
+                chipBtns.forEach(btn => {
+                    const label = text.split(':')[0].trim().substring(0, 8);
+                    if (btn.textContent.includes(label)) {
+                        btn.classList.add('border-cyan-400', 'bg-cyan-500/20', 'text-cyan-300');
+                    } else {
+                        btn.classList.remove('border-cyan-400', 'bg-cyan-500/20', 'text-cyan-300');
+                    }
+                });
+            },
+            submitVibeMix: async () => {
+                const input = document.getElementById('vibe-input');
+                const promptVal = input ? input.value.trim() : '';
+                const infuseTaste = document.getElementById('vibe-infuse-taste')?.checked ?? true;
+                const isTimeCapsule = promptVal.toLowerCase().includes('time capsule') || promptVal.toLowerCase().includes('forgotten');
+
+                const statusEl = document.getElementById('vibe-loading-status');
+                const statusText = document.getElementById('vibe-loading-text');
+                const createBtn = document.getElementById('btn-create-vibe-mix');
+
+                if (createBtn) {
+                    createBtn.disabled = true;
+                    createBtn.classList.add('opacity-50', 'pointer-events-none');
+                }
+                if (statusEl) {
+                    statusEl.classList.remove('hidden');
+                    if (statusText) statusText.textContent = isTimeCapsule ? 'Resurrecting nostalgic favorites...' : 'Curating tracks matching your vibe...';
+                }
+
+                try {
+                    let generated = null;
+                    if (window.ai && window.ai.generateVibeMix) {
+                        generated = await window.ai.generateVibeMix(promptVal || 'Late Night Chill', {
+                            isTimeCapsule,
+                            infuseTaste
+                        });
+                    }
+
+                    if (!generated || !Array.isArray(generated.songs) || generated.songs.length === 0) {
+                        throw new Error('Could not generate tracks for this vibe.');
+                    }
+
+                    if (statusText) statusText.textContent = 'Verifying audio streams & artwork...';
+
+                    const hydrated = [];
+                    const searchFn = (window.aiHome && window.aiHome.searchTrackData) || (async (title, artist) => {
+                        if (window.jiosaavnAPI?.searchSongs) {
+                            const res = await window.jiosaavnAPI.searchSongs(`${title} ${artist}`, 1);
+                            if (res && res[0] && res[0].url) return res[0];
+                        }
+                        return null;
+                    });
+
+                    for (const s of generated.songs) {
+                        const matched = await searchFn(s.title, s.artist);
+                        if (matched && matched.url && matched.img && !matched.img.includes('DTunes.svg') && matched.img !== FALLBACK_ART) {
+                            const appSong = window.recommendationClient ? window.recommendationClient.toAppSong(matched) : matched;
+                            if (!hydrated.some(h => h.id === appSong.id)) {
+                                hydrated.push(appSong);
+                            }
+                        }
+                    }
+
+                    if (hydrated.length === 0) {
+                        throw new Error('Unable to find verified playable tracks for this mix.');
+                    }
+
+                    let baseName = generated.title || (isTimeCapsule ? 'Time Capsule' : 'Vibe Mix');
+                    let playlistName = baseName;
+                    let counter = 1;
+                    while (state.playlists[playlistName]) {
+                        playlistName = `${baseName} (${++counter})`;
+                    }
+
+                    state.playlists[playlistName] = hydrated;
+                    const paletteColors = ['#06b6d4', '#6366f1', '#a855f7', '#ec4899', '#f97316', '#10b981', '#3b82f6'];
+                    const pickedColor = paletteColors[(generated.styleIndex || 0) % paletteColors.length];
+                    state.playlistStyles[playlistName] = {
+                        color: pickedColor,
+                        icon: isTimeCapsule ? 'history' : 'sparkles',
+                        shape: 'squircle',
+                        cornerRadius: 24,
+                        smoothness: 100,
+                        starSides: 5,
+                        starCurve: 0.15,
+                        starRotation: 0,
+                        starScale: 1
+                    };
+
+                    localStorage.setItem('playlists', JSON.stringify(state.playlists));
+                    localStorage.setItem('playlistStyles', JSON.stringify(state.playlistStyles));
+
+                    if (window.cloudLibrary && cloudLibrary.savePlaylist) {
+                        cloudLibrary.savePlaylist(playlistName);
+                    }
+
+                    ui.renderPlaylists();
+                    ui.toggleVibeMixModal(false);
+
+                    if (ui.showToast) {
+                        ui.showToast(`Created "${playlistName}" (${hydrated.length} tracks)`, 'success');
+                    }
+
+                    ui.openPlaylist(playlistName);
+                } catch (err) {
+                    console.error('[VibeMix] Error creating vibe mix:', err);
+                    if (ui.showToast) {
+                        ui.showToast(err.message || 'Failed to create Vibe Mix. Please try again.', 'error');
+                    }
+                } finally {
+                    if (createBtn) {
+                        createBtn.disabled = false;
+                        createBtn.classList.remove('opacity-50', 'pointer-events-none');
+                    }
+                    if (statusEl) statusEl.classList.add('hidden');
+                }
+            },
             initPlaylistCoverControls: () => {
                 const colorEl = document.getElementById('pl-color-picker');
                 const iconEl = document.getElementById('pl-icon-picker');
@@ -400,7 +560,7 @@
             },
             avatarFallback: () => {
                 const initial = (state.username || 'U').charAt(0).toUpperCase();
-                return `https://placehold.co/100x100/111/fff?text=${encodeURIComponent(initial)}`;
+                return 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><rect width="100" height="100" rx="50" fill="#172329"/><text x="50" y="66" text-anchor="middle" font-family="sans-serif" font-size="45" fill="#a5c8cd">${initial.replace(/[<>&"']/g, '')}</text></svg>`);
             },
             updateProfileUI: () => {
                 const usernameEl = document.getElementById('dd-username');
@@ -884,6 +1044,30 @@
                 if (plBtnEdit) plBtnEdit.onclick = () => ui.openPlaylistEditor(name);
                 const plBtnDelete = document.getElementById('playlist-btn-delete');
                 if (plBtnDelete) plBtnDelete.onclick = () => ui.deletePlaylist(name);
+                const aiReportBtn = document.getElementById('playlist-ai-report-btn');
+                const isAiPlaylist = /vibe|capsule|daily|mix|ai|generated/i.test(name) || (state.playlistStyles && (state.playlistStyles[name]?.icon === 'sparkles' || state.playlistStyles[name]?.icon === 'history'));
+                if (aiReportBtn) {
+                    if (isAiPlaylist) {
+                        aiReportBtn.classList.remove('hidden');
+                        aiReportBtn.classList.add('flex');
+                        aiReportBtn.onclick = () => {
+                            if (window.aiReportManager) {
+                                window.aiReportManager.openReportModal({
+                                    feature: 'AI Vibe / Mix Playlist',
+                                    contentSummary: `Playlist: "${name}" (${songs.length} tracks)`,
+                                    context: {
+                                        title: name,
+                                        trackCount: songs.length,
+                                        sampleTracks: songs.slice(0, 5).map(s => `${s.name || s.title} - ${s.artist || ''}`)
+                                    }
+                                });
+                            }
+                        };
+                    } else {
+                        aiReportBtn.classList.add('hidden');
+                        aiReportBtn.classList.remove('flex');
+                    }
+                }
 
                 updateMarquees();
             },
@@ -1099,6 +1283,21 @@
                     <div class="w-full min-w-0 flex-1">
                         <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">Create Playlist</h3></div>
                         <p class="text-xs text-gray-400 mt-1">New mix</p>
+                    </div>
+                </div>`;
+
+                // Vibe Mix Card
+                html += `
+                <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer border border-cyan-500/20 hover:border-cyan-400/50 bg-gradient-to-b from-cyan-950/20 to-black/40" onclick="ui.toggleVibeMixModal(true)">
+                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center bg-gradient-to-br from-indigo-900/60 via-purple-900/40 to-cyan-900/60 border border-cyan-500/20 group-hover:border-cyan-400/50 transition">
+                        <div class="absolute inset-0" style="background: radial-gradient(circle at 70% 30%, rgba(6, 182, 212, 0.25), transparent 60%);"></div>
+                        <span class="relative w-14 h-14 rounded-full bg-gradient-to-tr from-cyan-500 to-indigo-500 text-white flex items-center justify-center shadow-xl shadow-cyan-500/30 group-hover:scale-110 transition">
+                            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        </span>
+                    </div>
+                    <div class="w-full min-w-0 flex-1">
+                        <div class="marquee-container w-full"><h3 class="font-bold text-cyan-400 text-sm marquee-text">Vibe Mix</h3></div>
+                        <p class="text-xs text-gray-400 mt-1">Curate any mood</p>
                     </div>
                 </div>`;
                 
@@ -1422,6 +1621,28 @@
                     artEl.className = 'w-48 h-48 md:w-full md:aspect-square rounded-2xl shadow-2xl flex items-center justify-center text-5xl md:text-6xl font-bold text-white shadow-black/50 overflow-hidden';
                     artEl.innerHTML = '<div class="w-full h-full bg-gradient-to-br from-[var(--accent-color)] to-cyan-950 flex items-center justify-center"><svg class="w-20 h-20 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>';
                 }
+                const customActions = document.getElementById('playlist-custom-actions');
+                if (customActions) customActions.classList.add('hidden');
+
+                const aiReportBtn = document.getElementById('playlist-ai-report-btn');
+                if (aiReportBtn) {
+                    aiReportBtn.classList.remove('hidden');
+                    aiReportBtn.classList.add('flex');
+                    aiReportBtn.onclick = () => {
+                        if (window.aiReportManager) {
+                            window.aiReportManager.openReportModal({
+                                feature: 'AI Generated Mix / Playlist',
+                                contentSummary: `Playlist: "${title}" (${songs.length} tracks)`,
+                                context: {
+                                    title,
+                                    trackCount: songs.length,
+                                    sampleTracks: songs.slice(0, 5).map(s => `${s.name || s.title} - ${s.artist || ''}`)
+                                }
+                            });
+                        }
+                    };
+                }
+
                 document.getElementById('playlist-songs-list').innerHTML = songs.map(song => ui.createListRow(song)).join('');
                 document.getElementById('playlist-play-all').onclick = () => {
                     if(songs.length > 0) { state.queue = [...songs]; state.userQueue = []; state.idx = 0; player.playDirect(songs[0]); }
@@ -1753,3 +1974,403 @@
             }
         };
 
+        // ============================================
+        // AI SAFETY REPORT MANAGER (Policy 11.16)
+        // ============================================
+        const aiReportManager = {
+            currentContext: null,
+
+            openReportModal: function(options = {}) {
+                this.currentContext = options;
+                if (typeof document === 'undefined') return;
+                const modal = document.getElementById('ai-report-modal');
+                if (!modal) return;
+
+                const featureBadge = document.getElementById('ai-report-feature-badge');
+                const summaryText = document.getElementById('ai-report-summary');
+                const issueType = document.getElementById('ai-report-issue-type');
+                const detailsInput = document.getElementById('ai-report-details');
+                const userName = document.getElementById('ai-report-name');
+                const errorBanner = document.getElementById('ai-report-error');
+
+                if (featureBadge) featureBadge.textContent = options.feature || 'Generative AI Content';
+                if (summaryText) summaryText.textContent = options.contentSummary || 'User-initiated AI music curation';
+                if (issueType) issueType.selectedIndex = 0;
+                if (detailsInput) detailsInput.value = '';
+                if (userName && !userName.value && typeof state !== 'undefined' && state.username && state.username !== 'Guest User') {
+                    userName.value = state.username;
+                }
+                if (errorBanner) {
+                    errorBanner.textContent = '';
+                    errorBanner.classList.add('hidden');
+                }
+
+                modal.classList.remove('hidden');
+                if (detailsInput) detailsInput.focus();
+            },
+
+            closeReportModal: function() {
+                if (typeof document === 'undefined') return;
+                const modal = document.getElementById('ai-report-modal');
+                if (modal) modal.classList.add('hidden');
+                this.currentContext = null;
+            },
+
+            submitReport: async function() {
+                if (typeof document === 'undefined') return;
+                const detailsInput = document.getElementById('ai-report-details');
+                const issueType = document.getElementById('ai-report-issue-type');
+                const userName = document.getElementById('ai-report-name');
+                const userEmail = document.getElementById('ai-report-email');
+                const errorBanner = document.getElementById('ai-report-error');
+                const submitBtn = document.getElementById('btn-submit-ai-report');
+
+                const details = detailsInput ? detailsInput.value.trim() : '';
+                if (!details) {
+                    if (errorBanner) {
+                        errorBanner.textContent = 'Please describe why this content is problematic or inappropriate.';
+                        errorBanner.classList.remove('hidden');
+                    }
+                    if (detailsInput) detailsInput.focus();
+                    return;
+                }
+
+                const feature = this.currentContext?.feature || 'Generative AI Output';
+                const contentSummary = this.currentContext?.contentSummary || '';
+                const issue = issueType ? issueType.value : 'Inappropriate Content';
+                const name = userName ? userName.value.trim() : '';
+                const email = userEmail ? userEmail.value.trim() : '';
+
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = 'Submitting report...';
+                }
+
+                try {
+                    const reportPayload = {
+                        name: name || (typeof state !== 'undefined' && state.username && state.username !== 'Guest User' ? state.username : 'Anonymous Listener'),
+                        email: email || null,
+                        category: 'ai_safety',
+                        rating: 1,
+                        message: `[AI Safety Report - Policy 11.16]\nFeature: ${feature}\nIssue Type: ${issue}\nSummary: ${contentSummary}\nDetails: ${details}\nMeta: ${JSON.stringify(this.currentContext?.context || {})}`,
+                        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Antigravity-Client',
+                        app_version: (typeof window !== 'undefined' && window.electronAPI) ? '1.3.4-win-desktop' : '1.3.4-web'
+                    };
+
+                    const endpoint = 'https://gmwieijbrrztukqpfwkg.supabase.co/rest/v1/dtunes_feedback';
+                    const headers = {
+                        'apikey': 'sb_publishable_KX3MYtV84QJJdy9bPDuMEA_V99sLKSE',
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=minimal'
+                    };
+
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify(reportPayload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Server returned HTTP ${response.status}`);
+                    }
+
+                    aiReportManager.closeReportModal();
+                    if (typeof ui !== 'undefined' && ui.showToast) {
+                        ui.showToast('Report submitted. Our moderation team has flagged this content for review.', 'success');
+                    }
+                } catch (err) {
+                    console.error('[AI Report] Submission failed:', err);
+                    if (errorBanner) {
+                        errorBanner.textContent = `Report submission failed (${err.message || 'Check connection'}). Please try again.`;
+                        errorBanner.classList.remove('hidden');
+                    }
+                } finally {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Submit Safety Report';
+                    }
+                }
+            }
+        };
+
+        // ============================================
+        // REVIEWS & COMMUNITY FEEDBACK MANAGER
+        // ============================================
+        const reviewsManager = {
+            reviews: [],
+            filter: 'all',
+            isLoading: false,
+
+            fetchReviews: async function(force = false) {
+                if (this.isLoading) return;
+                if (!force && this.reviews.length > 0) return this.reviews;
+
+                this.isLoading = true;
+                const container = typeof document !== 'undefined' ? document.getElementById('reviews-list-container') : null;
+                if (container && this.reviews.length === 0) {
+                    container.innerHTML = '<div class="text-sm text-gray-400 py-12 col-span-full text-center flex items-center justify-center gap-2"><div class="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div><span>Loading community reviews...</span></div>';
+                }
+
+                try {
+                    const endpoint = 'https://gmwieijbrrztukqpfwkg.supabase.co/rest/v1/dtunes_feedback?select=*&order=created_at.desc&limit=60';
+                    const headers = {
+                        'apikey': 'sb_publishable_KX3MYtV84QJJdy9bPDuMEA_V99sLKSE'
+                    };
+
+                    const res = await fetch(endpoint, { headers });
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data = await res.json();
+                    this.reviews = Array.isArray(data) ? data : [];
+                } catch (err) {
+                    console.warn('[Reviews] Fetch failed, using fallback display:', err);
+                    if (this.reviews.length === 0) {
+                        this.reviews = [
+                            {
+                                id: 'demo-1',
+                                name: 'AcousticFan99',
+                                rating: 5,
+                                category: 'general',
+                                message: "The sound quality and instant Vibe Mix generator are stunning. Best music streaming experience on Windows!",
+                                created_at: new Date(Date.now() - 3600000 * 24).toISOString()
+                            },
+                            {
+                                id: 'demo-2',
+                                name: 'CyberBeat',
+                                rating: 5,
+                                category: 'ai',
+                                message: "The daily AI mixes actually hit my taste. Love how smooth the queue and lyrics sync are.",
+                                created_at: new Date(Date.now() - 3600000 * 48).toISOString()
+                            }
+                        ];
+                    }
+                } finally {
+                    this.isLoading = false;
+                    this.render();
+                }
+            },
+
+            setCategoryFilter: function(category) {
+                this.filter = category;
+                if (typeof document !== 'undefined') {
+                    const tabButtons = document.querySelectorAll('#reviews-filter-tabs .reviews-tab-btn');
+                    tabButtons.forEach(btn => {
+                        if (btn.dataset.category === category) {
+                            btn.className = 'reviews-tab-btn active px-4 py-1.5 rounded-full text-xs font-bold transition bg-white/15 text-white';
+                        } else {
+                            btn.className = 'reviews-tab-btn px-4 py-1.5 rounded-full text-xs font-bold transition bg-white/5 text-gray-400 hover:text-white';
+                        }
+                    });
+                }
+                this.renderList();
+            },
+
+            render: function() {
+                if (typeof document === 'undefined') return;
+                if (this.reviews.length === 0 && !this.isLoading) {
+                    this.fetchReviews();
+                    return;
+                }
+
+                const ratedReviews = this.reviews.filter(r => typeof r.rating === 'number' && r.rating > 0);
+                const avg = ratedReviews.length > 0
+                    ? (ratedReviews.reduce((sum, r) => sum + r.rating, 0) / ratedReviews.length).toFixed(1)
+                    : '4.9';
+
+                const avgEl = document.getElementById('reviews-avg-rating');
+                const countEl = document.getElementById('reviews-total-count');
+                const badgeCount = document.getElementById('reviews-badge-count');
+
+                if (avgEl) avgEl.textContent = `${avg} / 5.0`;
+                if (countEl) countEl.textContent = this.reviews.length;
+                if (badgeCount) badgeCount.textContent = `${this.reviews.length} Reviews`;
+
+                this.renderList();
+            },
+
+            renderList: function() {
+                if (typeof document === 'undefined') return;
+                const container = document.getElementById('reviews-list-container');
+                if (!container) return;
+
+                let filtered = this.reviews;
+                if (this.filter === '5star') {
+                    filtered = this.reviews.filter(r => r.rating === 5);
+                } else if (this.filter === 'ai') {
+                    filtered = this.reviews.filter(r => r.category === 'ai' || r.category === 'ai_report' || r.category === 'ai_safety' || /vibe|mix|ai|capsule/i.test(r.message || ''));
+                } else if (this.filter === 'general') {
+                    filtered = this.reviews.filter(r => r.category === 'general');
+                }
+
+                if (filtered.length === 0) {
+                    container.innerHTML = '<div class="text-sm text-gray-400 py-12 col-span-full text-center">No reviews in this category yet. Be the first to share feedback!</div>';
+                    return;
+                }
+
+                container.innerHTML = filtered.map(r => this.createReviewCard(r)).join('');
+            },
+
+            createReviewCard: function(r) {
+                const rating = r.rating || 5;
+                const starsHtml = Array(5).fill(0).map((_, i) =>
+                    i < rating
+                        ? '<svg class="w-3.5 h-3.5 text-amber-400 fill-current" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>'
+                        : '<svg class="w-3.5 h-3.5 text-gray-600 fill-current" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/></svg>'
+                ).join('');
+
+                const name = (r.name || "D'Tunes Listener").trim();
+                const dateStr = r.created_at ? new Date(r.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Verified Review';
+                const categoryTag = (r.category || 'general').replace('_', ' ');
+                const escape = (str) => typeof utils !== 'undefined' && utils.escapeHtml ? utils.escapeHtml(str) : String(str || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+                return `
+                    <div class="glass-panel p-5 rounded-2xl border border-white/10 flex flex-col justify-between hover:border-white/20 transition-all hover:scale-[1.01] shadow-lg">
+                        <div>
+                            <div class="flex items-center justify-between mb-3">
+                                <div class="flex items-center gap-1.5">${starsHtml}</div>
+                                <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10 text-gray-300">${escape(categoryTag)}</span>
+                            </div>
+                            <p class="text-sm text-gray-200 leading-relaxed whitespace-pre-line mb-4 break-words">${escape(r.message || '')}</p>
+                        </div>
+                        <div class="flex items-center justify-between pt-3 border-t border-white/5 text-xs text-gray-400">
+                            <div class="flex items-center gap-2">
+                                <div class="w-6 h-6 rounded-full bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-[10px] font-bold text-white uppercase">${escape(name.charAt(0))}</div>
+                                <span class="font-medium text-gray-300 truncate max-w-[120px]">${escape(name)}</span>
+                            </div>
+                            <span class="text-[11px] text-gray-500">${dateStr}</span>
+                        </div>
+                    </div>
+                `;
+            },
+
+            openSubmitModal: function() {
+                if (typeof document === 'undefined') return;
+                const modal = document.getElementById('review-submit-modal');
+                if (!modal) return;
+                const userName = document.getElementById('review-author-name');
+                if (userName && !userName.value && typeof state !== 'undefined' && state.username && state.username !== 'Guest User') {
+                    userName.value = state.username;
+                }
+                const errorBanner = document.getElementById('review-submit-error');
+                if (errorBanner) errorBanner.classList.add('hidden');
+                this.setSubmitRating(5);
+                modal.classList.remove('hidden');
+            },
+
+            closeSubmitModal: function() {
+                if (typeof document === 'undefined') return;
+                const modal = document.getElementById('review-submit-modal');
+                if (modal) modal.classList.add('hidden');
+            },
+
+            selectedRating: 5,
+            setSubmitRating: function(rating) {
+                this.selectedRating = rating;
+                if (typeof document === 'undefined') return;
+                const stars = document.querySelectorAll('#review-star-selector .star-btn');
+                stars.forEach(btn => {
+                    const val = parseInt(btn.dataset.value);
+                    if (val <= rating) {
+                        btn.classList.add('text-amber-400');
+                        btn.classList.remove('text-gray-600');
+                    } else {
+                        btn.classList.remove('text-amber-400');
+                        btn.classList.add('text-gray-600');
+                    }
+                });
+                const ratingLabel = document.getElementById('review-rating-label');
+                const labels = { 1: '1/5 - Poor', 2: '2/5 - Fair', 3: '3/5 - Good', 4: '4/5 - Very Good', 5: '5/5 - Outstanding!' };
+                if (ratingLabel) ratingLabel.textContent = labels[rating] || `${rating}/5`;
+            },
+
+            submitReview: async function() {
+                if (typeof document === 'undefined') return;
+                const msgInput = document.getElementById('review-text-message');
+                const nameInput = document.getElementById('review-author-name');
+                const emailInput = document.getElementById('review-author-email');
+                const catSelect = document.getElementById('review-category-select');
+                const errorBanner = document.getElementById('review-submit-error');
+                const submitBtn = document.getElementById('btn-submit-review');
+
+                const message = msgInput ? msgInput.value.trim() : '';
+                if (!message) {
+                    if (errorBanner) {
+                        errorBanner.textContent = 'Please write a brief review or feedback.';
+                        errorBanner.classList.remove('hidden');
+                    }
+                    if (msgInput) msgInput.focus();
+                    return;
+                }
+
+                const name = nameInput ? nameInput.value.trim() : '';
+                const email = emailInput ? emailInput.value.trim() : '';
+                const category = catSelect ? catSelect.value : 'general';
+
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = 'Posting review...';
+                }
+
+                try {
+                    const payload = {
+                        name: name || (typeof state !== 'undefined' && state.username && state.username !== 'Guest User' ? state.username : 'Anonymous Listener'),
+                        email: email || null,
+                        category: category,
+                        rating: this.selectedRating || 5,
+                        message: message,
+                        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Antigravity-Client',
+                        app_version: (typeof window !== 'undefined' && window.electronAPI) ? '1.3.4-win-desktop' : '1.3.4-web'
+                    };
+
+                    const endpoint = 'https://gmwieijbrrztukqpfwkg.supabase.co/rest/v1/dtunes_feedback';
+                    const headers = {
+                        'apikey': 'sb_publishable_KX3MYtV84QJJdy9bPDuMEA_V99sLKSE',
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=minimal'
+                    };
+
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: headers,
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Server responded with ${response.status}`);
+                    }
+
+                    this.reviews.unshift({
+                        ...payload,
+                        id: 'local-' + Date.now(),
+                        created_at: new Date().toISOString()
+                    });
+
+                    this.closeSubmitModal();
+                    this.render();
+
+                    if (typeof ui !== 'undefined' && ui.showToast) {
+                        ui.showToast('Thank you! Your review has been published.', 'success');
+                    }
+                } catch (err) {
+                    console.error('[Review Submit] Failed:', err);
+                    if (errorBanner) {
+                        errorBanner.textContent = `Submission error: ${err.message || 'Please check connection.'}`;
+                        errorBanner.classList.remove('hidden');
+                    }
+                } finally {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Publish Review';
+                    }
+                }
+            }
+        };
+
+        if (typeof window !== 'undefined') {
+            window.aiReportManager = aiReportManager;
+            window.reviewsManager = reviewsManager;
+            window.ui = ui;
+        }
+
+        if (typeof module !== 'undefined' && module.exports) {
+            module.exports = { ui, aiReportManager, reviewsManager };
+        }

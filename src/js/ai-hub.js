@@ -11,6 +11,11 @@
 
     const searchCache = new Map();
 
+    let _lastRenderedUserId = null;
+    let _lastRenderedDateKey = null;
+    let _isRenderingAIHome = false;
+    let _cachedDailyPlaylists = null;
+
     /**
      * Searches for a track and strictly validates both the playable audio track
      * and album artwork. If either is missing, invalid, or fallback art, returns null
@@ -140,6 +145,8 @@
                         (window.dverse && window.dverse.getSession ? await window.dverse.getSession() : null);
 
         if (!session || !session.user || !session.user.id) {
+            _lastRenderedUserId = null;
+            _cachedDailyPlaylists = null;
             renderSignedOutState(container);
             return;
         }
@@ -147,6 +154,15 @@
         const userId = session.user.id;
         const now = new Date();
         const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+        // If recommendations are already rendered for today and same user, and forceRefresh is false, do NOT reload!
+        const hasExistingCards = Boolean(container.querySelector('.scroll-card, .daily-mix-shelf, h2'));
+        if (!forceRefresh && _lastRenderedUserId === userId && _lastRenderedDateKey === todayKey && _cachedDailyPlaylists && _cachedDailyPlaylists.length > 0 && hasExistingCards) {
+            return;
+        }
+
+        if (_isRenderingAIHome) return;
+        _isRenderingAIHome = true;
 
         // 2. Render skeletons while loading
         renderSkeletons(container);
@@ -304,6 +320,9 @@
                                 <button onclick="window.aiHome.savePlaylistToLibrary('${playlistId}')" class="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white active:scale-95 transition shadow-sm" title="Save to Your Library">
                                     <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>
                                 </button>
+                                <button onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Daily AI Mix', contentSummary: 'Playlist: ${utils.escapeHtml(playlist.categoryTitle || playlist.title)}' })" class="p-1.5 rounded-full bg-white/10 hover:bg-amber-500/20 text-gray-400 hover:text-amber-300 active:scale-95 transition shadow-sm cursor-pointer" title="Report inappropriate AI output (Policy 11.16)">
+                                    <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                                </button>
                             </div>
                         </div>
 
@@ -353,9 +372,15 @@
                             <h2 class="text-2xl md:text-3xl font-black text-white tracking-tight">Made For You</h2>
                             <p class="text-xs md:text-sm text-neutral-400 mt-1">Playlists tailored to your taste and favorites, updated daily.</p>
                         </div>
-                        <button onclick="window.aiHome.renderAIHome(true)" title="Refresh Daily Mixes" class="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition hover:rotate-180 duration-500 shadow-md">
-                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <button onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Made For You (Daily Recommendations)' })" class="text-xs text-amber-400/90 hover:text-amber-300 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 transition hover:bg-amber-500/20 cursor-pointer" title="Report issue with AI-generated recommendations (Policy 11.16)">
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+                                <span>Report AI Content</span>
+                            </button>
+                            <button onclick="window.aiHome.renderAIHome(true)" title="Refresh Daily Mixes" class="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition hover:rotate-180 duration-500 shadow-md">
+                                <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                            </button>
+                        </div>
                     </div>
 
                     ${sectionsHtml}
@@ -373,11 +398,17 @@
                 });
             }, 60);
 
+            _cachedDailyPlaylists = playlists;
+            _lastRenderedUserId = userId;
+            _lastRenderedDateKey = todayKey;
+
             if (window.updateMarquees) updateMarquees();
             if (window.setupShelfNavButtons) setupShelfNavButtons();
         } catch (err) {
             console.warn("[Daily Mixes] Render error:", err);
             container.innerHTML = '';
+        } finally {
+            _isRenderingAIHome = false;
         }
     }
 
@@ -565,10 +596,23 @@
         };
     }
 
-    // Re-render when auth changes
+    // Re-render only when auth identity actually changes (ignore tab focus/token refresh)
     if (window.dverse && window.dverse.onAuthStateChange) {
-        window.dverse.onAuthStateChange(() => {
-            renderAIHome();
+        window.dverse.onAuthStateChange((event, session) => {
+            const currentUid = session?.user?.id || null;
+            if (event === 'SIGNED_OUT' || !currentUid) {
+                _lastRenderedUserId = null;
+                _cachedDailyPlaylists = null;
+                const container = document.getElementById('ai-hub-container');
+                if (container) renderSignedOutState(container);
+                return;
+            }
+            // Ignore focus-triggered token refresh or identical user events!
+            if (event === 'TOKEN_REFRESHED' || currentUid === _lastRenderedUserId) {
+                return;
+            }
+            // User identity actually changed
+            renderAIHome(false);
         });
     }
 })();

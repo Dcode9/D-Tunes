@@ -2,6 +2,10 @@
   "version": 2,
   "rewrites": [
     {
+      "source": "/auth",
+      "destination": "/auth.html"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index.js"
     }
