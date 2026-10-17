@@ -364,6 +364,8 @@
                     persist.apply(data);
                 } catch(e) {}
             }
+        };
+
         const AUTHORIZED_DEV_EMAIL = '9dhairy@gmail.com';
 
         function isAuthorizedDev() {
