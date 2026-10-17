@@ -126,14 +126,28 @@
                 }
             });
 
-            container.addEventListener('mousemove', (e) => {
-                if(!state.loaded || !audio.duration) return; const rect = container.getBoundingClientRect();
-                if (e.clientY - rect.top < rect.height / 2) { state.hoverProgress = -1; tooltip.classList.remove('visible'); return; }
-                const progress = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)); state.hoverProgress = progress; state.lastHoverProgress = progress;
+            let hoverFrame = 0;
+            let hoverPoint = null;
+            const applyHover = () => {
+                hoverFrame = 0;
+                const point = hoverPoint;
+                if (!point || !state.loaded || !audio.duration) return;
+                const rect = container.getBoundingClientRect();
+                if (point.y - rect.top < rect.height / 2) { state.hoverProgress = -1; tooltip.classList.remove('visible'); return; }
+                const progress = Math.max(0, Math.min(1, (point.x - rect.left) / rect.width)); state.hoverProgress = progress; state.lastHoverProgress = progress;
                 const hoverTime = progress * audio.duration; tooltip.textContent = `${Math.floor(hoverTime / 60)}:${Math.floor(hoverTime % 60).toString().padStart(2, '0')}`;
-                tooltip.style.left = `${(e.clientX - rect.left)}px`; tooltip.classList.add('visible');
+                tooltip.style.left = `${(point.x - rect.left)}px`; tooltip.classList.add('visible');
+            };
+            container.addEventListener('mousemove', (e) => {
+                if (!state.loaded || !audio.duration) return;
+                hoverPoint = { x: e.clientX, y: e.clientY };
+                if (!hoverFrame) hoverFrame = requestAnimationFrame(applyHover);
             });
-            container.addEventListener('mouseleave', () => { state.hoverProgress = -1; tooltip.classList.remove('visible'); });
+            container.addEventListener('mouseleave', () => {
+                if (hoverFrame) cancelAnimationFrame(hoverFrame);
+                hoverFrame = 0; hoverPoint = null;
+                state.hoverProgress = -1; tooltip.classList.remove('visible');
+            });
 
             // Mobile compact player: drag horizontally to preview and slide into previous/next track.
             let touchStartX = 0; let touchStartY = 0; let touchDeltaX = 0; let touchDeltaY = 0; let compactSwipeActive = false;

@@ -300,10 +300,29 @@
         };
 
         const songStore = {
-            songs: new Map(), counter: 0,
-            add: (song) => { const id = `song_${songStore.counter++}`; songStore.songs.set(id, song); return id; },
-            get: (id) => songStore.songs.get(id)
+            songs: new Map(),
+            counter: 0,
+            order: [],
+            maxEntries: 5000,
+            add: (song) => {
+                if (!song) return null;
+                const raw = song.saavn_id || song.id || song.songid || song.perma_url || song.url || null;
+                const kind = (song.type === 'album' || song.type === 'artist' || song.type === 'playlist' || song.type === 'show' || song.type === 'episode') ? song.type : 'song';
+                const id = raw ? `${kind}:${raw}` : `song_${songStore.counter++}`;
+                if (!songStore.songs.has(id)) {
+                    songStore.order.push(id);
+                    if (songStore.order.length > songStore.maxEntries) {
+                        const oldest = songStore.order.shift();
+                        if (oldest !== id) songStore.songs.delete(oldest);
+                    }
+                }
+                songStore.songs.set(id, song);
+                return id;
+            },
+            get: (id) => songStore.songs.get(id),
+            clear: () => { songStore.songs.clear(); songStore.order.length = 0; songStore.counter = 0; }
         };
+        window.songStore = songStore;
 
         const persist = {
             snapshot: () => {
