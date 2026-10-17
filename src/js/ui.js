@@ -1336,25 +1336,84 @@
                 ui.renderLibraryLists();
                 updateMarquees();
             },
+            libraryEmptyState: ({ icon, title, message, actionLabel = '', action = '', wrapClass = '' }) => {
+                const actionHtml = action ? `
+                    <button onclick="${action}" class="mt-1 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-gray-200 hover:text-white transition cursor-pointer">
+                        ${actionLabel}
+                    </button>` : '';
+                return `
+                <div class="flex flex-col items-center text-center gap-2 px-5 py-8 rounded-2xl border border-dashed border-white/10 bg-white/[0.02] ${wrapClass}">
+                    <div class="w-11 h-11 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-400">
+                        ${icon}
+                    </div>
+                    <p class="text-sm font-bold text-gray-200 mt-1">${title}</p>
+                    <p class="text-xs text-gray-500 max-w-[240px] leading-relaxed">${message}</p>
+                    ${actionHtml}
+                </div>`;
+            },
             renderLibraryLists: () => {
                 const librarySongs = document.getElementById('library-songs');
                 const likedArtists = document.getElementById('library-liked-artists');
                 const history = document.getElementById('library-history');
+                const goSearch = "ui.switchView('search'); setTimeout(() => document.getElementById('search-input')?.focus(), 60)";
                 if (librarySongs) {
                     const songs = state.libraryIds.map(item => typeof item === 'object' ? item : state.playHistory.find(song => song.id === item) || state.likedIds.find(item2 => (typeof item2 === 'object' ? item2.id : item2) === item)).filter(Boolean);
-                    librarySongs.innerHTML = songs.length ? songs.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`, 'library')).join('') : '<p class="text-sm text-gray-500">Add songs to your library from search or the song menu.</p>';
+                    librarySongs.innerHTML = songs.length
+                        ? songs.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`, 'library')).join('')
+                        : ui.libraryEmptyState({
+                            icon: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 19V6l12-2v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"/></svg>',
+                            title: 'Your library is empty',
+                            message: 'Use “Add to Library” on any song to keep it handy here.',
+                            actionLabel: 'Find songs',
+                            action: goSearch
+                        });
                 }
                 if (likedArtists) {
-                    likedArtists.innerHTML = state.likedArtists.length ? state.likedArtists.map(artist => ui.createArtistCard(artist)).join('') : '<p class="text-sm text-gray-500 col-span-full">Like artists from search results to collect them here.</p>';
+                    likedArtists.innerHTML = state.likedArtists.length
+                        ? state.likedArtists.map(artist => ui.createArtistCard(artist)).join('')
+                        : ui.libraryEmptyState({
+                            icon: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>',
+                            title: 'No liked artists yet',
+                            message: 'Like artists from search and they’ll gather here.',
+                            actionLabel: 'Search artists',
+                            action: goSearch,
+                            wrapClass: 'col-span-full'
+                        });
                 }
                 if (history) {
-                    history.innerHTML = state.playHistory.length ? state.playHistory.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`, 'history')).join('') : '<p class="text-sm text-gray-500">Played songs will appear here.</p>';
+                    history.innerHTML = state.playHistory.length
+                        ? state.playHistory.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`, 'history')).join('')
+                        : ui.libraryEmptyState({
+                            icon: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>',
+                            title: 'Nothing played yet',
+                            message: 'Songs you play will show up here so you can replay them.',
+                            actionLabel: 'Start listening',
+                            action: "ui.switchView('home')"
+                        });
                 }
                 updateMarquees();
+                ui.updateLibraryStats();
             },
             renderLibrary: () => {
                 ui.renderPlaylists();
                 ui.renderLibraryLists();
+            },
+            updateLibraryStats: () => {
+                const statEl = document.getElementById('library-stats-text');
+                if (!statEl) return;
+                const playlistCount = Object.keys(state.playlists).length;
+                const likedCount = state.likedIds.length;
+                const artistCount = state.likedArtists.length;
+                if (playlistCount + likedCount + artistCount === 0) {
+                    statEl.textContent = 'Playlists, liked songs and artists all live here once you start collecting.';
+                    return;
+                }
+                const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+                statEl.textContent = [
+                    plural(playlistCount, 'playlist'),
+                    plural(likedCount, 'liked song'),
+                    plural(artistCount, 'artist')
+                ].join('  •  ');
             },
             createArtistCard: (artist) => {
                 const id = utils.escapeJs(artist.id || artist.name);
