@@ -252,7 +252,10 @@ async function handleApi(req, res, url) {
 }
 
 function serveStatic(req, res, url) {
-  const requested = url.pathname === '/' ? '/index.html' : decodeURIComponent(url.pathname);
+  const ALIASES = { '/download': '/downloads/index.html', '/downloads': '/downloads/index.html' };
+  const requested = url.pathname === '/'
+    ? '/index.html'
+    : (ALIASES[url.pathname] || decodeURIComponent(url.pathname));
   let filePath = path.normalize(path.join(PUBLIC_ROOT, requested));
   if (!filePath.startsWith(PUBLIC_ROOT)) {
     res.writeHead(403); return res.end('Forbidden');

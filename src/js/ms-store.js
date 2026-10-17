@@ -3,6 +3,7 @@
 
     const MS_STORE_URL = 'https://apps.microsoft.com/store/detail/9P4W2JHQ03N1?cid=DevShareMCLPCS';
     const MS_STORE_PROTOCOL = 'ms-windows-store://pdp/?productid=9P4W2JHQ03N1';
+    const DOWNLOAD_PATH = '/download';
     const STORAGE_KEY = 'dtunes_ms_store_pref';
     const SNOOZE_DAYS = 7;
     const SNOOZE_MS = SNOOZE_DAYS * 24 * 60 * 60 * 1000;
@@ -12,6 +13,7 @@
     const msStoreManager = {
         URL: MS_STORE_URL,
         PROTOCOL: MS_STORE_PROTOCOL,
+        DOWNLOAD_PATH: DOWNLOAD_PATH,
         STORAGE_KEY: STORAGE_KEY,
         SNOOZE_MS: SNOOZE_MS,
 
@@ -61,6 +63,19 @@
             const ua = ((nav.userAgent || '') + ' ' + (nav.platform || '')).toLowerCase();
             const isWin = (ua.includes('windows') || /\b(win32|win64|wow64)\b/.test(ua)) && !ua.includes('windows phone') && !ua.includes('android');
             return isWin;
+        },
+
+        isWindowsPlatform: () => {
+            const win = getWin();
+            const nav = win.navigator || (typeof navigator !== 'undefined' ? navigator : null);
+            if (!nav) return false;
+
+            if (nav.userAgentData?.platform) {
+                return /windows/i.test(nav.userAgentData.platform);
+            }
+
+            const ua = ((nav.userAgent || '') + ' ' + (nav.platform || '')).toLowerCase();
+            return (ua.includes('windows') || /\b(win32|win64|wow64)\b/.test(ua)) && !ua.includes('windows phone') && !ua.includes('android');
         },
 
         getUserId: () => {
@@ -207,6 +222,15 @@
             }
         },
 
+        openWebListing: () => {
+            const win = getWin();
+            try {
+                if (typeof win.open === 'function') {
+                    win.open(MS_STORE_URL, '_blank', 'noopener,noreferrer');
+                }
+            } catch (_) {}
+        },
+
         openStore: (source = 'banner') => {
             const win = getWin();
             msStoreManager.setPreference('checked_out', { source: source });
@@ -216,20 +240,39 @@
                 win.ui.showToast('Opening Microsoft Store...', 'success');
             }
 
-            // Attempt to trigger native store protocol, with web fallback
-            try {
-                if (win.location) {
-                    win.location.href = MS_STORE_PROTOCOL;
+            // Only Windows handles the native ms-windows-store:// protocol.
+            if (!msStoreManager.isWindowsPlatform()) {
+                msStoreManager.openWebListing();
+                return;
+            }
+
+            // Trigger the protocol without navigating the current page away, by using
+            // a hidden iframe instead of assigning window.location.href.
+            let launched = false;
+            if (typeof document !== 'undefined' && document.body) {
+                try {
+                    const iframe = document.createElement('iframe');
+                    iframe.style.display = 'none';
+                    iframe.setAttribute('aria-hidden', 'true');
+                    iframe.src = MS_STORE_PROTOCOL;
+                    document.body.appendChild(iframe);
+                    setTimeout(() => {
+                        try { iframe.remove(); } catch (_) {}
+                    }, 2000);
+                    launched = true;
+                } catch (_) {
+                    launched = false;
                 }
-                setTimeout(() => {
-                    if (typeof win.open === 'function') {
-                        win.open(MS_STORE_URL, '_blank', 'noopener,noreferrer');
-                    }
-                }, 800);
-            } catch (_) {
-                if (typeof win.open === 'function') {
-                    win.open(MS_STORE_URL, '_blank', 'noopener,noreferrer');
-                }
+            }
+
+            // If the protocol did not take over the page, fall back to the web listing.
+            setTimeout(() => {
+                if (typeof document !== 'undefined' && document.hidden) return;
+                msStoreManager.openWebListing();
+            }, 1200);
+
+            if (!launched) {
+                msStoreManager.openWebListing();
             }
         },
 
