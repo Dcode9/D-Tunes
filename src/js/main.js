@@ -1086,6 +1086,7 @@
             requestAnimationFrame(viz.render);
             deviceMode.apply();
             setupShelfNavButtons();
+            if (window.msStoreManager && msStoreManager.init) msStoreManager.init();
 
             window.addEventListener('resize', () => { 
                 deviceMode.apply(); 

@@ -1,0 +1,281 @@
+(function() {
+    'use strict';
+
+    const MS_STORE_URL = 'https://apps.microsoft.com/store/detail/9P4W2JHQ03N1?cid=DevShareMCLPCS';
+    const MS_STORE_PROTOCOL = 'ms-windows-store://pdp/?productid=9P4W2JHQ03N1';
+    const STORAGE_KEY = 'dtunes_ms_store_pref';
+    const SNOOZE_DAYS = 7;
+    const SNOOZE_MS = SNOOZE_DAYS * 24 * 60 * 60 * 1000;
+
+    const getWin = () => (typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : {}));
+
+    const msStoreManager = {
+        URL: MS_STORE_URL,
+        PROTOCOL: MS_STORE_PROTOCOL,
+        STORAGE_KEY: STORAGE_KEY,
+        SNOOZE_MS: SNOOZE_MS,
+
+        isWindowsPC: () => {
+            const win = getWin();
+
+            // Check if already running in a standalone desktop wrapper, PWA mode, or desktop query param
+            const isStandalone = Boolean(
+                (win.matchMedia && win.matchMedia('(display-mode: standalone)').matches) ||
+                (win.navigator && win.navigator.standalone === true) ||
+                win.__IS_DESKTOP_APP__ ||
+                win.electron ||
+                (win.location?.search && new URLSearchParams(win.location.search).has('desktop')) ||
+                (win.location?.search && new URLSearchParams(win.location.search).has('desktop_auth'))
+            );
+            if (isStandalone) return false;
+
+            const nav = win.navigator || (typeof navigator !== 'undefined' ? navigator : null);
+            if (!nav) return false;
+
+            // Check navigator.userAgentData (modern platform detection)
+            if (nav.userAgentData?.platform) {
+                return /windows/i.test(nav.userAgentData.platform);
+            }
+
+            // Fallback for userAgent and platform
+            const ua = ((nav.userAgent || '') + ' ' + (nav.platform || '')).toLowerCase();
+            const isWin = (ua.includes('windows') || /\b(win32|win64|wow64)\b/.test(ua)) && !ua.includes('windows phone') && !ua.includes('android');
+            return isWin;
+        },
+
+        getUserId: () => {
+            try {
+                const win = getWin();
+                return win.cloudLibrary?.session?.user?.id || null;
+            } catch (_) {
+                return null;
+            }
+        },
+
+        getPreference: () => {
+            const win = getWin();
+            let pref = null;
+            const uid = msStoreManager.getUserId();
+
+            // 1. Try user account preference if signed in
+            if (uid) {
+                const accountKey = `${STORAGE_KEY}_${uid}`;
+                if (typeof safeStorage !== 'undefined') {
+                    pref = safeStorage.getJSON(accountKey, null);
+                } else {
+                    try {
+                        const raw = win.localStorage?.getItem(accountKey);
+                        if (raw) pref = JSON.parse(raw);
+                    } catch (_) {}
+                }
+            }
+
+            // 2. Fallback to local PC preference
+            if (!pref) {
+                if (typeof safeStorage !== 'undefined') {
+                    pref = safeStorage.getJSON(STORAGE_KEY, null);
+                } else {
+                    try {
+                        const raw = win.localStorage?.getItem(STORAGE_KEY);
+                        if (raw) pref = JSON.parse(raw);
+                    } catch (_) {}
+                }
+            }
+
+            return pref;
+        },
+
+        setPreference: (status, extra = {}) => {
+            const win = getWin();
+            const now = Date.now();
+            const pref = {
+                status: status, // 'pending' | 'checked_out' | 'installed' | 'later'
+                updatedAt: now,
+                dismissedUntil: status === 'later' ? now + SNOOZE_MS : null,
+                ...extra
+            };
+
+            // Save to local PC storage
+            if (typeof safeStorage !== 'undefined') {
+                safeStorage.set(STORAGE_KEY, pref);
+            } else {
+                try {
+                    win.localStorage?.setItem(STORAGE_KEY, JSON.stringify(pref));
+                } catch (_) {}
+            }
+
+            // Save to account-based storage if signed in
+            const uid = msStoreManager.getUserId();
+            if (uid) {
+                const accountKey = `${STORAGE_KEY}_${uid}`;
+                if (typeof safeStorage !== 'undefined') {
+                    safeStorage.set(accountKey, pref);
+                } else {
+                    try {
+                        win.localStorage?.setItem(accountKey, JSON.stringify(pref));
+                    } catch (_) {}
+                }
+            }
+
+            msStoreManager.updateUI();
+            return pref;
+        },
+
+        shouldShowBanner: () => {
+            if (!msStoreManager.isWindowsPC()) return false;
+
+            const pref = msStoreManager.getPreference();
+            if (!pref) return true;
+
+            if (pref.status === 'installed' || pref.status === 'checked_out') {
+                return false;
+            }
+
+            if (pref.status === 'later') {
+                if (pref.dismissedUntil && Date.now() < pref.dismissedUntil) {
+                    return false; // Snooze is active
+                }
+                return true; // Snooze period has elapsed
+            }
+
+            return false;
+        },
+
+        showBanner: () => {
+            if (typeof document === 'undefined') return;
+            const banner = document.getElementById('ms-store-banner');
+            if (!banner) return;
+            banner.classList.remove('translate-y-12', 'opacity-0', 'pointer-events-none');
+            banner.classList.add('translate-y-0', 'opacity-100');
+        },
+
+        hideBanner: () => {
+            if (typeof document === 'undefined') return;
+            const banner = document.getElementById('ms-store-banner');
+            if (!banner) return;
+            banner.classList.remove('translate-y-0', 'opacity-100');
+            banner.classList.add('translate-y-12', 'opacity-0', 'pointer-events-none');
+        },
+
+        openStore: (source = 'banner') => {
+            const win = getWin();
+            msStoreManager.setPreference('checked_out', { source: source });
+            msStoreManager.hideBanner();
+
+            if (win.ui && typeof win.ui.showToast === 'function') {
+                win.ui.showToast('Opening Microsoft Store...', 'success');
+            }
+
+            // Attempt to trigger native store protocol, with web fallback
+            try {
+                if (win.location) {
+                    win.location.href = MS_STORE_PROTOCOL;
+                }
+                setTimeout(() => {
+                    if (typeof win.open === 'function') {
+                        win.open(MS_STORE_URL, '_blank', 'noopener,noreferrer');
+                    }
+                }, 800);
+            } catch (_) {
+                if (typeof win.open === 'function') {
+                    win.open(MS_STORE_URL, '_blank', 'noopener,noreferrer');
+                }
+            }
+        },
+
+        markInstalled: () => {
+            const win = getWin();
+            msStoreManager.setPreference('installed');
+            msStoreManager.hideBanner();
+            if (win.ui && typeof win.ui.showToast === 'function') {
+                win.ui.showToast("Awesome! D'Tunes marked as installed.", 'success');
+            }
+        },
+
+        dismiss: (isLater = true) => {
+            const win = getWin();
+            if (isLater) {
+                msStoreManager.setPreference('later');
+                if (win.ui && typeof win.ui.showToast === 'function') {
+                    win.ui.showToast("No problem! Find D'Tunes for Windows in Settings anytime.", 'info', 2500);
+                }
+            } else {
+                msStoreManager.setPreference('checked_out');
+            }
+            msStoreManager.hideBanner();
+        },
+
+        toggleInstalledSetting: () => {
+            const win = getWin();
+            const pref = msStoreManager.getPreference();
+            const isInstalled = pref?.status === 'installed';
+            if (isInstalled) {
+                msStoreManager.setPreference('pending');
+                if (win.ui && typeof win.ui.showToast === 'function') {
+                    win.ui.showToast('Status updated to available', 'info');
+                }
+            } else {
+                msStoreManager.markInstalled();
+            }
+            msStoreManager.updateUI();
+        },
+
+        updateUI: () => {
+            if (typeof document === 'undefined') return;
+            const pref = msStoreManager.getPreference();
+            const isInstalled = pref?.status === 'installed';
+            const isCheckedOut = pref?.status === 'checked_out';
+
+            // Settings View elements
+            const settingsStatusBadge = document.getElementById('settings-ms-store-status-badge');
+            const settingsDesc = document.getElementById('settings-ms-store-description');
+            const settingsBtn = document.getElementById('settings-ms-store-status-btn');
+
+            if (settingsStatusBadge) {
+                if (isInstalled) {
+                    settingsStatusBadge.textContent = 'Installed';
+                    settingsStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 border border-emerald-500/30 text-emerald-300';
+                } else if (isCheckedOut) {
+                    settingsStatusBadge.textContent = 'Store Visited';
+                    settingsStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-cyan-500/15 border border-cyan-500/30 text-cyan-300';
+                } else {
+                    settingsStatusBadge.textContent = 'Microsoft Store';
+                    settingsStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-cyan-500/15 border border-cyan-500/30 text-cyan-300';
+                }
+            }
+
+            if (settingsDesc) {
+                if (isInstalled) {
+                    settingsDesc.textContent = "D'Tunes is installed on this PC. Launch it from your Start menu or check Microsoft Store for updates.";
+                } else {
+                    settingsDesc.textContent = "Available on the Microsoft Store with hardware media keys, system tray audio, and native desktop performance.";
+                }
+            }
+
+            if (settingsBtn) {
+                settingsBtn.textContent = isInstalled ? 'Change: Not installed' : 'Mark as installed';
+            }
+        },
+
+        init: () => {
+            msStoreManager.updateUI();
+
+            if (msStoreManager.shouldShowBanner()) {
+                setTimeout(() => {
+                    if (msStoreManager.shouldShowBanner()) {
+                        msStoreManager.showBanner();
+                    }
+                }, 1500);
+            }
+        }
+    };
+
+    if (typeof module !== 'undefined' && module.exports) {
+        module.exports = msStoreManager;
+    }
+    const win = getWin();
+    if (win) {
+        win.msStoreManager = msStoreManager;
+        win.msStorePromo = msStoreManager;
+    }
+})();

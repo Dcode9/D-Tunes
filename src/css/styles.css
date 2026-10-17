@@ -154,6 +154,7 @@
         #playlist-selector-modal .glass-panel,
         #equalizer-modal .glass-panel,
         #spotify-modal .glass-panel,
+        #ms-store-banner,
         #context-menu,
         .search-blur-bg {
             backdrop-filter: blur(24px);

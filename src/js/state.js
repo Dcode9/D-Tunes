@@ -582,6 +582,9 @@
                     ui.updateProfileUI();
                     cloudLibrary.setStatus('Sign in to sync history, library, likes, and playlists.');
                 }
+                if (window.msStoreManager && msStoreManager.updateUI) {
+                    msStoreManager.updateUI();
+                }
             },
             toggleAuth: async () => {
                 try {
