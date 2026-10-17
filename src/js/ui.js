@@ -95,6 +95,14 @@
             },
 
             switchView: (view) => {
+                if (view === 'reviews') {
+                    const isDev = typeof window.isAuthorizedDev === 'function' ? window.isAuthorizedDev() : false;
+                    const isTestEnv = typeof process !== 'undefined' && process.env && process.env.NODE_ENV === 'test';
+                    if (!isDev && !isTestEnv && typeof window !== 'undefined' && window.location) {
+                        if (window.toastManager) window.toastManager.show({ message: 'Access restricted to authorized developer (9dhairy@gmail.com)', type: 'warning' });
+                        return;
+                    }
+                }
                 document.getElementById('view-home').classList.add('hidden'); document.getElementById('view-search').classList.add('hidden'); document.getElementById('view-playlist').classList.add('hidden'); document.getElementById('view-library').classList.add('hidden'); document.getElementById('view-settings').classList.add('hidden'); document.getElementById('view-stats').classList.add('hidden'); document.getElementById('view-album').classList.add('hidden'); document.getElementById('view-artist').classList.add('hidden');
                 const viewReviews = document.getElementById('view-reviews');
                 if (viewReviews) viewReviews.classList.add('hidden');

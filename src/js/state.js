@@ -364,7 +364,39 @@
                     persist.apply(data);
                 } catch(e) {}
             }
-        };
+        const AUTHORIZED_DEV_EMAIL = '9dhairy@gmail.com';
+
+        function isAuthorizedDev() {
+            try {
+                const sessionEmail = cloudLibrary?.session?.user?.email;
+                if (sessionEmail && sessionEmail.trim().toLowerCase() === AUTHORIZED_DEV_EMAIL) return true;
+
+                if (typeof window !== 'undefined') {
+                    if (window.dverse?.auth?.readPersistedTokens) {
+                        const tokens = window.dverse.auth.readPersistedTokens();
+                        if (tokens?.email && tokens.email.trim().toLowerCase() === AUTHORIZED_DEV_EMAIL) return true;
+                    }
+
+                    const rawTokens = localStorage.getItem('dverse_auth_tokens') || localStorage.getItem('dverse_session_cache');
+                    if (rawTokens) {
+                        const parsed = JSON.parse(rawTokens);
+                        if (parsed?.email && parsed.email.trim().toLowerCase() === AUTHORIZED_DEV_EMAIL) return true;
+                    }
+
+                    const rawSb = localStorage.getItem('dverse_supabase_auth_token');
+                    if (rawSb) {
+                        const parsed = JSON.parse(rawSb);
+                        const user = parsed?.currentSession?.user || parsed?.user;
+                        if (user?.email && user.email.trim().toLowerCase() === AUTHORIZED_DEV_EMAIL) return true;
+                    }
+                }
+            } catch (_) {}
+            return false;
+        }
+
+        if (typeof window !== 'undefined') {
+            window.isAuthorizedDev = isAuthorizedDev;
+        }
 
         const cloudLibrary = {
             session: null,
@@ -495,6 +527,17 @@
                 }
                 if (settingsButton) {
                     settingsButton.textContent = signedIn ? 'Sign out' : 'Sign in';
+                }
+
+                // Developer Reviews Access: strictly restricted to 9dhairy@gmail.com
+                const isDev = isAuthorizedDev();
+                const devReviewsBtn = document.getElementById('profile-dropdown-reviews');
+                if (devReviewsBtn) {
+                    devReviewsBtn.classList.toggle('hidden', !isDev);
+                }
+                const vReviews = document.getElementById('view-reviews');
+                if (!isDev && vReviews && !vReviews.classList.contains('hidden')) {
+                    ui.switchView('home');
                 }
 
                 if (signedIn) {

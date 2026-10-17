@@ -98,4 +98,10 @@ test('Reviews & Feedback: Dedicated View, Supabase Integration, and Filters', (t
     // 3. Navigation integration in ui.js
     assert.ok(uiContent.includes("vReviews && !vReviews.classList.contains('hidden')"), 'getCurrentView must support reviews view');
     assert.ok(uiContent.includes("view === 'reviews' && window.reviewsManager"), 'switchView must render reviews when view === reviews');
+
+    // 4. Restricted Developer Access strictly for 9dhairy@gmail.com
+    const statePath = path.join(ROOT, 'src', 'js', 'state.js');
+    const stateContent = fs.readFileSync(statePath, 'utf8');
+    assert.ok(stateContent.includes("AUTHORIZED_DEV_EMAIL = '9dhairy@gmail.com'"), 'Must strictly configure 9dhairy@gmail.com as authorized developer');
+    assert.ok(stateContent.includes('isAuthorizedDev'), 'Must provide isAuthorizedDev verification');
 });
