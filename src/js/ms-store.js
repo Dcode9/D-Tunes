@@ -15,6 +15,26 @@
         STORAGE_KEY: STORAGE_KEY,
         SNOOZE_MS: SNOOZE_MS,
 
+        isDevForced: () => {
+            const win = getWin();
+            const search = win.location?.search || '';
+            const hash = win.location?.hash || '';
+            const params = new URLSearchParams(search);
+
+            // 1. Query parameters: ?ms_store=1 | ?ms_store=force | ?test_ms_store=1 | ?dev_banner=1 | ?dev=ms_store
+            if (params.has('ms_store') && params.get('ms_store') !== '0' && params.get('ms_store') !== 'false') return true;
+            if (params.has('test_ms_store') || params.has('dev_banner')) return true;
+            if (params.get('dev') === 'ms_store' || params.get('dev') === 'banner') return true;
+
+            // 2. Hash triggers: #ms-store | #test-ms-store | #dev-banner
+            if (/#(ms-store|test-ms-store|dev-banner)/i.test(hash)) return true;
+
+            // 3. Global developer flags
+            if (win.__FORCE_MS_STORE__ || win.__DTUNES_DEV_MS_STORE__) return true;
+
+            return false;
+        },
+
         isWindowsPC: () => {
             const win = getWin();
 
@@ -122,6 +142,9 @@
         },
 
         shouldShowBanner: () => {
+            // Dev override bypasses all checks
+            if (msStoreManager.isDevForced()) return true;
+
             if (!msStoreManager.isWindowsPC()) return false;
 
             const pref = msStoreManager.getPreference();
@@ -155,6 +178,33 @@
             if (!banner) return;
             banner.classList.remove('translate-y-0', 'opacity-100');
             banner.classList.add('translate-y-12', 'opacity-0', 'pointer-events-none');
+        },
+
+        forceShow: () => {
+            const win = getWin();
+            msStoreManager.showBanner();
+            if (win.ui && typeof win.ui.showToast === 'function') {
+                win.ui.showToast('Dev: Displaying Microsoft Store banner', 'info', 2000);
+            }
+        },
+
+        reset: () => {
+            const win = getWin();
+            try {
+                win.localStorage?.removeItem(STORAGE_KEY);
+                const uid = msStoreManager.getUserId();
+                if (uid) win.localStorage?.removeItem(`${STORAGE_KEY}_${uid}`);
+            } catch (_) {}
+            if (typeof safeStorage !== 'undefined') {
+                safeStorage.remove(STORAGE_KEY);
+                const uid = msStoreManager.getUserId();
+                if (uid) safeStorage.remove(`${STORAGE_KEY}_${uid}`);
+            }
+            msStoreManager.updateUI();
+            msStoreManager.forceShow();
+            if (win.ui && typeof win.ui.showToast === 'function') {
+                win.ui.showToast('Dev: Microsoft Store preferences reset', 'success', 2000);
+            }
         },
 
         openStore: (source = 'banner') => {
@@ -258,7 +308,25 @@
         },
 
         init: () => {
+            const win = getWin();
+            const search = win.location?.search || '';
+            const params = new URLSearchParams(search);
+
+            // Check for dev reset parameter: ?ms_store=reset or ?ms_store_reset=1
+            if (params.get('ms_store') === 'reset' || params.has('ms_store_reset')) {
+                msStoreManager.reset();
+                return;
+            }
+
             msStoreManager.updateUI();
+
+            // Dev override: show immediately for test verification
+            if (msStoreManager.isDevForced()) {
+                setTimeout(() => {
+                    msStoreManager.showBanner();
+                }, 300);
+                return;
+            }
 
             if (msStoreManager.shouldShowBanner()) {
                 setTimeout(() => {

@@ -266,4 +266,67 @@ test('Microsoft Store Integration Suite for Windows PC Users', async (t) => {
             global.navigator = originalNavigator;
         }
     });
+
+    await t.test('Developer Overrides: isDevForced and forceShow bypass all platform and state checks', () => {
+        const mockStorage = new Map();
+        let toastMessage = '';
+        const originalWindow = global.window;
+        const originalNavigator = global.navigator;
+
+        try {
+            // Simulated macOS user who already marked 'installed'
+            const macNav = {
+                userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+                platform: 'MacIntel'
+            };
+            global.window = {
+                matchMedia: () => ({ matches: false }),
+                location: { href: 'https://dtunes.app', search: '?ms_store=1', hash: '' },
+                navigator: macNav,
+                localStorage: {
+                    getItem: (key) => mockStorage.get(key) || null,
+                    setItem: (key, val) => mockStorage.set(key, String(val)),
+                    removeItem: (key) => mockStorage.delete(key)
+                },
+                ui: {
+                    showToast: (msg) => { toastMessage = msg; }
+                }
+            };
+            global.navigator = macNav;
+
+            // Mark as installed in storage
+            msStoreManager.setPreference('installed');
+
+            // Even though it is Mac and marked installed, ?ms_store=1 must force it to true!
+            assert.strictEqual(msStoreManager.isDevForced(), true);
+            assert.strictEqual(msStoreManager.shouldShowBanner(), true);
+
+            // Test hash trigger: #ms-store
+            global.window.location.search = '';
+            global.window.location.hash = '#ms-store';
+            assert.strictEqual(msStoreManager.isDevForced(), true);
+            assert.strictEqual(msStoreManager.shouldShowBanner(), true);
+
+            // Test window.__FORCE_MS_STORE__ flag
+            global.window.location.hash = '';
+            assert.strictEqual(msStoreManager.isDevForced(), false);
+            global.window.__FORCE_MS_STORE__ = true;
+            assert.strictEqual(msStoreManager.isDevForced(), true);
+            assert.strictEqual(msStoreManager.shouldShowBanner(), true);
+            delete global.window.__FORCE_MS_STORE__;
+
+            // Test forceShow()
+            msStoreManager.forceShow();
+            assert.ok(toastMessage.includes('Microsoft Store banner'));
+
+            // Test reset()
+            msStoreManager.reset();
+            assert.strictEqual(mockStorage.has('dtunes_ms_store_pref'), false);
+            assert.strictEqual(msStoreManager.getPreference(), null);
+        } finally {
+            global.window = originalWindow;
+            global.navigator = originalNavigator;
+        }
+    });
 });
+
