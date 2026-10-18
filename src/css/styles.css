@@ -17,10 +17,6 @@
             text-rendering: optimizeLegibility;
         }
 
-        h1, h2, h3, .font-display {
-            font-family: 'Space Grotesk', 'Inter', ui-sans-serif, system-ui, sans-serif;
-            letter-spacing: -0.02em;
-        }
 
         ::selection { background: rgba(34, 211, 238, 0.28); color: #fff; }
 

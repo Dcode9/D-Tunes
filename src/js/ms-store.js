@@ -46,6 +46,9 @@
                 (win.navigator && win.navigator.standalone === true) ||
                 win.__IS_DESKTOP_APP__ ||
                 win.electron ||
+                win.electronAPI ||
+                win.electronAPI?.isDesktopApp ||
+                (typeof process !== 'undefined' && process.versions?.electron) ||
                 (win.location?.search && new URLSearchParams(win.location.search).has('desktop')) ||
                 (win.location?.search && new URLSearchParams(win.location.search).has('desktop_auth'))
             );
@@ -315,8 +318,10 @@
 
         updateUI: () => {
             if (typeof document === 'undefined') return;
+            const win = getWin();
+            const isDesktopWrapper = Boolean(win.electronAPI?.isDesktopApp || win.electronAPI || win.__IS_DESKTOP_APP__ || win.electron);
             const pref = msStoreManager.getPreference();
-            const isInstalled = pref?.status === 'installed';
+            const isInstalled = isDesktopWrapper || pref?.status === 'installed';
             const isCheckedOut = pref?.status === 'checked_out';
 
             // Settings View elements
@@ -325,12 +330,12 @@
             const settingsBtn = document.getElementById('settings-ms-store-status-btn');
 
             if (settingsStatusBadge) {
-                if (isInstalled) {
-                    settingsStatusBadge.textContent = 'Installed';
+                if (isDesktopWrapper) {
+                    settingsStatusBadge.textContent = 'Native Desktop';
                     settingsStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 border border-emerald-500/30 text-emerald-300';
                 } else if (isInstalled) {
                     settingsStatusBadge.textContent = 'Installed';
-                    settingsStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/5 border border-white/10 text-gray-300';
+                    settingsStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 border border-emerald-500/30 text-emerald-300';
                 } else {
                     settingsStatusBadge.textContent = 'Microsoft Store';
                     settingsStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/5 border border-white/10 text-gray-300';
@@ -338,7 +343,9 @@
             }
 
             if (settingsDesc) {
-                if (isInstalled) {
+                if (isDesktopWrapper) {
+                    settingsDesc.textContent = "Running D'Tunes Windows Native App from Microsoft Store with hardware media keys and desktop audio engine.";
+                } else if (isInstalled) {
                     settingsDesc.textContent = "D'Tunes is installed on this PC. Launch it from your Start menu or check Microsoft Store for updates.";
                 } else {
                     settingsDesc.textContent = "Available on the Microsoft Store with hardware media keys, system tray audio, and native desktop performance.";
@@ -346,7 +353,16 @@
             }
 
             if (settingsBtn) {
-                settingsBtn.textContent = isInstalled ? 'Change: Not installed' : 'Mark as installed';
+                if (isDesktopWrapper) {
+                    settingsBtn.style.display = 'none';
+                } else {
+                    settingsBtn.style.display = '';
+                    settingsBtn.textContent = isInstalled ? 'Change: Not installed' : 'Mark as installed';
+                }
+            }
+
+            if (isDesktopWrapper) {
+                msStoreManager.hideBanner();
             }
         },
 
@@ -354,6 +370,13 @@
             const win = getWin();
             const search = win.location?.search || '';
             const params = new URLSearchParams(search);
+
+            // Check if running inside desktop app wrapper
+            if (win.electronAPI?.isDesktopApp || win.electronAPI || win.__IS_DESKTOP_APP__ || win.electron) {
+                msStoreManager.hideBanner();
+                msStoreManager.updateUI();
+                return;
+            }
 
             // Check for dev reset parameter: ?ms_store=reset or ?ms_store_reset=1
             if (params.get('ms_store') === 'reset' || params.has('ms_store_reset')) {

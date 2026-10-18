@@ -139,6 +139,15 @@ test('Microsoft Store Integration Suite for Windows PC Users', async (t) => {
                 navigator: winNav
             };
             assert.strictEqual(msStoreManager.isWindowsPC(), false);
+
+            // Desktop wrapper: window.electronAPI
+            global.window = {
+                matchMedia: () => ({ matches: false }),
+                location: { search: '' },
+                electronAPI: { isDesktopApp: true },
+                navigator: winNav
+            };
+            assert.strictEqual(msStoreManager.isWindowsPC(), false);
         } finally {
             global.window = originalWindow;
             global.navigator = originalNavigator;

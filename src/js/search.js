@@ -410,19 +410,19 @@
                     <div class="grid grid-cols-2 gap-4 lg:col-span-2">
                         <div class="glass-panel rounded-2xl p-5 border border-white/10 flex flex-col justify-between">
                             <span class="text-[11px] font-extrabold uppercase tracking-wider text-gray-400">Total Listening Time</span>
-                            <p class="text-2xl md:text-3xl font-bold font-display text-[var(--accent-color)] mt-2">${totalListeningTime}</p>
+                            <p class="text-2xl md:text-3xl font-black text-[var(--accent-color)] mt-2">${totalListeningTime}</p>
                         </div>
                         <div class="glass-panel rounded-2xl p-5 border border-white/10 flex flex-col justify-between">
-                            <span class="text-[11px] font-bold uppercase tracking-wider text-gray-400">Total Plays</span>
-                            <p class="text-2xl md:text-3xl font-bold font-display text-white mt-2">${summary.totalPlays || 0}</p>
+                            <span class="text-[11px] font-extrabold uppercase tracking-wider text-gray-400">Total Plays</span>
+                            <p class="text-2xl md:text-3xl font-black text-white mt-2">${summary.totalPlays || 0}</p>
                         </div>
                         <div class="glass-panel rounded-2xl p-5 border border-white/10 flex flex-col justify-between">
-                            <span class="text-[11px] font-bold uppercase tracking-wider text-gray-400">Unique Tracks</span>
-                            <p class="text-2xl md:text-3xl font-bold font-display text-white mt-2">${summary.uniqueTracks || 0}</p>
+                            <span class="text-[11px] font-extrabold uppercase tracking-wider text-gray-400">Unique Tracks</span>
+                            <p class="text-2xl md:text-3xl font-black text-white mt-2">${summary.uniqueTracks || 0}</p>
                         </div>
                         <div class="glass-panel rounded-2xl p-5 border border-white/10 flex flex-col justify-between">
-                            <span class="text-[11px] font-bold uppercase tracking-wider text-gray-400">Top Artist</span>
-                            <p class="text-xl md:text-2xl font-bold font-display text-white truncate mt-2">${utils.escapeHtml(summary.favArtist || (summary.topArtists?.[0]?.[0] || 'None'))}</p>
+                            <span class="text-[11px] font-extrabold uppercase tracking-wider text-gray-400">Top Artist</span>
+                            <p class="text-xl md:text-2xl font-black text-white truncate mt-2">${utils.escapeHtml(summary.favArtist || (summary.topArtists?.[0]?.[0] || 'None'))}</p>
                         </div>
                     </div>
 

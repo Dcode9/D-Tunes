@@ -98,7 +98,7 @@
             <div class="pt-2 animate-fade-in">
                 <div class="flex items-center justify-between px-4 md:px-8 mb-6 pb-2 border-b border-white/10">
                     <div>
-                        <h2 class="text-2xl md:text-3xl font-bold font-display text-white tracking-tight">Made For You</h2>
+                        <h2 class="text-2xl md:text-3xl font-black text-white tracking-tight">Made For You</h2>
                         <p class="text-xs md:text-sm text-neutral-400 mt-1">Playlists personalized to your taste and favorites, updated daily.</p>
                     </div>
                 </div>
@@ -116,7 +116,7 @@
                         <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white text-xs font-semibold mb-3">
                             <span>Daily Mixes</span>
                         </div>
-                        <h2 class="text-2xl md:text-3xl font-bold font-display text-white tracking-tight">Your Music, Tailored For You</h2>
+                        <h2 class="text-2xl md:text-3xl font-black text-white tracking-tight">Your Music, Tailored For You</h2>
                         <p class="text-sm text-neutral-300 mt-2 leading-relaxed">Sign in to unlock personalized daily mixes based on your listening history, favorite tracks, and custom playlists.</p>
                     </div>
                     <button onclick="if(window.dverse && dverse.signInWithGoogle) dverse.signInWithGoogle();" class="px-6 py-3 rounded-full bg-[var(--accent-color)] text-black font-bold text-sm hover:brightness-110 active:scale-[0.98] transition flex-shrink-0 cursor-pointer flex items-center gap-2">
@@ -369,7 +369,7 @@
                     <!-- Clean Editorial Header -->
                     <div class="flex items-center justify-between px-4 md:px-8 mb-6 pb-2 border-b border-white/10">
                         <div>
-                            <h2 class="text-2xl md:text-3xl font-bold font-display text-white tracking-tight">Made For You</h2>
+                            <h2 class="text-2xl md:text-3xl font-black text-white tracking-tight">Made For You</h2>
                             <p class="text-xs md:text-sm text-neutral-400 mt-1">Playlists tailored to your taste and favorites, updated daily.</p>
                         </div>
                         <div class="flex items-center gap-2">
