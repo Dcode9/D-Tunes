@@ -1087,7 +1087,6 @@
             window.ui = ui;
             window.lyricsManager = lyricsManager;
 
-            try { await offlineStore.init(); } catch (e) { console.warn('[DTunes] Offline downloads unavailable:', e && e.message); }
             ctxMenu.init();
             searchManager.init();
             persist.load();
