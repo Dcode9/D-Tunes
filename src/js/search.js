@@ -212,7 +212,7 @@
                                 <span class="swipe-reveal-text font-bold text-xs tracking-wide">Play Next</span>
                             </div>
                         </div>
-                        <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-[var(--accent-color)] text-black font-bold text-xs" style="width:0px;">
+                        <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-cyan-600 text-white font-bold text-xs" style="width:0px;">
                             <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
                                 <span class="swipe-reveal-text font-bold text-xs tracking-wide">Add to Queue</span>
                                 <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
@@ -267,7 +267,7 @@
                         </div>
                         
                         <div class="mt-2 flex items-center gap-3">
-                            <button class="bg-[var(--accent-color)] text-black px-6 py-2.5 rounded-full font-bold hover:brightness-110 transition flex items-center gap-2" onclick="event.stopPropagation(); ui.playFromQuickSearch('${topStoreId}')">
+                            <button class="bg-[var(--accent-color)] text-black px-6 py-2.5 rounded-full font-bold hover:scale-105 transition shadow-lg flex items-center gap-2" onclick="event.stopPropagation(); ui.playFromQuickSearch('${topStoreId}')">
                                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play
                             </button>
                             <button class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition" title="Play next" onclick="event.stopPropagation(); player.addNext(songStore.get('${topStoreId}'))">
@@ -428,8 +428,8 @@
 
                     <!-- Top 5 Artists Ranking -->
                     <section class="glass-panel rounded-2xl p-6 border border-white/10">
-                        <h3 class="text-base font-bold text-white mb-4 flex items-center gap-2">
-                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4zm6-4a3 3 0 11-3-3 3 3 0 013 3zM6 7a3 3 0 113 3 3 3 0 01-3-3z"/></svg>
+                        <h3 class="text-lg font-black text-white mb-4 flex items-center gap-2">
+                            <span>🎤</span>
                             <span>Top Artists</span>
                         </h3>
                         <div class="flex flex-col gap-1">${topArtistHtml}</div>
@@ -437,8 +437,8 @@
 
                     <!-- Top 5 Tracks Ranking -->
                     <section class="glass-panel rounded-2xl p-6 border border-white/10">
-                        <h3 class="text-base font-bold text-white mb-4 flex items-center gap-2">
-                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-2v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"/></svg>
+                        <h3 class="text-lg font-black text-white mb-4 flex items-center gap-2">
+                            <span>🔥</span>
                             <span>Top Tracks</span>
                         </h3>
                         <div class="flex flex-col gap-2">${topTrackHtml}</div>
@@ -446,8 +446,8 @@
 
                     <!-- 7-Day Listening Timeline -->
                     <section class="glass-panel rounded-2xl p-6 border border-white/10 lg:col-span-2">
-                        <h3 class="text-base font-bold text-white mb-4 flex items-center gap-2">
-                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                        <h3 class="text-lg font-black text-white mb-4 flex items-center gap-2">
+                            <span>📅</span>
                             <span>Recent Daily Activity</span>
                         </h3>
                         <div class="flex flex-col">${dailyHtml}</div>
@@ -611,7 +611,7 @@
                         title: 'Discover Weekly',
                         subtitle: 'Fresh recommendations tuned to your taste every week',
                         badgeText: 'DISCOVER',
-                        gradientBg: 'bg-gradient-to-br from-cyan-900/50 via-zinc-900 to-black',
+                        gradientBg: 'bg-gradient-to-br from-cyan-600 via-emerald-800 to-indigo-950',
                         accentColor: '#38bdf8'
                     },
                     {
@@ -619,7 +619,7 @@
                         title: 'Daily Mix 1',
                         subtitle: 'A custom blend of your favorite artists and hits',
                         badgeText: 'DAILY MIX',
-                        gradientBg: 'bg-gradient-to-br from-violet-900/50 via-zinc-900 to-black',
+                        gradientBg: 'bg-gradient-to-br from-purple-700 via-indigo-800 to-slate-950',
                         accentColor: '#a855f7'
                     },
                     {
@@ -627,7 +627,7 @@
                         title: 'Daily Mix 2',
                         subtitle: 'Vibrant tracks matching your favorite genres',
                         badgeText: 'DAILY MIX',
-                        gradientBg: 'bg-gradient-to-br from-rose-900/50 via-zinc-900 to-black',
+                        gradientBg: 'bg-gradient-to-br from-rose-600 via-amber-700 to-zinc-950',
                         accentColor: '#f43f5e'
                     },
                     {
@@ -635,7 +635,7 @@
                         title: 'Release Radar',
                         subtitle: 'Catch brand new singles & albums from top artists',
                         badgeText: 'NEW RELEASES',
-                        gradientBg: 'bg-gradient-to-br from-blue-900/50 via-zinc-900 to-black',
+                        gradientBg: 'bg-gradient-to-br from-blue-600 via-sky-800 to-gray-950',
                         accentColor: '#60a5fa'
                     },
                     {
@@ -643,7 +643,7 @@
                         title: 'Chill Vibes',
                         subtitle: 'Soft acoustic, lo-fi, and relaxing melodies for your mind',
                         badgeText: 'MOOD & VIBE',
-                        gradientBg: 'bg-gradient-to-br from-teal-900/50 via-zinc-900 to-black',
+                        gradientBg: 'bg-gradient-to-br from-teal-600 via-cyan-900 to-black',
                         accentColor: '#2dd4bf'
                     },
                     {
@@ -651,7 +651,7 @@
                         title: 'Recently Obsessed',
                         subtitle: 'Your heavy rotation favorites on repeat',
                         badgeText: 'ON REPEAT',
-                        gradientBg: 'bg-gradient-to-br from-fuchsia-900/50 via-zinc-900 to-black',
+                        gradientBg: 'bg-gradient-to-br from-fuchsia-600 via-pink-800 to-stone-950',
                         accentColor: '#e879f9'
                     }
                 ];
@@ -692,14 +692,14 @@
             },
             openDiscoverMix: async (key) => {
                 const DISCOVER_MIX_DEFINITIONS = {
-                    'discover-weekly': { title: 'Discover Weekly', badgeText: 'DISCOVER', gradientBg: 'bg-gradient-to-br from-cyan-900/50 via-zinc-900 to-black' },
-                    'daily-mix-1': { title: 'Daily Mix 1', badgeText: 'DAILY MIX', gradientBg: 'bg-gradient-to-br from-violet-900/50 via-zinc-900 to-black' },
-                    'daily-mix-2': { title: 'Daily Mix 2', badgeText: 'DAILY MIX', gradientBg: 'bg-gradient-to-br from-rose-900/50 via-zinc-900 to-black' },
-                    'release-radar': { title: 'Release Radar', badgeText: 'NEW RELEASES', gradientBg: 'bg-gradient-to-br from-blue-900/50 via-zinc-900 to-black' },
-                    'chill-vibes': { title: 'Chill Vibes', badgeText: 'MOOD & VIBE', gradientBg: 'bg-gradient-to-br from-teal-900/50 via-zinc-900 to-black' },
-                    'recently-obsessed': { title: 'Recently Obsessed', badgeText: 'ON REPEAT', gradientBg: 'bg-gradient-to-br from-fuchsia-900/50 via-zinc-900 to-black' }
+                    'discover-weekly': { title: 'Discover Weekly', badgeText: 'DISCOVER', gradientBg: 'bg-gradient-to-br from-cyan-600 via-emerald-800 to-indigo-950' },
+                    'daily-mix-1': { title: 'Daily Mix 1', badgeText: 'DAILY MIX', gradientBg: 'bg-gradient-to-br from-purple-700 via-indigo-800 to-slate-950' },
+                    'daily-mix-2': { title: 'Daily Mix 2', badgeText: 'DAILY MIX', gradientBg: 'bg-gradient-to-br from-rose-600 via-amber-700 to-zinc-950' },
+                    'release-radar': { title: 'Release Radar', badgeText: 'NEW RELEASES', gradientBg: 'bg-gradient-to-br from-blue-600 via-sky-800 to-gray-950' },
+                    'chill-vibes': { title: 'Chill Vibes', badgeText: 'MOOD & VIBE', gradientBg: 'bg-gradient-to-br from-teal-600 via-cyan-900 to-black' },
+                    'recently-obsessed': { title: 'Recently Obsessed', badgeText: 'ON REPEAT', gradientBg: 'bg-gradient-to-br from-fuchsia-600 via-pink-800 to-stone-950' }
                 };
-                const meta = DISCOVER_MIX_DEFINITIONS[key] || { title: 'Discover Mix', badgeText: 'MADE FOR YOU', gradientBg: 'bg-gradient-to-br from-zinc-800/80 to-zinc-950' };
+                const meta = DISCOVER_MIX_DEFINITIONS[key] || { title: 'Discover Mix', badgeText: 'MADE FOR YOU', gradientBg: 'bg-gradient-to-br from-cyan-600 to-indigo-950' };
                 let songs = state.discoverMixes?.[key];
                 if (!songs || songs.length === 0) {
                     const preferredLanguage = document.getElementById('preferred-language-select')?.value || localStorage.getItem('preferredLanguage') || '';

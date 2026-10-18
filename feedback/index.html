@@ -8,23 +8,23 @@
   <meta name="description" content="Help us make D'Tunes better. Send your feedback, feature requests, or report bugs directly to our engineering team.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     :root {
-      --bg-color: #050505;
-      --card-bg: rgba(20, 20, 24, 0.6);
-      --card-border: rgba(255, 255, 255, 0.1);
-      --input-bg: rgba(255, 255, 255, 0.04);
-      --input-border: rgba(255, 255, 255, 0.1);
-      --primary: #22d3ee;
-      --primary-hover: #5ae0f5;
-      --primary-light: #7dd3fc;
-      --accent: #22d3ee;
-      --star-active: #fbbf24;
+      --bg-color: #0c0a14;
+      --card-bg: rgba(24, 19, 38, 0.75);
+      --card-border: rgba(157, 101, 255, 0.2);
+      --input-bg: rgba(14, 11, 24, 0.8);
+      --input-border: rgba(157, 101, 255, 0.25);
+      --primary: #9d65ff;
+      --primary-hover: #b382ff;
+      --accent: #6c3ad8;
+      --star-active: #ffb800;
       --star-inactive: rgba(255, 255, 255, 0.2);
-      --text-main: #f3f4f6;
-      --text-muted: #9ca3af;
+      --text-main: #f3effe;
+      --text-muted: #a69bbd;
+      --header-gradient: linear-gradient(135deg, #a875ff 0%, #6c3ad8 50%, #471aaa 100%);
       --success-color: #10b981;
     }
 
@@ -40,7 +40,8 @@
       color: var(--text-main);
       line-height: 1.6;
       background-image: 
-        radial-gradient(circle at 10% 15%, rgba(34, 211, 238, 0.05) 0%, transparent 45%);
+        radial-gradient(circle at 10% 15%, rgba(108, 58, 216, 0.22) 0%, transparent 45%),
+        radial-gradient(circle at 90% 75%, rgba(157, 101, 255, 0.15) 0%, transparent 50%);
       background-attachment: fixed;
       min-height: 100vh;
       display: flex;
@@ -69,31 +70,33 @@
     }
 
     .logo-container:hover {
-      opacity: 0.9;
+      transform: scale(1.03);
     }
 
     .logo-icon {
       width: 48px;
       height: 48px;
-      background: rgba(34, 211, 238, 0.12);
-      border: 1px solid rgba(34, 211, 238, 0.3);
+      background: var(--header-gradient);
       border-radius: 14px;
       display: flex;
       align-items: center;
       justify-content: center;
+      box-shadow: 0 8px 24px rgba(108, 58, 216, 0.45);
     }
 
     .logo-icon svg {
       width: 26px;
       height: 26px;
-      fill: #22d3ee;
+      fill: #ffffff;
     }
 
     .logo-text {
       font-family: 'Outfit', sans-serif;
       font-size: 2rem;
-      font-weight: 700;
-      color: #ffffff;
+      font-weight: 800;
+      background: var(--header-gradient);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
       letter-spacing: -0.02em;
     }
 
@@ -203,10 +206,11 @@
     }
 
     .chip-radio:checked + .chip-label {
-      background: rgba(34, 211, 238, 0.12);
+      background: rgba(157, 101, 255, 0.2);
       border-color: var(--primary);
       color: #ffffff;
       font-weight: 600;
+      box-shadow: 0 4px 14px rgba(108, 58, 216, 0.3);
     }
 
     /* Input & Textarea */
@@ -225,7 +229,7 @@
 
     input[type="text"]:focus, input[type="email"]:focus, textarea:focus {
       border-color: var(--primary);
-      box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.2);
+      box-shadow: 0 0 0 3px rgba(157, 101, 255, 0.25);
     }
 
     textarea {
@@ -244,15 +248,16 @@
     .submit-btn {
       width: 100%;
       padding: 1rem;
-      background: var(--primary);
+      background: var(--header-gradient);
       border: none;
       border-radius: 16px;
-      color: #050505;
+      color: #ffffff;
       font-family: 'Outfit', sans-serif;
       font-size: 1.1rem;
       font-weight: 700;
       cursor: pointer;
-      transition: filter 0.25s ease;
+      box-shadow: 0 8px 25px rgba(108, 58, 216, 0.4);
+      transition: all 0.25s ease;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -260,7 +265,8 @@
     }
 
     .submit-btn:hover {
-      filter: brightness(1.08);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 30px rgba(108, 58, 216, 0.55);
     }
 
     .submit-btn:disabled {
@@ -272,9 +278,9 @@
     .spinner {
       width: 20px;
       height: 20px;
-      border: 3px solid rgba(0, 0, 0, 0.25);
+      border: 3px solid rgba(255, 255, 255, 0.3);
       border-radius: 50%;
-      border-top-color: #050505;
+      border-top-color: #ffffff;
       animation: spin 0.8s linear infinite;
       display: none;
     }
@@ -393,16 +399,16 @@
             <label>Category</label>
             <div class="chips-grid">
               <input type="radio" name="category" value="general" id="cat-general" class="chip-radio" checked>
-              <label for="cat-general" class="chip-label">General</label>
+              <label for="cat-general" class="chip-label">💡 General</label>
 
               <input type="radio" name="category" value="feature_request" id="cat-feature" class="chip-radio">
-              <label for="cat-feature" class="chip-label">Feature Idea</label>
+              <label for="cat-feature" class="chip-label">✨ Feature Idea</label>
 
               <input type="radio" name="category" value="bug_report" id="cat-bug" class="chip-radio">
-              <label for="cat-bug" class="chip-label">Bug Report</label>
+              <label for="cat-bug" class="chip-label">🐛 Bug Report</label>
 
               <input type="radio" name="category" value="android_app" id="cat-android" class="chip-radio">
-              <label for="cat-android" class="chip-label">Android App</label>
+              <label for="cat-android" class="chip-label">📱 Android App</label>
 
               <input type="radio" name="category" value="wear_os" id="cat-wear" class="chip-radio">
               <label for="cat-wear" class="chip-label">⌚ Wear OS Watch</label>

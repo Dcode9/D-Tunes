@@ -39,7 +39,7 @@
                                         song.img !== FALLBACK_ART;
                     if (hasValidUrl && hasValidArt) {
                         searchCache.set(query, song);
-                        if (window.songStore && window.songStore.add) window.songStore.add(song);
+                        if (window.songStore && song.id) window.songStore.set(song.id, song);
                         return song;
                     }
                 }
@@ -111,7 +111,7 @@
     function renderSignedOutState(container) {
         container.innerHTML = `
             <div class="pt-2 animate-fade-in px-4 md:px-8">
-                <div class="p-6 md:p-8 rounded-2xl glass-panel border border-white/10 flex flex-col md:flex-row items-center justify-between gap-6 bg-white/[0.02]">
+                <div class="p-6 md:p-8 rounded-2xl glass-panel border border-white/10 flex flex-col md:flex-row items-center justify-between gap-6 bg-gradient-to-r from-purple-900/30 via-black/40 to-emerald-900/30">
                     <div class="max-w-xl">
                         <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white text-xs font-semibold mb-3">
                             <span>Daily Mixes</span>
@@ -119,7 +119,7 @@
                         <h2 class="text-2xl md:text-3xl font-black text-white tracking-tight">Your Music, Tailored For You</h2>
                         <p class="text-sm text-neutral-300 mt-2 leading-relaxed">Sign in to unlock personalized daily mixes based on your listening history, favorite tracks, and custom playlists.</p>
                     </div>
-                    <button onclick="if(window.dverse && dverse.signInWithGoogle) dverse.signInWithGoogle();" class="px-6 py-3 rounded-full bg-[var(--accent-color)] text-black font-bold text-sm hover:brightness-110 active:scale-[0.98] transition flex-shrink-0 cursor-pointer flex items-center gap-2">
+                    <button onclick="if(window.dverse && dverse.signInWithGoogle) dverse.signInWithGoogle();" class="px-6 py-3 rounded-full bg-[var(--accent-color)] text-black font-bold text-sm hover:scale-105 active:scale-95 transition shadow-lg flex-shrink-0 cursor-pointer flex items-center gap-2">
                         <span>Sign In to D-Tunes</span>
                         <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
                     </button>
@@ -268,7 +268,7 @@
                 );
 
                 validSongs.forEach(s => {
-                    if (s && window.songStore && window.songStore.add) window.songStore.add(s);
+                    if (s && s.id && window.songStore) window.songStore.set(s.id, s);
                 });
 
                 if (validSongs.length === 0) continue;
@@ -309,7 +309,7 @@
                                 ${playlist.description ? `<p class="text-xs text-gray-400 mt-0.5">${utils.escapeHtml(playlist.description)}</p>` : ''}
                             </div>
                             <div class="flex items-center gap-2">
-                                <button onclick="window.aiHome.playEntirePlaylist('${playlistId}')" class="px-3.5 py-1.5 rounded-full bg-[var(--accent-color)] text-black text-xs font-bold hover:brightness-110 active:scale-[0.98] transition flex items-center gap-1.5" title="Play Playlist">
+                                <button onclick="window.aiHome.playEntirePlaylist('${playlistId}')" class="px-3.5 py-1.5 rounded-full bg-[var(--accent-color)] text-black text-xs font-bold hover:scale-105 active:scale-95 transition flex items-center gap-1.5 shadow-md" title="Play Playlist">
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                                     <span>Play</span>
                                 </button>
@@ -338,10 +338,10 @@
                                             <img src="${collageArts[2]}" class="w-full h-full object-cover reveal-blur-img" onload="this.classList.add('revealed')" />
                                             <img src="${collageArts[3]}" class="w-full h-full object-cover reveal-blur-img" onload="this.classList.add('revealed')" />
                                         </div>
-                                        <div class="absolute inset-0 bg-gradient-to-br ${style.bg} ${style.blend} opacity-70 group-hover/cover:opacity-60 transition-opacity"></div>
+                                        <div class="absolute inset-0 bg-gradient-to-br ${style.bg} ${style.blend} opacity-85 group-hover/cover:opacity-75 transition-opacity"></div>
                                         <div class="absolute inset-0 bg-black/25 backdrop-blur-[1px]"></div>
                                         <div class="absolute inset-0 p-2.5 flex flex-col ${style.textPos} z-10">
-                                            <h4 class="text-white font-bold text-xs sm:text-sm uppercase leading-tight drop-shadow-md mt-auto">${utils.escapeHtml(playlist.title || 'Mix')}</h4>
+                                            <h4 class="text-white font-black text-xs sm:text-sm uppercase leading-tight drop-shadow-md mt-auto">${utils.escapeHtml(playlist.title || 'Mix')}</h4>
                                         </div>
                                         <div class="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover/cover:opacity-100 transition z-20">
                                             <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-2xl transform scale-75 group-hover/cover:scale-100 transition">

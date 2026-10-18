@@ -6,10 +6,6 @@
       "destination": "/auth.html"
     },
     {
-      "source": "/download",
-      "destination": "/downloads/index.html"
-    },
-    {
       "source": "/api/(.*)",
       "destination": "/api/index.js"
     }
