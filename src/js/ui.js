@@ -1396,6 +1396,90 @@
                 }
                 updateMarquees();
                 ui.updateLibraryStats();
+                ui.renderDownloads();
+            },
+            renderDownloads: () => {
+                const container = document.getElementById('library-downloads');
+                if (!container) return;
+                const storageEl = document.getElementById('library-downloads-storage');
+                const token = (ui._downloadsPaintToken || 0) + 1;
+                ui._downloadsPaintToken = token;
+                const paint = (items) => {
+                    if (ui._downloadsPaintToken !== token) return;
+                    if (storageEl) {
+                        const usage = offlineStore.usage();
+                        storageEl.textContent = items.length ? `${items.length} saved • ${offlineStore.formatBytes(usage.bytes)}` : '';
+                    }
+                    container.innerHTML = items.length
+                        ? items.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`, 'downloads')).join('')
+                        : ui.libraryEmptyState({
+                            icon: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v10m0 0l-4-4m4 4l4-4"/></svg>',
+                            title: 'Nothing saved offline yet',
+                            message: 'Use “Download for offline” on any song to keep it playable without a connection.',
+                            actionLabel: 'Find songs',
+                            action: "ui.switchView('search'); setTimeout(() => document.getElementById('search-input')?.focus(), 60)"
+                        });
+                    updateMarquees();
+                };
+                const cached = offlineStore.getMeta && offlineStore.usage().count;
+                if (cached) paint([]);
+                offlineStore.list().then(paint).catch(() => paint([]));
+            },
+            updateDownloadContextLabel: (song) => {
+                const label = document.getElementById('cm-download-label');
+                const progressEl = document.getElementById('cm-download-progress');
+                if (!label) return;
+                const id = song ? (song.id || song.saavn_id) : null;
+                if (!id) {
+                    label.textContent = 'Download for offline';
+                    if (progressEl) progressEl.textContent = '';
+                    return;
+                }
+                if (offlineStore.isDownloaded(id)) {
+                    label.textContent = 'Remove download';
+                    if (progressEl) progressEl.textContent = 'Saved';
+                    return;
+                }
+                const job = offlineStore.getProgress(id);
+                if (job && (job.status === 'downloading' || job.status === 'encrypting')) {
+                    label.textContent = 'Downloading…';
+                    if (progressEl) progressEl.textContent = offlineStore.formatProgress(job);
+                    return;
+                }
+                label.textContent = 'Download for offline';
+                if (progressEl) progressEl.textContent = '';
+            },
+            toggleOfflineDownload: (song) => {
+                if (!song) return;
+                const id = song.id || song.saavn_id;
+                if (!id) {
+                    ui.showToast('This track cannot be saved offline.', 'error');
+                    return;
+                }
+                if (offlineStore.isDownloaded(id)) {
+                    offlineStore.remove(id)
+                        .then(() => {
+                            ui.showToast('Removed from Offline Downloads');
+                            ui.renderDownloads();
+                        })
+                        .catch(() => ui.showToast('Could not remove the download.', 'error'));
+                    return;
+                }
+                if (!offlineStore.supported()) {
+                    ui.showToast('Offline downloads are not supported in this browser.', 'error');
+                    return;
+                }
+                ui.showToast('Saving for offline…');
+                offlineStore.download(song)
+                    .then(() => {
+                        ui.showToast(`“${song.name || 'Track'}” saved for offline`, 'success');
+                        ui.renderDownloads();
+                    })
+                    .catch((err) => {
+                        const message = err && err.message ? err.message : 'Download failed.';
+                        if (!/cancel|abort/i.test(message)) ui.showToast(message, 'error');
+                        ui.renderDownloads();
+                    });
             },
             renderLibrary: () => {
                 ui.renderPlaylists();
@@ -1470,6 +1554,8 @@
             },
             createSongPillInner: (song) => {
                 const isCurrent = state.currentTrack && state.currentTrack.id === song.id;
+                const isOffline = typeof offlineStore !== 'undefined' && offlineStore.isDownloaded && offlineStore.isDownloaded(song.id);
+                const offlineBadge = isOffline ? '<svg class="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" title="Available offline" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>' : '';
                 const eqMarkup = isCurrent ? `
                     <div class="playing-eq-icon ${state.playing ? '' : 'paused'} flex-shrink-0" title="Playing">
                         <span class="playing-eq-bar"></span>
@@ -1483,7 +1569,7 @@
                         ${isCurrent ? `<div class="absolute inset-0 bg-black/45 flex items-center justify-center">${eqMarkup}</div>` : ''}
                     </div>
                     <div class="flex-1 min-w-0 flex flex-col justify-center ml-3">
-                        <div class="marquee-container w-full flex items-center gap-1.5"><div class="font-bold text-white text-sm marquee-text">${utils.escapeHtml(song.name)}</div>${isCurrent ? eqMarkup : ''}</div>
+                        <div class="marquee-container w-full flex items-center gap-1.5"><div class="font-bold text-white text-sm marquee-text">${utils.escapeHtml(song.name)}</div>${offlineBadge}${isCurrent ? eqMarkup : ''}</div>
                         <div class="marquee-container w-full mt-0.5"><div class="text-xs text-gray-400 marquee-text">${utils.escapeHtml(song.artist)}</div></div>
                     </div>
                 `;

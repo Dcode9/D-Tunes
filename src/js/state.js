@@ -349,14 +349,24 @@
                     document.getElementById('player-footer')?.classList.remove('translate-y-[150%]', 'opacity-0');
                     ui.enableControls();
                     ui.updateMetadata(state.currentTrack);
-                    if (state.currentTrack.url) {
-                        audio.src = state.currentTrack.url;
+                    const restoreTrack = state.currentTrack;
+                    const applyRestoreUrl = (url) => {
+                        if (!url) return;
+                        audio.src = url;
                         audio.addEventListener('loadedmetadata', function onMetaLoad() {
                             audio.currentTime = data.time || 0;
                             currentProgress = audio.duration ? audio.currentTime / audio.duration : 0;
                             document.getElementById('seek-bar').value = data.time || 0;
                             audio.removeEventListener('loadedmetadata', onMetaLoad);
                         });
+                    };
+                    const cachedOfflineUrl = window.offlineStore?.getPlayUrlSync?.(restoreTrack.id);
+                    if (cachedOfflineUrl) {
+                        applyRestoreUrl(cachedOfflineUrl);
+                    } else if (restoreTrack.url) {
+                        applyRestoreUrl(restoreTrack.url);
+                    } else if (window.offlineStore?.isDownloaded?.(restoreTrack.id)) {
+                        window.offlineStore.getPlayUrl(restoreTrack.id).then(applyRestoreUrl).catch(() => {});
                     }
                 }
                 ui.renderQueue();

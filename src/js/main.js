@@ -758,15 +758,11 @@
                         break;
                     case 'arrowup':
                         e.preventDefault();
-                        player.setVolume(audio.volume + 0.05);
-                        const vSliderUp = document.getElementById('volume-slider');
-                        if (vSliderUp) vSliderUp.value = audio.volume;
+                        player.setVolume((Number.isFinite(window.dtunesVolume) ? window.dtunesVolume : audio.volume) + 0.05);
                         break;
                     case 'arrowdown':
                         e.preventDefault();
-                        player.setVolume(audio.volume - 0.05);
-                        const vSliderDown = document.getElementById('volume-slider');
-                        if (vSliderDown) vSliderDown.value = audio.volume;
+                        player.setVolume((Number.isFinite(window.dtunesVolume) ? window.dtunesVolume : audio.volume) - 0.05);
                         break;
                     case 'j':
                         player.seek(audio.currentTime - 10);
@@ -796,9 +792,7 @@
                         }
                         break;
                     case 'm':
-                        player.setVolume(audio.volume > 0 ? 0 : 0.8);
-                        const vSliderMute = document.getElementById('volume-slider');
-                        if (vSliderMute) vSliderMute.value = audio.volume;
+                        player.setVolume((Number.isFinite(window.dtunesVolume) ? window.dtunesVolume : audio.volume) > 0 ? 0 : 0.8);
                         break;
                     case 'escape':
                         ui.toggleLyricsModal(false);
@@ -1086,6 +1080,16 @@
             window.player = player;
             window.ui = ui;
             window.lyricsManager = lyricsManager;
+
+            try { await offlineStore.init(); } catch (e) { console.warn('[DTunes] Offline downloads unavailable:', e && e.message); }
+
+            // Offline app shell: precache the UI so D'Tunes opens without a network
+            // (browser and the Windows shell, which loads this same origin).
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/sw.js').catch((e) => {
+                    console.warn('[DTunes] Service worker registration failed:', e && e.message);
+                });
+            }
 
             ctxMenu.init();
             searchManager.init();
