@@ -39,7 +39,7 @@
                                         song.img !== FALLBACK_ART;
                     if (hasValidUrl && hasValidArt) {
                         searchCache.set(query, song);
-                        if (window.songStore && song.id) window.songStore.set(song.id, song);
+                        if (window.songStore && window.songStore.add) window.songStore.add(song);
                         return song;
                     }
                 }
@@ -268,7 +268,7 @@
                 );
 
                 validSongs.forEach(s => {
-                    if (s && s.id && window.songStore) window.songStore.set(s.id, s);
+                    if (s && window.songStore && window.songStore.add) window.songStore.add(s);
                 });
 
                 if (validSongs.length === 0) continue;
