@@ -327,13 +327,13 @@
             if (settingsStatusBadge) {
                 if (isInstalled) {
                     settingsStatusBadge.textContent = 'Installed';
-                    settingsStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 border border-emerald-500/30 text-emerald-300';
-                } else if (isCheckedOut) {
-                    settingsStatusBadge.textContent = 'Store Visited';
-                    settingsStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-cyan-500/15 border border-cyan-500/30 text-cyan-300';
+                    settingsStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 border border-emerald-500/30 text-emerald-300';
+                } else if (isInstalled) {
+                    settingsStatusBadge.textContent = 'Installed';
+                    settingsStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/5 border border-white/10 text-gray-300';
                 } else {
                     settingsStatusBadge.textContent = 'Microsoft Store';
-                    settingsStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-cyan-500/15 border border-cyan-500/30 text-cyan-300';
+                    settingsStatusBadge.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-white/5 border border-white/10 text-gray-300';
                 }
             }
 

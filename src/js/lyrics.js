@@ -158,7 +158,7 @@
                 }
 
                 if (lyrics.instrumental) {
-                    const instHtml = '<div class="text-gray-400 my-auto text-sm py-16 flex flex-col items-center gap-3"><span class="text-3xl">🎵</span><span class="font-bold text-white text-base">Instrumental Piece</span><span class="text-xs text-gray-400">This track has no vocal lyrics. Enjoy the music!</span></div>';
+                    const instHtml = '<div class="text-gray-400 my-auto text-sm py-16 flex flex-col items-center gap-3"><svg class="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 19V6l12-2v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"/></svg><span class="font-bold text-white text-base">Instrumental Piece</span><span class="text-xs text-gray-400">This track has no vocal lyrics. Enjoy the music!</span></div>';
                     if (desktopCont) desktopCont.innerHTML = instHtml;
                     if (mobileCont) mobileCont.innerHTML = instHtml;
                     return;

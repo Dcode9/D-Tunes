@@ -313,9 +313,9 @@
                 chipBtns.forEach(btn => {
                     const label = text.split(':')[0].trim().substring(0, 8);
                     if (btn.textContent.includes(label)) {
-                        btn.classList.add('border-cyan-400', 'bg-cyan-500/20', 'text-cyan-300');
+                        btn.classList.add('border-[var(--accent-color)]/50', 'bg-[var(--accent-color)]/10', 'text-[var(--accent-color)]');
                     } else {
-                        btn.classList.remove('border-cyan-400', 'bg-cyan-500/20', 'text-cyan-300');
+                        btn.classList.remove('border-[var(--accent-color)]/50', 'bg-[var(--accent-color)]/10', 'text-[var(--accent-color)]');
                     }
                 });
             },
@@ -598,12 +598,11 @@
                     if (presetsContainer) {
                         presetsContainer.innerHTML = Object.entries(EQ_PRESETS).map(([key, preset]) => `
                             <button onclick="ui.setEqualizerPreset('${key}')" class="eq-preset-chip ${key === currentPreset ? 'active' : ''}" title="${preset.desc}">
-                                <span>${preset.icon}</span>
                                 <span>${preset.name}</span>
                             </button>
                         `).join('') + `
                             <button class="eq-preset-chip ${currentPreset === 'custom' ? 'active' : ''}" style="pointer-events:none;">
-                                <span>🎛️</span>
+                                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-width="2" d="M12 5v14M6 8v8M18 8v8"/></svg>
                                 <span>Custom</span>
                             </button>
                         `;
@@ -803,7 +802,7 @@
                 if (songs.length > 0) { state.queue = [...songs]; state.userQueue = []; state.idx = 0; player.playDirect(songs[0]); }
             },
             getPlaylistStyle: (name) => {
-                if (name === 'Liked Songs') return { bg: 'bg-gradient-to-br from-red-600 to-red-900', icon: '<svg class="w-20 h-20 text-red-500 drop-shadow-xl" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>', customHtml: null };
+                if (name === 'Liked Songs') return { bg: 'bg-gradient-to-br from-red-900/70 via-zinc-950 to-black', icon: '<svg class="w-20 h-20 text-red-500 drop-shadow-xl" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>', customHtml: null };
                 const custom = state.playlistStyles?.[name];
                 if (custom) {
                     return {
@@ -812,16 +811,20 @@
                         customHtml: renderPlaylistCoverMarkup(custom, 'w-full h-full')
                     };
                 }
-                const themes = ['bg-gradient-to-br from-purple-500 to-indigo-600', 'bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-400 to-emerald-500', 'bg-[conic-gradient(at_bottom_left,_var(--tw-gradient-stops))] from-yellow-400 via-red-500 to-pink-500', 'bg-gradient-to-bl from-teal-400 to-blue-600', 'bg-gradient-to-tr from-pink-500 to-orange-400'];
+                const themes = ['bg-gradient-to-br from-zinc-800/80 to-zinc-950', 'bg-gradient-to-br from-zinc-800/60 to-black', 'bg-gradient-to-tr from-zinc-900 to-zinc-950', 'bg-gradient-to-bl from-zinc-800/70 to-zinc-950', 'bg-gradient-to-tr from-zinc-900/80 to-black'];
                 const index = name.length % themes.length;
-                return { bg: themes[index], icon: `<span class="text-white drop-shadow-md uppercase">${name.substring(0, 2)}</span>`, customHtml: null };
+                return { bg: themes[index], icon: `<span class="text-gray-300 drop-shadow-md uppercase">${name.substring(0, 2)}</span>`, customHtml: null };
             },
             showToast: (message, type = 'info', duration = 3000) => {
                 const container = document.getElementById('toast-container');
                 if (!container) return;
                 const toast = document.createElement('div');
                 const borderClass = type === 'error' ? 'border-red-500/40 bg-red-950/90 text-red-200' : (type === 'success' ? 'border-emerald-500/40 bg-emerald-950/90 text-emerald-200' : 'border-white/15 bg-zinc-900/90 text-white');
-                const iconHtml = type === 'error' ? '⚠️' : (type === 'success' ? '✓' : '✨');
+                const iconHtml = type === 'error'
+                    ? '<svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>'
+                    : (type === 'success'
+                        ? '<svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>'
+                        : '<svg class="w-3.5 h-3.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>');
 
                 toast.className = `flex items-center gap-2 px-4 py-2.5 rounded-2xl glass-panel shadow-2xl border text-xs font-bold pointer-events-auto transform transition-all duration-300 translate-y-4 opacity-0 ${borderClass}`;
                 toast.innerHTML = `<span>${iconHtml}</span><span>${utils.escapeHtml(message)}</span>`;
@@ -1274,9 +1277,9 @@
 
                 html += `
                 <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer create-playlist-card" onclick="ui.toggleModal(true)">
-                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center liked-songs-art bg-gradient-to-br from-cyan-500/35 via-cyan-950/45 to-zinc-950 border transition">
-                        <div class="absolute inset-0" style="background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.28), transparent 34%);"></div>
-                        <span class="relative w-14 h-14 rounded-full bg-[var(--accent-color)] text-black flex items-center justify-center shadow-xl shadow-cyan-500/25 group-hover:scale-110 transition">
+                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center liked-songs-art bg-gradient-to-br from-zinc-800/80 to-zinc-950 border border-white/10 transition">
+                        <div class="absolute inset-0" style="background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.08), transparent 34%);"></div>
+                        <span class="relative w-14 h-14 rounded-full bg-[var(--accent-color)]/15 border border-[var(--accent-color)]/30 text-[var(--accent-color)] flex items-center justify-center group-hover:scale-105 transition">
                             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
                         </span>
                     </div>
@@ -1288,15 +1291,15 @@
 
                 // Vibe Mix Card
                 html += `
-                <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer border border-cyan-500/20 hover:border-cyan-400/50 bg-gradient-to-b from-cyan-950/20 to-black/40" onclick="ui.toggleVibeMixModal(true)">
-                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center bg-gradient-to-br from-indigo-900/60 via-purple-900/40 to-cyan-900/60 border border-cyan-500/20 group-hover:border-cyan-400/50 transition">
-                        <div class="absolute inset-0" style="background: radial-gradient(circle at 70% 30%, rgba(6, 182, 212, 0.25), transparent 60%);"></div>
-                        <span class="relative w-14 h-14 rounded-full bg-gradient-to-tr from-cyan-500 to-indigo-500 text-white flex items-center justify-center shadow-xl shadow-cyan-500/30 group-hover:scale-110 transition">
+                <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer border border-white/10 hover:border-white/20 bg-white/[0.02]" onclick="ui.toggleVibeMixModal(true)">
+                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center bg-gradient-to-br from-zinc-800/80 to-zinc-950 border border-white/10 group-hover:border-white/20 transition">
+                        <div class="absolute inset-0" style="background: radial-gradient(circle at 70% 30%, rgba(255, 255, 255, 0.06), transparent 60%);"></div>
+                        <span class="relative w-14 h-14 rounded-full bg-[var(--accent-color)]/15 border border-[var(--accent-color)]/30 text-[var(--accent-color)] flex items-center justify-center group-hover:scale-105 transition">
                             <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                         </span>
                     </div>
                     <div class="w-full min-w-0 flex-1">
-                        <div class="marquee-container w-full"><h3 class="font-bold text-cyan-400 text-sm marquee-text">Vibe Mix</h3></div>
+                        <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">Vibe Mix</h3></div>
                         <p class="text-xs text-gray-400 mt-1">Curate any mood</p>
                     </div>
                 </div>`;
@@ -1504,7 +1507,7 @@
                             <span class="swipe-reveal-text font-bold text-xs tracking-wide">Play Next</span>
                         </div>
                     </div>
-                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-cyan-600 text-white font-bold text-xs" style="width:0px;">
+                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-[var(--accent-color)] text-black font-bold text-xs" style="width:0px;">
                         <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
                             <span class="swipe-reveal-text font-bold text-xs tracking-wide">Add to Queue</span>
                             <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
@@ -1531,7 +1534,7 @@
                             <span class="swipe-reveal-text font-bold text-xs tracking-wide">Play Next</span>
                         </div>
                     </div>
-                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-cyan-600 text-white font-bold text-xs" style="width:0px;">
+                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-[var(--accent-color)] text-black font-bold text-xs" style="width:0px;">
                         <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
                             <span class="swipe-reveal-text font-bold text-xs tracking-wide">Add to Queue</span>
                             <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
@@ -1559,7 +1562,7 @@
                             <span class="swipe-reveal-text font-bold text-xs tracking-wide">Play Next</span>
                         </div>
                     </div>
-                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-cyan-600 text-white font-bold text-xs" style="width:0px;">
+                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-[var(--accent-color)] text-black font-bold text-xs" style="width:0px;">
                         <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
                             <span class="swipe-reveal-text font-bold text-xs tracking-wide">Add to Queue</span>
                             <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
@@ -1593,7 +1596,7 @@
                     </button>
                     <div class="absolute bottom-0 left-0 right-0 p-5">
                         <div class="inline-flex px-2 py-1 rounded-full bg-white/10 text-[10px] uppercase tracking-wider text-[var(--accent-color)] mb-3">For You</div>
-                        <div class="marquee-container"><h3 class="text-xl font-black text-white marquee-text">${utils.escapeHtml(song.name)}</h3></div>
+                        <div class="marquee-container"><h3 class="text-xl font-bold text-white marquee-text">${utils.escapeHtml(song.name)}</h3></div>
                         <div class="marquee-container mt-1"><p class="text-sm text-gray-300 marquee-text">${utils.escapeHtml(song.artist)}</p></div>
                     </div>
                 </div>`;
@@ -1623,7 +1626,7 @@
                 }
 
                 return `
-                <div class="discover-card glass-panel rounded-3xl overflow-hidden relative flex-shrink-0 w-64 h-80 group cursor-pointer hover-pause ${mix.gradientBg || 'bg-gradient-to-br from-cyan-600 to-indigo-900'}" onclick="homeView.openDiscoverMix('${mix.key}')">
+                <div class="discover-card glass-panel rounded-3xl overflow-hidden relative flex-shrink-0 w-64 h-80 group cursor-pointer hover-pause ${mix.gradientBg || 'bg-gradient-to-br from-zinc-800/80 to-zinc-950'}" onclick="homeView.openDiscoverMix('${mix.key}')">
                     <div class="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.2),transparent_70%)] pointer-events-none"></div>
                     <div class="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent pointer-events-none"></div>
                     
@@ -1638,7 +1641,7 @@
                             <span class="w-1.5 h-1.5 rounded-full bg-[var(--accent-color)] animate-pulse"></span>
                             ${utils.escapeHtml(mix.badgeText || 'MADE FOR YOU')}
                         </div>
-                        <div class="marquee-container"><h3 class="text-xl font-black text-white marquee-text tracking-tight drop-shadow-md">${utils.escapeHtml(mix.title)}</h3></div>
+                        <div class="marquee-container"><h3 class="text-xl font-bold text-white marquee-text tracking-tight drop-shadow-md">${utils.escapeHtml(mix.title)}</h3></div>
                         <p class="text-xs text-gray-300 mt-1 line-clamp-2 drop-shadow-sm font-medium">${utils.escapeHtml(mix.subtitle)}</p>
                     </div>
                 </div>`;
@@ -1658,13 +1661,13 @@
                 } else {
                     inner = `<div class="w-full h-full flex items-center justify-center text-white/80"><svg class="w-16 h-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"/></svg></div>`;
                 }
-                return `<div class="w-full h-full ${mix.gradientBg || 'bg-gradient-to-br from-cyan-600 to-indigo-950'} relative flex items-center justify-center overflow-hidden">
+                return `<div class="w-full h-full ${mix.gradientBg || 'bg-gradient-to-br from-zinc-800/80 to-zinc-950'} relative flex items-center justify-center overflow-hidden">
                     <div class="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.25),transparent_75%)] pointer-events-none"></div>
                     <div class="absolute inset-0 bg-black/30 backdrop-blur-[2px]"></div>
                     <div class="relative z-10 w-full h-full p-4 flex flex-col justify-between">
                         <div class="text-[10px] font-extrabold uppercase tracking-widest text-[var(--accent-color)] bg-black/50 backdrop-blur-md px-2.5 py-1 rounded-full w-max border border-white/10 shadow-lg">${utils.escapeHtml(mix.badgeText || 'D\'TUNES MIX')}</div>
                         <div class="w-28 h-28 mx-auto rounded-2xl overflow-hidden shadow-2xl border border-white/20">${inner}</div>
-                        <div class="text-center font-black text-white text-base tracking-tight truncate drop-shadow-md">${utils.escapeHtml(mix.title)}</div>
+                        <div class="text-center font-bold text-white text-base tracking-tight truncate drop-shadow-md">${utils.escapeHtml(mix.title)}</div>
                     </div>
                 </div>`;
             },
@@ -1678,7 +1681,7 @@
                     artEl.innerHTML = coverHtml;
                 } else {
                     artEl.className = 'w-48 h-48 md:w-full md:aspect-square rounded-2xl shadow-2xl flex items-center justify-center text-5xl md:text-6xl font-bold text-white shadow-black/50 overflow-hidden';
-                    artEl.innerHTML = '<div class="w-full h-full bg-gradient-to-br from-[var(--accent-color)] to-cyan-950 flex items-center justify-center"><svg class="w-20 h-20 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>';
+                    artEl.innerHTML = '<div class="w-full h-full bg-gradient-to-br from-zinc-800/80 to-zinc-950 flex items-center justify-center"><svg class="w-20 h-20 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>';
                 }
                 const customActions = document.getElementById('playlist-custom-actions');
                 if (customActions) customActions.classList.add('hidden');
@@ -2167,7 +2170,7 @@
                 this.isLoading = true;
                 const container = typeof document !== 'undefined' ? document.getElementById('reviews-list-container') : null;
                 if (container && this.reviews.length === 0) {
-                    container.innerHTML = '<div class="text-sm text-gray-400 py-12 col-span-full text-center flex items-center justify-center gap-2"><div class="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div><span>Loading community reviews...</span></div>';
+                    container.innerHTML = '<div class="text-sm text-gray-400 py-12 col-span-full text-center flex items-center justify-center gap-2"><div class="w-4 h-4 border-2 border-[var(--accent-color)] border-t-transparent rounded-full animate-spin"></div><span>Loading community reviews...</span></div>';
                 }
 
                 try {
@@ -2292,7 +2295,7 @@
                         </div>
                         <div class="flex items-center justify-between pt-3 border-t border-white/5 text-xs text-gray-400">
                             <div class="flex items-center gap-2">
-                                <div class="w-6 h-6 rounded-full bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-[10px] font-bold text-white uppercase">${escape(name.charAt(0))}</div>
+                                <div class="w-6 h-6 rounded-full bg-white/10 border border-white/10 flex items-center justify-center text-[10px] font-bold text-gray-200 uppercase">${escape(name.charAt(0))}</div>
                                 <span class="font-medium text-gray-300 truncate max-w-[120px]">${escape(name)}</span>
                             </div>
                             <span class="text-[11px] text-gray-500">${dateStr}</span>

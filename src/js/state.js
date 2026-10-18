@@ -797,15 +797,15 @@
                 if (aiContainer) {
                     aiContainer.innerHTML = `
                         <div class="pt-2 animate-fade-in px-4 md:px-8">
-                            <div class="p-6 md:p-8 rounded-2xl glass-panel border border-white/10 flex flex-col md:flex-row items-center justify-between gap-6 bg-gradient-to-r from-purple-900/30 via-black/40 to-emerald-900/30">
+                            <div class="p-6 md:p-8 rounded-2xl glass-panel border border-white/10 flex flex-col md:flex-row items-center justify-between gap-6 bg-white/[0.02]">
                                 <div class="max-w-xl">
                                     <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white text-xs font-semibold mb-3">
                                         <span>Daily Mixes</span>
                                     </div>
-                                    <h2 class="text-2xl md:text-3xl font-black text-white tracking-tight">Your Music, Tailored For You</h2>
+                                    <h2 class="text-2xl md:text-3xl font-bold font-display text-white tracking-tight">Your Music, Tailored For You</h2>
                                     <p class="text-sm text-neutral-300 mt-2 leading-relaxed">Sign in to unlock personalized daily mixes based on your listening history, favorite tracks, and custom playlists.</p>
                                 </div>
-                                <button onclick="if(window.dverse && dverse.signInWithGoogle) dverse.signInWithGoogle();" class="px-6 py-3 rounded-full bg-[var(--accent-color)] text-black font-bold text-sm hover:scale-105 active:scale-95 transition shadow-lg flex-shrink-0 cursor-pointer flex items-center gap-2">
+                                <button onclick="if(window.dverse && dverse.signInWithGoogle) dverse.signInWithGoogle();" class="px-6 py-3 rounded-full bg-[var(--accent-color)] text-black font-bold text-sm hover:brightness-110 active:scale-[0.98] transition flex-shrink-0 cursor-pointer flex items-center gap-2">
                                     <span>Sign In to D-Tunes</span>
                                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
                                 </button>

@@ -13,7 +13,7 @@
       -webkit-tap-highlight-color: transparent;
     }
     body {
-      background-color: #09090b;
+      background-color: #050505;
       color: #f4f4f5;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       min-height: 100vh;
@@ -23,16 +23,17 @@
       padding: 1.5rem;
       overflow: hidden;
       cursor: pointer;
+      -webkit-font-smoothing: antialiased;
     }
     .card {
-      background: rgba(24, 24, 30, 0.85);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 1.75rem;
+      background: rgba(24, 24, 30, 0.6);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 1.25rem;
       padding: 2.5rem 2rem;
       max-width: 420px;
       width: 100%;
       text-align: center;
-      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
       animation: fadeIn 0.4s ease-out;
@@ -54,7 +55,7 @@
       position: absolute;
       inset: -6px;
       border-radius: 50%;
-      border: 2px solid rgba(34, 211, 238, 0.4);
+      border: 2px solid rgba(34, 211, 238, 0.3);
       animation: pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
     }
     @keyframes pulse {
@@ -65,21 +66,20 @@
       width: 100%;
       height: 100%;
       border-radius: 50%;
-      background: linear-gradient(135deg, rgba(34, 211, 238, 0.2), rgba(6, 182, 212, 0.05));
-      border: 1px solid rgba(34, 211, 238, 0.35);
+      background: rgba(34, 211, 238, 0.12);
+      border: 1px solid rgba(34, 211, 238, 0.3);
       display: flex;
       align-items: center;
       justify-content: center;
       color: #22d3ee;
       font-size: 32px;
-      box-shadow: 0 0 25px rgba(34, 211, 238, 0.25);
     }
     h1 {
-      font-size: 1.35rem;
+      font-size: 1.3rem;
       font-weight: 700;
       margin-bottom: 0.5rem;
       color: #ffffff;
-      letter-spacing: -0.01em;
+      letter-spacing: -0.02em;
     }
     p {
       color: #a1a1aa;
@@ -92,20 +92,17 @@
       width: 100%;
       padding: 0.9rem 1.5rem;
       background: #22d3ee;
-      color: #09090b;
+      color: #050505;
       font-weight: 700;
       font-size: 1rem;
       border-radius: 9999px;
       text-decoration: none;
-      box-shadow: 0 6px 24px rgba(34, 211, 238, 0.35);
-      transition: transform 0.15s ease, box-shadow 0.15s ease;
+      transition: filter 0.15s ease;
       cursor: pointer;
       border: none;
     }
-    .btn:hover, .btn:active {
-      transform: scale(0.98);
-      box-shadow: 0 4px 16px rgba(34, 211, 238, 0.25);
-    }
+    .btn:hover { filter: brightness(1.08); }
+    .btn:active { filter: brightness(0.95); }
     .hint {
       margin-top: 1.25rem;
       font-size: 0.78rem;
@@ -117,7 +114,7 @@
   <div class="card">
     <div class="icon-wrapper">
       <div class="pulse-ring"></div>
-      <div class="icon-circle">✓</div>
+      <div class="icon-circle"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></div>
     </div>
     <h1 id="title">Signed In Successfully</h1>
     <p id="desc">Returning to your D'Tunes app…</p>
