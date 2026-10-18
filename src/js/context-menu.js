@@ -16,6 +16,22 @@
                 document.getElementById('cm-add-playlist').onclick = (e) => { e.stopPropagation(); menu.classList.add('hidden'); ctxMenu.showPlaylistSelector(); };
                 document.getElementById('cm-like-song').onclick = () => { const s = songStore.get(ctxMenu.activeStoreId); if(s) player.likeSong(s.id); menu.classList.add('hidden'); };
                 document.getElementById('cm-add-library').onclick = () => { const s = songStore.get(ctxMenu.activeStoreId); if(s) player.addToLibrary(s.id); menu.classList.add('hidden'); };
+                const cmDownload = document.getElementById('cm-download');
+                if (cmDownload) {
+                    cmDownload.onclick = (e) => {
+                        e.stopPropagation();
+                        const s = songStore.get(ctxMenu.activeStoreId);
+                        if (!s) return;
+                        ui.toggleOfflineDownload(s);
+                        ui.updateDownloadContextLabel(s);
+                    };
+                }
+                if (window.offlineStore && offlineStore.onChange) {
+                    offlineStore.onChange(() => {
+                        if (menu.classList.contains('hidden')) return;
+                        ui.updateDownloadContextLabel(songStore.get(ctxMenu.activeStoreId));
+                    });
+                }
                 const cmDislike = document.getElementById('cm-dislike-song');
                 if (cmDislike) {
                     cmDislike.onclick = () => {
@@ -54,6 +70,7 @@
                 const libraryLabel = document.getElementById('cm-add-library-label');
                 if (likeLabel && song) likeLabel.textContent = player.isLiked(song.id) ? 'Unlike song' : 'Like song';
                 if (libraryLabel && song) libraryLabel.textContent = player.isInLibrary(song.id) ? 'Remove from Library' : 'Add to Library';
+                if (typeof ui.updateDownloadContextLabel === 'function') ui.updateDownloadContextLabel(song);
                 const dislikeLabel = document.getElementById('cm-dislike-song-label');
                 if (dislikeLabel && song) {
                     dislikeLabel.textContent = (player.isDisliked && player.isDisliked(song.id)) ? 'Remove from hidden' : "Don't recommend this";

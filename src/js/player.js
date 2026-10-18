@@ -84,10 +84,13 @@
             if (!nextTrack?.id || state.nextTrackPreloadId === nextTrack.id) return;
             state.nextTrackPreloadId = nextTrack.id;
             try {
-                const freshDetails = nextTrack.url ? null : await jiosaavnAPI.getSong(nextTrack.id);
-                const playUrl = freshDetails?.url || nextTrack.url;
+                const offlineUrl = (typeof offlineStore !== 'undefined' && offlineStore.isDownloaded(nextTrack.id))
+                    ? await offlineStore.getPlayUrl(nextTrack.id).catch(() => null)
+                    : null;
+                const freshDetails = nextTrack.url || offlineUrl ? null : await jiosaavnAPI.getSong(nextTrack.id);
+                const playUrl = offlineUrl || freshDetails?.url || nextTrack.url;
                 if (!playUrl || state.nextTrackPreloadId !== nextTrack.id) return;
-                Object.assign(nextTrack, freshDetails || {}, { url: playUrl });
+                if (freshDetails) Object.assign(nextTrack, freshDetails, { url: playUrl });
                 if (preloadAudio) {
                     preloadAudio.src = playUrl;
                     preloadAudio.load();
@@ -135,7 +138,7 @@
         const requestPlay = async () => {
             if (!state.loaded && !state.currentTrack) return;
             state.userPaused = false;
-            if (state.currentTrack && (!audio.src || !jiosaavnAPI.isStreamingUrl(audio.src))) {
+            if (state.currentTrack && (!audio.src || !(jiosaavnAPI.isStreamingUrl(audio.src) || String(audio.src).startsWith('blob:')))) {
                 await player.playDirect(state.currentTrack);
                 return;
             }
@@ -178,6 +181,21 @@
             state._audioRetryCount = (state._audioRetryCount || 0) + 1;
 
             try {
+                // Attempt 0: an offline copy is always preferred over the network
+                if (typeof offlineStore !== 'undefined' && offlineStore.isDownloaded(state.currentTrack.id)) {
+                    const offlineUrl = await offlineStore.getPlayUrl(state.currentTrack.id).catch(() => null);
+                    if (offlineUrl) {
+                        audio.crossOrigin = 'anonymous';
+                        audio.src = offlineUrl;
+                        audio.load();
+                        if (resumeTime > 0) {
+                            try { audio.currentTime = resumeTime; } catch (_) {}
+                        }
+                        if (state.playing || !state.userPaused) await audio.play();
+                        return;
+                    }
+                }
+
                 // Attempts 1 & 2: Smooth retry at current timestamp before skipping track
                 if (state._audioRetryCount <= 2 && state.currentTrack.url) {
                     await new Promise(r => setTimeout(r, 400));
@@ -386,6 +404,14 @@
                 };
 
                 try {
+                    // Offline copies play instantly and need no network round-trip
+                    if (typeof offlineStore !== 'undefined' && offlineStore.isDownloaded(track.id)) {
+                        const offlineUrl = await offlineStore.getPlayUrl(track.id).catch(() => null);
+                        if (offlineUrl) {
+                            await setupAndStartPlayback(offlineUrl);
+                            return;
+                        }
+                    }
                     const hasStreamUrl = Boolean(track.url && (jiosaavnAPI.isStreamingUrl(track.url) || track.url.startsWith('http')));
                     if (hasStreamUrl) {
                         // Instant playback with known streaming URL
