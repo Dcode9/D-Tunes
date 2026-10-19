@@ -60,7 +60,18 @@ function loadAiHub(env, { state, offlineStore, ai, isOffline, jiosaavnAPI = { se
         ui: {
             createCard: (song) => `<div class="scroll-card"><h3 class="marquee-text">${song.name}</h3></div>`
         },
-        utils: { escapeHtml: (s) => String(s ?? '') },
+        utils: {
+            escapeHtml: (s) => String(s ?? ''),
+            deduplicateSongs: (songs) => {
+                const seen = new Set();
+                return (songs || []).filter(song => {
+                    const key = song && (song.id || song.saavn_id);
+                    if (!key || seen.has(key)) return false;
+                    seen.add(key);
+                    return true;
+                });
+            }
+        },
         player: { playDirect: () => {} },
         jiosaavnAPI
     });
@@ -115,7 +126,8 @@ test('Offline home: downloaded songs render above cached Made For You with expir
     assert.ok(html.includes('Downloaded One'), 'Downloaded songs must be listed');
     assert.ok(html.includes('Made For You'), 'Made For You header must render');
     assert.ok(html.includes('Golden Hour'), 'Cached daily mix must render offline');
-    assert.ok(html.includes('expires'), 'Cache expiry must be surfaced');
+    assert.equal(html.includes('expires'), false, 'Cache expiry must never be exposed');
+    assert.equal(html.includes('Saved on this device ·'), false, 'Cache diagnostics must not be user-facing');
     assert.ok(html.indexOf('Downloaded Songs') < html.indexOf('Made For You'),
         'Downloaded songs must sit above cached content');
 });
@@ -138,6 +150,44 @@ test('Offline home: expired Made For You cache is hidden but downloads remain', 
     assert.ok(html.includes('Downloaded One'), 'Downloads still render');
     assert.equal(html.includes('Golden Hour'), false, 'Expired cache must not render');
     assert.ok(html.includes('not saved on this device yet'), 'Empty offline message must explain the cache');
+});
+
+test('Offline home: downloads lead, Recently Played is local, network shelves are hidden', async () => {
+    const env = createTestEnvironment();
+    const future = new Date(Date.now() + 6 * 3600000).toISOString();
+    env.localStorage.setItem(DAILY_MIX_CACHE_KEY, JSON.stringify(cachedMix(future)));
+
+    const { context } = loadAiHub(env, {
+        state: {
+            playHistory: [
+                { id: 'dl_1', name: 'Downloaded One', artist: 'Offline Artist', img: 'https://cdn.example.com/1.jpg', url: 'https://cdn.example.com/1.mp4' },
+                { id: 'stream_1', name: 'Stream Only', artist: 'Cloud Artist', img: 'https://cdn.example.com/s.jpg', url: 'https://cdn.example.com/s.mp4' }
+            ],
+            likedIds: [],
+            libraryIds: [],
+            dislikedSongs: []
+        },
+        offlineStore: {
+            list: async () => offlineSongs(),
+            isDownloaded: (id) => id === 'dl_1' || id === 'dl_2'
+        },
+        ai: { generateCustomPlaylists: async () => { throw new Error('must not be called offline'); } },
+        isOffline: true
+    });
+
+    await context.window.aiHome.renderAIHome();
+
+    const html = env.document.getElementById('ai-hub-container').innerHTML;
+    assert.ok(html.includes('Offline mode'), 'Offline message must render');
+    assert.ok(html.indexOf('Downloaded Songs') < html.indexOf('Recently Played'),
+        'Downloaded songs must lead the offline home');
+    assert.ok(html.indexOf('Recently Played') < html.indexOf('Made For You'),
+        'Local history must come before cached mixes');
+    assert.ok(html.includes('Stream Only'), 'History still renders (gated) offline');
+    assert.ok(env.document.getElementById('section-trending').classList.contains('hidden'),
+        'Network-only Trending must be hidden offline');
+    assert.ok(env.document.getElementById('section-recent').classList.contains('hidden'),
+        'External Recently Played section must be hidden offline');
 });
 
 test('Online home: freshly generated mixes are written to the local cache with expiry', async () => {

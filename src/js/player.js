@@ -250,9 +250,36 @@
             }
         };
 
+        // Offline safety net: a track that is not saved on this device can never
+        // start playback while the app has no connection, whatever UI path led here.
+        const isOfflineBlockedTrack = (track) => {
+            if (!track) return false;
+            try {
+                const offline = typeof window !== 'undefined' &&
+                    typeof window.__dtunesIsOffline === 'function' &&
+                    window.__dtunesIsOffline();
+                if (!offline) return false;
+                if (typeof offlineStore === 'undefined' || !offlineStore || typeof offlineStore.isDownloaded !== 'function') return true;
+                return !offlineStore.isDownloaded(track.saavn_id || track.id);
+            } catch (_) {
+                return false;
+            }
+        };
+
+        const notifyOfflineBlockedTrack = (track) => {
+            if (typeof ui !== 'undefined' && ui.showToast) {
+                const name = track && track.name ? `"${track.name}" ` : 'This song ';
+                ui.showToast(`${name}isn't downloaded — it can't play offline.`);
+            }
+        };
+
         window.playSongById = (storeId) => {
             const song = songStore.get(storeId);
             if (song) {
+                if (isOfflineBlockedTrack(song)) {
+                    notifyOfflineBlockedTrack(song);
+                    return;
+                }
                 const isSearch = !document.getElementById('view-search')?.classList.contains('hidden') ||
                                  document.body.classList.contains('mobile-search-open');
                 if (isSearch && typeof searchManager !== 'undefined' && searchManager.addToRecentSearches) {
@@ -305,6 +332,10 @@
         const player = {
             playDirect: async (track) => {
                 if (!track) return;
+                if (isOfflineBlockedTrack(track)) {
+                    notifyOfflineBlockedTrack(track);
+                    return;
+                }
                 const currentRequestId = ++playRequestId;
                 recommendationEvents.maybeRecordSkip();
                 isPlaybackPending = true;
@@ -405,8 +436,9 @@
 
                 try {
                     // Offline copies play instantly and need no network round-trip
-                    if (typeof offlineStore !== 'undefined' && offlineStore.isDownloaded(track.id)) {
-                        const offlineUrl = await offlineStore.getPlayUrl(track.id).catch(() => null);
+                    const offlineId = track.saavn_id || track.id;
+                    if (typeof offlineStore !== 'undefined' && offlineStore.isDownloaded(offlineId)) {
+                        const offlineUrl = await offlineStore.getPlayUrl(offlineId).catch(() => null);
                         if (offlineUrl) {
                             await setupAndStartPlayback(offlineUrl);
                             return;

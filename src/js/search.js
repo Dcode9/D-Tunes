@@ -204,8 +204,16 @@
 
                 listEl.innerHTML = history.map(song => {
                     const storeId = songStore.add(song);
+                    const blocked = ui.isOfflineUnavailable(song);
+                    const rowClass = blocked
+                        ? 'relative overflow-hidden rounded-2xl mb-2 group select-none flex-shrink-0 w-full flex items-center'
+                        : 'swipe-song relative overflow-hidden rounded-2xl mb-2 group select-none flex-shrink-0 w-full flex items-center';
+                    const cardClass = blocked
+                        ? 'glass-panel rounded-2xl p-2 pr-3 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/95 opacity-45 grayscale cursor-not-allowed relative z-10'
+                        : 'swipe-song-card glass-panel rounded-2xl p-2 pr-3 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/95 cursor-pointer relative z-10';
+                    const playAttr = blocked ? '' : `onclick="searchManager.playRecentSearch('${storeId}')" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')"`;
                     return `
-                    <div class="swipe-song relative overflow-hidden rounded-2xl mb-2 group select-none flex-shrink-0 w-full flex items-center" data-store-id="${storeId}">
+                    <div class="${rowClass}" data-store-id="${storeId}">
                         <div class="swipe-reveal-left absolute inset-y-0 left-0 flex items-center overflow-hidden pointer-events-none rounded-2xl z-0 bg-emerald-600 text-white font-bold text-xs" style="width:0px;">
                             <div class="swipe-reveal-content flex items-center gap-2 px-4 whitespace-nowrap min-w-max h-full">
                                 <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
@@ -218,8 +226,9 @@
                                 <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
                             </div>
                         </div>
-                        <div class="swipe-song-card glass-panel rounded-2xl p-2 pr-3 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/95 cursor-pointer relative z-10" onclick="searchManager.playRecentSearch('${storeId}')" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                        <div class="${cardClass}" ${playAttr} ${blocked ? 'aria-disabled="true" title="Not downloaded — unavailable offline"' : ''}>
                             ${ui.createSongPillInner(song)}
+                            ${blocked ? ui.notDownloadedBadge('ml-1') : ''}
                             <button class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition flex-shrink-0 ml-1" onclick="event.stopPropagation(); searchManager.removeFromSearchHistory('${utils.escapeJs(song.id)}')" title="Remove from recent searches" aria-label="Remove from recent searches">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                             </button>
@@ -250,13 +259,15 @@
                 if(!data.top) { document.getElementById('search-content').innerHTML = '<p class="text-gray-400 pl-8">No results found.</p>'; return; }
 
                 const topStoreId = songStore.add(data.top);
+                const topBlocked = ui.isOfflineUnavailable(data.top);
+                const topLikeAttr = topBlocked ? '' : `ondblclick="player.likeSong('${utils.escapeJs(data.top.id)}')"`;
                 document.getElementById('search-top-result').innerHTML = `
-                    <div class="absolute inset-0 z-0" ondblclick="player.likeSong('${utils.escapeJs(data.top.id)}')">
+                    <div class="absolute inset-0 z-0" ${topLikeAttr}>
                         <img src="${data.top.img}" class="w-full h-full object-cover opacity-30 blur-md">
                         <div class="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent"></div>
                     </div>
-                    <div class="relative z-10 flex flex-col gap-4">
-                        <img src="${data.top.img}" class="w-28 h-28 md:w-36 md:h-36 rounded-lg shadow-2xl object-cover" ondblclick="player.likeSong('${utils.escapeJs(data.top.id)}')">
+                    <div class="relative z-10 flex flex-col gap-4 ${topBlocked ? 'opacity-45 grayscale' : ''}" ${topBlocked ? 'aria-disabled="true"' : ''}>
+                        <img src="${data.top.img}" class="w-28 h-28 md:w-36 md:h-36 rounded-lg shadow-2xl object-cover" ${topLikeAttr}>
                         
                         <div class="flex flex-col gap-1">
                             <h2 class="text-3xl font-bold text-white line-clamp-2 leading-tight" title="${utils.escapeHtml(data.top.name)}">${utils.escapeHtml(data.top.name)}</h2>
@@ -266,7 +277,9 @@
                             </div>
                         </div>
                         
-                        <div class="mt-2 flex items-center gap-3">
+                        ${topBlocked
+                            ? `<div class="mt-2">${ui.notDownloadedBadge('px-3 py-1.5 text-[10px]')}</div>`
+                            : `<div class="mt-2 flex items-center gap-3">
                             <button class="bg-[var(--accent-color)] text-black px-6 py-2.5 rounded-full font-bold hover:brightness-110 transition flex items-center gap-2" onclick="event.stopPropagation(); ui.playFromQuickSearch('${topStoreId}')">
                                 <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play
                             </button>
@@ -279,7 +292,7 @@
                             <button class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition" title="Like" onclick="event.stopPropagation(); player.likeSong('${utils.escapeJs(data.top.id)}')">
                                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
                             </button>
-                        </div>
+                        </div>`}
                     </div>`;
                 document.getElementById('search-songs-list').innerHTML = data.songs.map(song => ui.createListRow(song)).join('');
                 document.getElementById('search-albums-grid').innerHTML = data.albums.map(item => ui.createCard(item)).join('');
@@ -368,15 +381,18 @@
                 const topTrackHtml = topTracksList.length
                     ? topTracksList.map((song, index) => {
                         const storeId = songStore.add(song);
+                        const blocked = ui.isOfflineUnavailable(song);
                         return `
-                        <div class="flex items-center justify-between p-2 rounded-xl bg-white/5 hover:bg-white/10 transition cursor-pointer gap-3" onclick="playSongById('${storeId}')">
+                        <div class="flex items-center justify-between p-2 rounded-xl bg-white/5 gap-3 ${blocked ? 'opacity-45 grayscale cursor-not-allowed select-none' : 'hover:bg-white/10 transition cursor-pointer'}"
+                            ${blocked ? 'aria-disabled="true" title="Not downloaded — unavailable offline"' : `onclick="playSongById('${storeId}')"`}>
                             <span class="w-5 text-center text-xs font-mono font-bold text-gray-400 flex-shrink-0">#${index + 1}</span>
                             <img src="${song.img || FALLBACK_ART}" class="w-10 h-10 rounded-lg object-cover flex-shrink-0">
                             <div class="min-w-0 flex-1">
-                                <p class="text-xs font-bold text-white truncate">${utils.escapeHtml(song.name || song.title || 'Track')}</p>
+                                <p class="text-xs font-bold ${blocked ? 'text-gray-400' : 'text-white'} truncate">${utils.escapeHtml(song.name || song.title || 'Track')}</p>
                                 <p class="text-[10px] text-gray-400 truncate">${utils.escapeHtml(song.artist || 'Artist')}</p>
                             </div>
-                            <div class="text-right flex-shrink-0">
+                            <div class="text-right flex-shrink-0 flex flex-col items-end gap-1">
+                                ${blocked ? ui.notDownloadedBadge() : ''}
                                 <p class="text-xs font-bold text-[var(--accent-color)] font-mono">${song.plays || 1} plays</p>
                             </div>
                         </div>`;

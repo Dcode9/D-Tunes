@@ -1537,6 +1537,11 @@
                 const label = name ? `"${name}" is not downloaded` : 'This song is not downloaded';
                 if (ui.showToast) ui.showToast(`${label} — connect to the internet or download it to play offline.`);
             },
+            notDownloadedBadge: (extraClass = '') => `
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-[9px] font-bold uppercase tracking-wide text-gray-300 flex-shrink-0 ${extraClass}">
+                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
+                    <span>Not downloaded</span>
+                </span>`,
 
             createCard: (item) => {
                 const storeId = songStore.add(item);
@@ -1545,11 +1550,11 @@
                 if (offlineBlocked) {
                     const blockedArtist = utils.escapeHtml(item.artist);
                     return `
-                    <div class="scroll-card glass-panel p-3 rounded-xl flex flex-col w-40 opacity-45 grayscale">
-                        <div class="relative aspect-square rounded-lg overflow-hidden mb-3 bg-gray-800 shadow-md cursor-not-allowed" onclick="ui.notifyOfflineUnavailable('${utils.escapeJs(item.name)}')">
+                    <div class="scroll-card glass-panel p-3 rounded-xl flex flex-col w-40 opacity-45 grayscale cursor-not-allowed select-none" aria-disabled="true" title="Not downloaded — unavailable offline">
+                        <div class="relative aspect-square rounded-lg overflow-hidden mb-3 bg-gray-800 shadow-md">
                             <img src="${item.img}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover" decoding="async">
                             <div class="absolute inset-0 bg-black/55 flex flex-col items-center justify-center gap-1.5">
-                                <svg class="w-5 h-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6a1.5 1.5 0 00-3 0v4.5m3 0a4.5 4.5 0 11-3 0m3 0 4.5 4.5M9 19.5l-4.5-4.5"/></svg>
+                                <svg class="w-5 h-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
                                 <span class="text-[9px] font-bold text-white/85 uppercase tracking-wide">Not downloaded</span>
                             </div>
                         </div>
@@ -1620,9 +1625,9 @@
                 if (ui.isOfflineUnavailable(song)) {
                     return `
                     <div class="relative overflow-hidden rounded-2xl mb-2 flex-shrink-0 w-full" data-store-id="${storeId}">
-                        <div class="glass-panel rounded-2xl p-2 pr-2 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/95 opacity-45 grayscale" onclick="ui.notifyOfflineUnavailable('${utils.escapeJs(song.name)}')">
+                        <div class="glass-panel rounded-2xl p-2 pr-2 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/95 opacity-45 grayscale cursor-not-allowed select-none" aria-disabled="true" title="Not downloaded — unavailable offline">
                             ${ui.createSongPillInner(song)}
-                            <span class="ml-2 px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-[9px] font-bold uppercase tracking-wide text-gray-300 flex-shrink-0">Not downloaded</span>
+                            ${ui.notDownloadedBadge('ml-2')}
                         </div>
                     </div>`;
                 }
@@ -1654,9 +1659,9 @@
                 if (ui.isOfflineUnavailable(song)) {
                     return `
                     <div class="relative overflow-hidden rounded-2xl mb-2 flex-shrink-0 w-full" data-store-id="${storeId}">
-                        <div class="glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/95 opacity-45 grayscale cursor-not-allowed" onclick="ui.notifyOfflineUnavailable('${utils.escapeJs(song.name)}')">
+                        <div class="glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/95 opacity-45 grayscale cursor-not-allowed select-none" aria-disabled="true" title="Not downloaded — unavailable offline">
                             ${ui.createSongPillInner(song)}
-                            <span class="ml-2 px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-[9px] font-bold uppercase tracking-wide text-gray-300 flex-shrink-0">Not downloaded</span>
+                            ${ui.notDownloadedBadge('ml-2')}
                         </div>
                     </div>`;
                 }
@@ -1693,16 +1698,16 @@
                 if (ui.isOfflineUnavailable(song)) {
                     return `
                     <div class="relative overflow-hidden rounded-2xl mb-2 flex-shrink-0 w-full" data-store-id="${storeId}">
-                        <div class="flex items-center gap-4 p-2 rounded-2xl glass-panel w-full bg-[#121212]/95 border border-white/10 opacity-45 grayscale">
-                            <div class="relative w-12 h-12 flex-shrink-0 rounded-md overflow-hidden cursor-not-allowed" onclick="ui.notifyOfflineUnavailable('${utils.escapeJs(song.name)}')">
+                        <div class="flex items-center gap-4 p-2 rounded-2xl glass-panel w-full bg-[#121212]/95 border border-white/10 opacity-45 grayscale select-none" aria-disabled="true" title="Not downloaded — unavailable offline">
+                            <div class="relative w-12 h-12 flex-shrink-0 rounded-md overflow-hidden cursor-not-allowed">
                                 <img src="${song.img}" class="w-full h-full object-cover" decoding="async">
                             </div>
-                            <div class="flex-1 min-w-0 flex flex-col justify-center cursor-not-allowed" onclick="ui.notifyOfflineUnavailable('${utils.escapeJs(song.name)}')">
+                            <div class="flex-1 min-w-0 flex flex-col justify-center cursor-not-allowed">
                                 <div class="marquee-container w-full"><h4 class="text-gray-400 font-medium text-sm marquee-text">${utils.escapeHtml(song.name)}</h4></div>
                                 <div class="marquee-container w-full mt-0.5"><p class="text-gray-500 text-xs marquee-text">${utils.escapeHtml(song.artist)}</p></div>
                             </div>
                             <div class="flex items-center gap-2 mr-2">
-                                <span class="px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-[9px] font-bold uppercase tracking-wide text-gray-300 flex-shrink-0">Not downloaded</span>
+                                ${ui.notDownloadedBadge()}
                                 ${removeBtnHtml}
                             </div>
                         </div>
@@ -1744,11 +1749,11 @@
                 const storeId = songStore.add(song);
                 if (ui.isOfflineUnavailable(song)) {
                     return `
-                    <div class="for-you-card glass-panel rounded-3xl overflow-hidden relative flex-shrink-0 w-64 h-80 opacity-45 grayscale">
+                    <div class="for-you-card glass-panel rounded-3xl overflow-hidden relative flex-shrink-0 w-64 h-80 opacity-45 grayscale cursor-not-allowed select-none" aria-disabled="true" title="Not downloaded — unavailable offline">
                         <img src="${song.img}" class="absolute inset-0 w-full h-full object-cover" decoding="async">
                         <div class="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent"></div>
-                        <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 cursor-not-allowed" onclick="ui.notifyOfflineUnavailable('${utils.escapeJs(song.name)}')">
-                            <svg class="w-6 h-6 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6a1.5 1.5 0 00-3 0v4.5m3 0a4.5 4.5 0 11-3 0m3 0 4.5 4.5M9 19.5l-4.5-4.5"/></svg>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 cursor-not-allowed">
+                            <svg class="w-6 h-6 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
                             <span class="px-2 py-1 rounded-full bg-black/60 border border-white/20 text-[9px] font-bold uppercase tracking-wide text-white/85">Not downloaded</span>
                         </div>
                         <div class="absolute bottom-0 left-0 right-0 p-5">

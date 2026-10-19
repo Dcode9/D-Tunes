@@ -107,7 +107,8 @@ test('Offline gating: non-downloaded song card is greyed out and unplayable', ()
     assert.equal(ui.isOfflineUnavailable(song), true);
     assert.ok(html.includes('grayscale'), 'Blocked card must be greyed out');
     assert.ok(html.includes('Not downloaded'), 'Blocked card must explain why');
-    assert.ok(html.includes('notifyOfflineUnavailable'), 'Blocked card must not play');
+    assert.ok(html.includes('aria-disabled="true"'), 'Blocked card must be marked disabled');
+    assert.equal(html.includes('notifyOfflineUnavailable'), false, 'Blocked card must be inert');
     assert.equal(html.includes('playSongById('), false, 'Blocked card must not expose a play handler');
 });
 
@@ -123,7 +124,8 @@ test('Offline gating: song pills follow the same rules in the library', () => {
     const blocked = loadUi({ isOffline: true, downloaded: [] });
     const blockedHtml = blocked.ui.createSongPill(song, `playSongById('x')`, 'history');
     assert.ok(blockedHtml.includes('Not downloaded'));
-    assert.ok(blockedHtml.includes('notifyOfflineUnavailable'));
+    assert.ok(blockedHtml.includes('aria-disabled="true"'));
+    assert.equal(blockedHtml.includes('notifyOfflineUnavailable'), false);
     assert.equal(blockedHtml.includes(`playSongById('x')`), false);
 
     const allowed = loadUi({ isOffline: true, downloaded: ['s1'] });

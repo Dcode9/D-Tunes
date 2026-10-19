@@ -292,14 +292,14 @@
                             ${playlist.description ? `<p class="text-xs text-gray-400 mt-0.5">${utils.escapeHtml(playlist.description)}</p>` : ''}
                         </div>
                         <div class="flex items-center gap-2">
-                            <button onclick="window.aiHome.playEntirePlaylist('${playlistId}')" class="px-3.5 py-1.5 rounded-full bg-[var(--accent-color)] text-black text-xs font-bold hover:brightness-110 active:scale-[0.98] transition flex items-center gap-1.5" title="Play Playlist">
+                            ${offline ? '' : `<button onclick="window.aiHome.playEntirePlaylist('${playlistId}')" class="px-3.5 py-1.5 rounded-full bg-[var(--accent-color)] text-black text-xs font-bold hover:brightness-110 active:scale-[0.98] transition flex items-center gap-1.5" title="Play Playlist">
                                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                                 <span>Play</span>
                             </button>
                             <button onclick="window.aiHome.addPlaylistToQueue('${playlistId}')" class="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold active:scale-95 transition flex items-center gap-1.5 shadow-sm" title="Add all songs to queue">
                                 <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                                 <span>Add to Queue</span>
-                            </button>
+                            </button>`}
                             <button onclick="window.aiHome.savePlaylistToLibrary('${playlistId}')" class="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white active:scale-95 transition shadow-sm" title="Save to Your Library">
                                 <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>
                             </button>
@@ -347,13 +347,6 @@
             `;
         }
 
-        const cacheNote = expiresAt
-            ? `<p class="text-[11px] text-emerald-300/90 mt-1.5 flex items-center gap-1.5">
-                    <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-                    <span>Saved on this device · expires ${utils.escapeHtml(formatCacheExpiry(expiresAt))}</span>
-               </p>`
-            : '';
-
         const emptyHtml = !sectionsHtml && emptyMessage
             ? `<div class="px-4 md:px-8 mb-10">
                     <div class="glass-panel rounded-xl px-5 py-6 text-sm text-neutral-400 leading-relaxed">${utils.escapeHtml(emptyMessage)}</div>
@@ -368,7 +361,6 @@
                     <div>
                         <h2 class="text-2xl md:text-3xl font-bold font-display text-white tracking-tight">Made For You</h2>
                         <p class="text-xs md:text-sm text-neutral-400 mt-1">${utils.escapeHtml(description)}</p>
-                        ${cacheNote}
                     </div>
                     <div class="flex items-center gap-2">
                         <button onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Made For You (Daily Recommendations)' })" class="text-xs text-amber-400/90 hover:text-amber-300 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 transition hover:bg-amber-500/20 cursor-pointer" title="Report issue with AI-generated recommendations (Policy 11.16)">
@@ -488,6 +480,29 @@
         `;
     }
 
+    function buildRecentlyPlayedShelf() {
+        const history = Array.isArray(state.playHistory) ? state.playHistory : [];
+        if (history.length === 0) return '';
+        const deduped = utils.deduplicateSongs(history).slice(0, 16);
+        if (deduped.length === 0) return '';
+        const cards = deduped.map(song => ui.createCard(song)).join('');
+        return `
+            <div class="mb-10 animate-fade-in">
+                <div class="flex items-center justify-between px-4 md:px-8 mb-4">
+                    <div>
+                        <h3 class="text-xl font-bold text-white tracking-tight">Recently Played</h3>
+                        <p class="text-xs text-gray-400 mt-0.5">Downloaded songs play offline; everything else is greyed out.</p>
+                    </div>
+                </div>
+                <div class="relative group/track">
+                    <div class="row-blur-left"></div>
+                    <div class="horizontal-scroll px-4 md:px-8 gap-4">${cards}</div>
+                    <div class="row-blur-right"></div>
+                </div>
+            </div>
+        `;
+    }
+
     async function renderOfflineHome(container) {
         let downloads = [];
         if (window.offlineStore && typeof window.offlineStore.list === 'function') {
@@ -498,6 +513,12 @@
             }
         }
 
+        // The offline homepage is built around local downloads. Network-only
+        // shelves below the hub (Trending) are hidden so nothing unreachable
+        // competes with what the listener can actually play.
+        document.getElementById('section-trending')?.classList.add('hidden');
+        document.getElementById('section-recent')?.classList.add('hidden');
+
         const cached = readDailyMixCache();
         const playlistSource = cached?.playlists || [];
 
@@ -506,10 +527,10 @@
             todayKey: cached?.dateKey || localDateKey(),
             expiresAt: cached?.expiresAt || null,
             offline: true,
-            prependHtml: buildOfflineBanner(downloads) + buildDownloadsShelf(downloads) + buildLibraryShelf(),
+            prependHtml: buildOfflineBanner(downloads) + buildDownloadsShelf(downloads) + buildRecentlyPlayedShelf() + buildLibraryShelf(),
             description: cached
-                ? 'Your daily mixes stay available offline until they expire.'
-                : 'Daily mixes are saved automatically when you open D-Tunes online.',
+                ? 'Your daily mixes, ready for offline listening.'
+                : 'Daily mixes appear here automatically after you open D-Tunes online.',
             emptyMessage: 'Made For You is not saved on this device yet. Open D-Tunes with a connection once and today\'s mixes will be cached here automatically.'
         });
 
@@ -668,7 +689,9 @@
                 expiresAt: cachePayload?.expiresAt || null
             });
 
-            if (cachePayload && window.ui?.showToast) {
+            // Cache diagnostics are developer-only; regular listeners never see them.
+            const isDev = typeof window.isAuthorizedDev === 'function' && window.isAuthorizedDev();
+            if (cachePayload && isDev && window.ui?.showToast) {
                 ui.showToast(`Made For You saved offline until ${formatCacheExpiry(cachePayload.expiresAt)}`);
             }
         } catch (err) {
@@ -732,15 +755,11 @@
             if (window.setupShelfNavButtons) setupShelfNavButtons();
         };
 
-        // Offline: only show songs we cached on an earlier online visit.
+        // Offline: the home view is built around downloaded songs, so the
+        // network-only Trending shelf is hidden rather than shown greyed out.
         if (isOfflineMode()) {
-            const cached = readTrendingCache();
-            if (cached?.songs?.length) {
-                paint(cached.songs);
-            } else {
-                grid.innerHTML = '';
-                if (section) section.classList.add('hidden');
-            }
+            grid.innerHTML = '';
+            if (section) section.classList.add('hidden');
             return;
         }
 
@@ -787,6 +806,13 @@
         const section = document.getElementById('section-recent');
         const grid = document.getElementById('recent-grid');
         if (!section || !grid) return;
+
+        // Offline home renders its own Recently Played shelf inside the hub.
+        if (isOfflineMode()) {
+            grid.innerHTML = '';
+            section.classList.add('hidden');
+            return;
+        }
 
         if (!state.playHistory || state.playHistory.length === 0) {
             section.classList.add('hidden');
