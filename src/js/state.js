@@ -110,6 +110,15 @@
             return normalized;
         };
 
+        const appIsOffline = () => {
+            try {
+                if (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function') return window.__dtunesIsOffline();
+                return typeof navigator !== 'undefined' && navigator.onLine === false;
+            } catch (_) {
+                return false;
+            }
+        };
+
         const safeStorage = {
             get: (key, fallback = null) => {
                 try {
@@ -738,7 +747,8 @@
                     'playbackState', 'equalizerSettings', 'audioQuality', 'preferredLanguage',
                     'dverse_session_cache', 'dverse_tokens_cookie', 'dverse_auth_tokens',
                     'dverse_supabase_auth_token', 'sb-supabase-auth-token', 'dislikedSongs',
-                    'dtunes_ai_playlists_cache_v2', 'dverse_auth_return_to', 'dverse.auth.returnTo',
+                    'dtunes_ai_playlists_cache_v2', 'dtunes_daily_mixes_cache_v1', 'dtunes_trending_cache_v1',
+                    'dverse_auth_return_to', 'dverse.auth.returnTo',
                     'sb-qvvnhvowffvbbhfgwypw-auth-token', 'dverse_desktop_auth'
                 ];
                 targetKeys.forEach(k => {
@@ -838,6 +848,25 @@
                     cloudLibrary.setStatus('D\'Verse sync is not configured.');
                     return;
                 }
+
+                // Offline boot: skip the remote session check (and its token refresh)
+                // entirely. Local library/history are already hydrated from storage.
+                if (appIsOffline()) {
+                    try {
+                        cloudLibrary.session = await window.dverse.getSession();
+                    } catch (_) {}
+                    cloudLibrary.updateUI();
+                    cloudLibrary.setStatus('Offline mode — showing your saved library.');
+                    if (!cloudLibrary._offlineRetryBound && typeof window !== 'undefined' && window.addEventListener) {
+                        cloudLibrary._offlineRetryBound = true;
+                        window.addEventListener('online', () => {
+                            cloudLibrary._offlineRetryBound = false;
+                            cloudLibrary.init().catch(() => {});
+                        }, { once: true });
+                    }
+                    return;
+                }
+
                 const triggerLoadOnce = async (source, userSession) => {
                     const uid = userSession?.user?.id;
                     if (!uid) return;
@@ -846,13 +875,16 @@
                     await cloudLibrary.load();
                 };
 
-                window.dverse.onAuthStateChange(async (_event, session) => {
-                    if (cloudLibrary._isSigningOut) return;
-                    cloudLibrary.session = session;
-                    cloudLibrary.updateUI();
-                    if (session) await triggerLoadOnce(_event, session);
-                    else cloudLibrary._loadedUserId = null;
-                });
+                if (!cloudLibrary._authListenerBound && window.dverse.onAuthStateChange) {
+                    cloudLibrary._authListenerBound = true;
+                    window.dverse.onAuthStateChange(async (_event, session) => {
+                        if (cloudLibrary._isSigningOut) return;
+                        cloudLibrary.session = session;
+                        cloudLibrary.updateUI();
+                        if (session) await triggerLoadOnce(_event, session);
+                        else cloudLibrary._loadedUserId = null;
+                    });
+                }
                 try {
                     const session = await window.dverse.getSession();
                     cloudLibrary.session = session;
@@ -864,6 +896,11 @@
                 }
             },
             load: async () => {
+                if (appIsOffline()) {
+                    cloudLibrary.setStatus('Offline mode — showing your saved library.');
+                    cloudLibrary.updateUI();
+                    return;
+                }
                 if (!cloudLibrary.session) {
                     cloudLibrary.session = await window.dverse.getSession();
                 }

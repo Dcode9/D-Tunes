@@ -818,6 +818,27 @@
 
   async function getSession() {
     if (!client) return null;
+    // Offline: never try to refresh tokens or reach the auth bridge. Use the
+    // in-memory session if we have one, otherwise fail immediately instead of
+    // waiting for a network timeout.
+    try {
+      const offline = (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function')
+        ? window.__dtunesIsOffline()
+        : (typeof navigator !== 'undefined' && navigator.onLine === false);
+      if (offline) {
+        if (currentSession) return currentSession;
+        const persisted = readPersistedTokens();
+        if (persisted?.user_id) {
+          currentSession = {
+            access_token: persisted.access_token || '',
+            refresh_token: persisted.refresh_token || '',
+            expires_at: persisted.expires_at || null,
+            user: { id: persisted.user_id, email: persisted.email || null }
+          };
+        }
+        return currentSession || null;
+      }
+    } catch (_) {}
     if (currentSession) {
       const expiresAtMs = (currentSession.expires_at || 0) * 1000;
       if (expiresAtMs === 0 || expiresAtMs > (Date.now() + 60000)) {

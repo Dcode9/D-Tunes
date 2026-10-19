@@ -30,6 +30,22 @@
                 };
             };
 
+            // Single source of truth for "are we offline right now?". Network-backed
+            // features ask this before attempting a request so an offline boot never
+            // sits on a request until the browser's timeout fires.
+            window.__dtunesIsOffline = function() {
+                try {
+                    if (typeof navigator !== 'undefined' && navigator && typeof navigator.onLine === 'boolean') {
+                        return navigator.onLine === false;
+                    }
+                } catch (_) {}
+                return false;
+            };
+
+            window.__dtunesIsOnline = function() {
+                return !window.__dtunesIsOffline();
+            };
+
             const initialUiMode = window.__dtunesResolveUiMode();
             document.documentElement.setAttribute('data-ui-mode', initialUiMode.mode);
             document.documentElement.setAttribute('data-ui-preference', initialUiMode.preference);

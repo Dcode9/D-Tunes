@@ -3,6 +3,15 @@
   const LOCAL_EVENTS_KEY = 'dtunesRecommendationEvents';
   const DUPLICATE_WINDOW_MS = 3500;
 
+  function isOffline() {
+    try {
+      if (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function') return window.__dtunesIsOffline();
+      return typeof navigator !== 'undefined' && navigator.onLine === false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   function getUserId() {
     if (typeof window !== 'undefined' && window.cloudLibrary?.session?.user?.id) {
       return window.cloudLibrary.session.user.id;
@@ -70,6 +79,7 @@
     };
     rememberLocal(payload);
 
+    if (isOffline()) return;
     try {
       await fetch('/api/music/event', {
         method: 'POST',
@@ -127,6 +137,7 @@
   }
 
   async function fetchPlaylist(type, options = {}) {
+    if (isOffline()) return [];
     const seedSongId = options.songId || options.seedSongId;
     const seedArtist = options.artist || options.seedArtist;
     const params = new URLSearchParams({ userId: options.userId || getUserId(), type, limit: options.limit || 25 });

@@ -7,8 +7,18 @@
 
         const clientSearchCache = new Map();
 
+        const jiosaavnAPIIsOffline = () => {
+            try {
+                if (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function') return window.__dtunesIsOffline();
+                return typeof navigator !== 'undefined' && navigator.onLine === false;
+            } catch (_) {
+                return false;
+            }
+        };
+
         const jiosaavnAPI = {
             fetchWithRetry: async (url, retries = 3) => {
+                if (jiosaavnAPIIsOffline()) throw new Error('Offline');
                 let apiSwitchAttempts = JIOSAAVN_API_ENDPOINTS.length;
                 while (apiSwitchAttempts > 0) {
                     for (let i = 0; i < retries; i++) {

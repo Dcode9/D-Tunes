@@ -6,7 +6,8 @@
  * which loads the same origin). Downloaded songs are handled separately by
  * src/js/offline.js. Bump VERSION to publish a new shell.
  */
-const VERSION = 'dtunes-shell-v1.0.0';
+const VERSION = 'dtunes-shell-v1.1.0';
+const NETWORK_TIMEOUT_MS = 3000;
 
 // Same-origin shell assets (no query strings; lookups ignore the ?v= cache-buster).
 const SHELL = [
@@ -85,41 +86,51 @@ self.addEventListener('activate', (event) => {
   })());
 });
 
-function shouldSkip(url) {
+function isCacheableSaavnImage(url, request) {
+  if (!/(saavn|jiosaavn|scdn)/i.test(url.hostname)) return false;
+  if (request && request.destination === 'image') return true;
+  return /\.(jpg|jpeg|png|webp|avif|gif)(\?|$)/i.test(url.pathname);
+}
+
+function shouldSkip(url, request) {
   if (NO_CACHE.test(url.pathname)) return true;
-  if (NO_CACHE_HOSTS.test(url.hostname)) return true;
+  if (NO_CACHE_HOSTS.test(url.hostname)) {
+    // Album/artist artwork comes from saavn CDNs; cache only the images.
+    return !isCacheableSaavnImage(url, request);
+  }
   return false;
 }
 
-// Navigation: always try the network so deploys are picked up immediately,
-// falling back to the cached shell when offline.
+// Navigation: try the network so deploys are picked up immediately, but never
+// let a dead/slow connection hold the app hostage. After the timeout we paint
+// the cached shell while the network request continues in the background.
 async function networkFirst(request, fallbackKey) {
   const cache = await caches.open(VERSION);
-  try {
-    const response = await fetch(request);
+  const network = fetch(request).then((response) => {
     if (response && response.ok) cache.put(fallbackKey, response.clone());
     return response;
+  });
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('network-timeout')), NETWORK_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([network, timeout]);
   } catch (err) {
     const cached = (await cache.match(fallbackKey))
       || (await cache.match('/index.html'))
       || (await cache.match('/'));
-    if (cached) return cached;
-    return new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } });
-  }
-}
-
-// Same-origin assets: network-first so an update is visible on the next load,
-// cache fallback (ignoring the ?v= query) for offline.
-async function sameOriginFirst(request) {
-  const cache = await caches.open(VERSION);
-  try {
-    const response = await fetch(request);
-    if (response && response.ok) cache.put(request, response.clone());
-    return response;
-  } catch (err) {
-    const cached = await cache.match(request, { ignoreSearch: true });
-    if (cached) return cached;
-    return new Response('', { status: 504, statusText: 'Offline' });
+    if (cached) {
+      network.catch(() => {});
+      return cached;
+    }
+    try {
+      return await network;
+    } catch (networkErr) {
+      return new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } });
+    }
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -151,14 +162,17 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (shouldSkip(url)) return;
+  if (shouldSkip(url, request)) return;
 
+  // Same-origin code/styles: cache-first with a background refresh so an
+  // offline start is instant. A new shell version refreshes the cache on
+  // install, and online visits pick up changes for the next load.
   if (url.origin === self.location.origin) {
-    event.respondWith(sameOriginFirst(request));
+    event.respondWith(staleWhileRevalidate(request));
     return;
   }
 
-  if (CDN_HOSTS.test(url.hostname)) {
+  if (CDN_HOSTS.test(url.hostname) || isCacheableSaavnImage(url, request)) {
     event.respondWith(staleWhileRevalidate(request));
   }
 });

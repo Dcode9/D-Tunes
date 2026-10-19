@@ -2,6 +2,16 @@
     const DEFAULT_ENDPOINT = "https://ai.d-verse.in/api/chat";
     const DEFAULT_MODEL = "mercury-2.5";
     const CACHE_KEY = "dtunes_ai_playlists_cache_v2";
+    const DAILY_MIXES_CACHE_KEY = "dtunes_daily_mixes_cache_v1";
+
+    const isOffline = () => {
+        try {
+            if (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function') return window.__dtunesIsOffline();
+            return typeof navigator !== 'undefined' && navigator.onLine === false;
+        } catch (_) {
+            return false;
+        }
+    };
 
     // Curated seed taste profile when user is brand new with 0 history
     const SEED_PROFILE = [
@@ -30,6 +40,7 @@
     }
 
     async function callLLM(prompt, systemPrompt = "You are an elite music curation director that outputs strictly raw JSON without markdown formatting.") {
+        if (isOffline()) throw new Error('Offline — using locally cached recommendations.');
         const payload = {
             model: DEFAULT_MODEL,
             provider: "inception",
@@ -397,6 +408,7 @@ Requirements:
 
     function clearCache() {
         localStorage.removeItem(CACHE_KEY);
+        localStorage.removeItem(DAILY_MIXES_CACHE_KEY);
     }
 
     window.ai = {
