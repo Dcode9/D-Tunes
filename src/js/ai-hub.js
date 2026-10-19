@@ -901,10 +901,8 @@
                 try { await window.cloudLibrary.init(); } catch (_) {}
             }
             await renderAIHome();
-            if (!offline) {
-                loadTrendingHits();
-                loadRecentlyPlayed();
-            }
+            loadTrendingHits();
+            loadRecentlyPlayed();
         };
         refreshHome().catch((e) => console.warn('[Offline] Home transition failed:', e));
     };

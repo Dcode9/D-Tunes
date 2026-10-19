@@ -1523,9 +1523,42 @@
                 localStorage.setItem('likedArtists', JSON.stringify(state.likedArtists));
                 ui.renderLibraryLists();
             },
+            isOfflineUnavailable: (song) => {
+                if (!song) return false;
+                if (song.type && song.type !== 'song') return false;
+                const offline = (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function')
+                    ? window.__dtunesIsOffline()
+                    : (typeof navigator !== 'undefined' && navigator.onLine === false);
+                if (!offline) return false;
+                if (typeof offlineStore === 'undefined' || !offlineStore || typeof offlineStore.isDownloaded !== 'function') return true;
+                return !offlineStore.isDownloaded(song.saavn_id || song.id);
+            },
+            notifyOfflineUnavailable: (name) => {
+                const label = name ? `"${name}" is not downloaded` : 'This song is not downloaded';
+                if (ui.showToast) ui.showToast(`${label} — connect to the internet or download it to play offline.`);
+            },
+
             createCard: (item) => {
                 const storeId = songStore.add(item);
                 const isContext = item.type === 'album' || item.type === 'artist';
+                const offlineBlocked = !isContext && ui.isOfflineUnavailable(item);
+                if (offlineBlocked) {
+                    const blockedArtist = utils.escapeHtml(item.artist);
+                    return `
+                    <div class="scroll-card glass-panel p-3 rounded-xl flex flex-col w-40 opacity-45 grayscale">
+                        <div class="relative aspect-square rounded-lg overflow-hidden mb-3 bg-gray-800 shadow-md cursor-not-allowed" onclick="ui.notifyOfflineUnavailable('${utils.escapeJs(item.name)}')">
+                            <img src="${item.img}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover" decoding="async">
+                            <div class="absolute inset-0 bg-black/55 flex flex-col items-center justify-center gap-1.5">
+                                <svg class="w-5 h-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6a1.5 1.5 0 00-3 0v4.5m3 0a4.5 4.5 0 11-3 0m3 0 4.5 4.5M9 19.5l-4.5-4.5"/></svg>
+                                <span class="text-[9px] font-bold text-white/85 uppercase tracking-wide">Not downloaded</span>
+                            </div>
+                        </div>
+                        <div class="w-full min-w-0 flex-1">
+                            <div class="marquee-container w-full"><h3 class="font-bold text-gray-400 text-sm marquee-text">${utils.escapeHtml(item.name)}</h3></div>
+                            <div class="marquee-container w-full mt-1"><p class="text-xs text-gray-500 marquee-text">${blockedArtist}</p></div>
+                        </div>
+                    </div>`;
+                }
                 const clickHandler = item.type === 'album' ? `ui.openAlbum('${utils.escapeJs(item.id)}')` : (isContext ? `playContext('${item.type}', '${utils.escapeJs(item.id)}')` : `playSongById('${storeId}')`);
                 const dblClickHandler = isContext ? "" : `ondblclick="player.likeSong('${utils.escapeJs(item.id)}')"`;
                 const artistLiked = item.type === 'artist' && state.likedArtists.some(artist => (artist.id || artist.name) === item.id);
@@ -1584,6 +1617,15 @@
             },
             createQueuePill: (song, section, index) => {
                 const storeId = songStore.add(song);
+                if (ui.isOfflineUnavailable(song)) {
+                    return `
+                    <div class="relative overflow-hidden rounded-2xl mb-2 flex-shrink-0 w-full" data-store-id="${storeId}">
+                        <div class="glass-panel rounded-2xl p-2 pr-2 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/95 opacity-45 grayscale" onclick="ui.notifyOfflineUnavailable('${utils.escapeJs(song.name)}')">
+                            ${ui.createSongPillInner(song)}
+                            <span class="ml-2 px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-[9px] font-bold uppercase tracking-wide text-gray-300 flex-shrink-0">Not downloaded</span>
+                        </div>
+                    </div>`;
+                }
                 const safeSection = utils.escapeHtml(section);
                 return `
                 <div class="queue-reorder-row swipe-song relative overflow-hidden rounded-2xl mb-2 group select-none flex-shrink-0 w-full" draggable="true" data-queue-section="${safeSection}" data-queue-index="${index}" data-store-id="${storeId}">
@@ -1609,6 +1651,15 @@
             },
             createSongPill: (song, clickHandlerStr, context = 'queue') => {
                 const storeId = songStore.add(song);
+                if (ui.isOfflineUnavailable(song)) {
+                    return `
+                    <div class="relative overflow-hidden rounded-2xl mb-2 flex-shrink-0 w-full" data-store-id="${storeId}">
+                        <div class="glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/95 opacity-45 grayscale cursor-not-allowed" onclick="ui.notifyOfflineUnavailable('${utils.escapeJs(song.name)}')">
+                            ${ui.createSongPillInner(song)}
+                            <span class="ml-2 px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-[9px] font-bold uppercase tracking-wide text-gray-300 flex-shrink-0">Not downloaded</span>
+                        </div>
+                    </div>`;
+                }
                 const hoverBtnVis = context === 'quicksearch' ? 'opacity-100' : 'opacity-100 md:opacity-0 group-hover:opacity-100';
                 const timeBadge = song.playedAt ? `<span class="text-[10px] text-gray-400 font-mono px-2 py-0.5 rounded-md bg-white/5 flex-shrink-0 mr-1.5">${ui.formatRelativeTime(song.playedAt)}</span>` : '';
 
@@ -1639,6 +1690,24 @@
             createListRow: (song, contextPlaylistName = null) => {
                 const storeId = songStore.add(song);
                 const removeBtnHtml = contextPlaylistName ? `<button class="p-2 text-red-400 hover:text-red-500 rounded-full hover:bg-red-500/10 hidden md:block" title="Remove" onclick="event.stopPropagation(); ui.removeSongFromPlaylist('${utils.escapeJs(contextPlaylistName)}', '${utils.escapeJs(song.id)}')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>` : '';
+                if (ui.isOfflineUnavailable(song)) {
+                    return `
+                    <div class="relative overflow-hidden rounded-2xl mb-2 flex-shrink-0 w-full" data-store-id="${storeId}">
+                        <div class="flex items-center gap-4 p-2 rounded-2xl glass-panel w-full bg-[#121212]/95 border border-white/10 opacity-45 grayscale">
+                            <div class="relative w-12 h-12 flex-shrink-0 rounded-md overflow-hidden cursor-not-allowed" onclick="ui.notifyOfflineUnavailable('${utils.escapeJs(song.name)}')">
+                                <img src="${song.img}" class="w-full h-full object-cover" decoding="async">
+                            </div>
+                            <div class="flex-1 min-w-0 flex flex-col justify-center cursor-not-allowed" onclick="ui.notifyOfflineUnavailable('${utils.escapeJs(song.name)}')">
+                                <div class="marquee-container w-full"><h4 class="text-gray-400 font-medium text-sm marquee-text">${utils.escapeHtml(song.name)}</h4></div>
+                                <div class="marquee-container w-full mt-0.5"><p class="text-gray-500 text-xs marquee-text">${utils.escapeHtml(song.artist)}</p></div>
+                            </div>
+                            <div class="flex items-center gap-2 mr-2">
+                                <span class="px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-[9px] font-bold uppercase tracking-wide text-gray-300 flex-shrink-0">Not downloaded</span>
+                                ${removeBtnHtml}
+                            </div>
+                        </div>
+                    </div>`;
+                }
                 
                 return `
                 <div class="swipe-song relative overflow-hidden rounded-2xl mb-2 group select-none flex-shrink-0 w-full" data-store-id="${storeId}">
@@ -1673,6 +1742,21 @@
             },
             createForYouCard: (song) => {
                 const storeId = songStore.add(song);
+                if (ui.isOfflineUnavailable(song)) {
+                    return `
+                    <div class="for-you-card glass-panel rounded-3xl overflow-hidden relative flex-shrink-0 w-64 h-80 opacity-45 grayscale">
+                        <img src="${song.img}" class="absolute inset-0 w-full h-full object-cover" decoding="async">
+                        <div class="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent"></div>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 cursor-not-allowed" onclick="ui.notifyOfflineUnavailable('${utils.escapeJs(song.name)}')">
+                            <svg class="w-6 h-6 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 10.5V6a1.5 1.5 0 00-3 0v4.5m3 0a4.5 4.5 0 11-3 0m3 0 4.5 4.5M9 19.5l-4.5-4.5"/></svg>
+                            <span class="px-2 py-1 rounded-full bg-black/60 border border-white/20 text-[9px] font-bold uppercase tracking-wide text-white/85">Not downloaded</span>
+                        </div>
+                        <div class="absolute bottom-0 left-0 right-0 p-5">
+                            <div class="marquee-container"><h3 class="text-xl font-bold text-gray-400 marquee-text">${utils.escapeHtml(song.name)}</h3></div>
+                            <div class="marquee-container mt-1"><p class="text-sm text-gray-500 marquee-text">${utils.escapeHtml(song.artist)}</p></div>
+                        </div>
+                    </div>`;
+                }
                 return `
                 <div class="for-you-card glass-panel rounded-3xl overflow-hidden relative flex-shrink-0 w-64 h-80 group cursor-pointer hover-pause" onclick="playSongById('${storeId}')">
                     <img src="${song.img}" class="absolute inset-0 w-full h-full object-cover transition duration-700 group-hover:scale-110" decoding="async">
@@ -2517,6 +2601,16 @@
             window.aiReportManager = aiReportManager;
             window.reviewsManager = reviewsManager;
             window.ui = ui;
+        }
+
+        // Re-evaluate offline gating for song lists when connectivity changes.
+        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+            const refreshOfflineStates = () => {
+                try { ui.renderLibraryLists(); } catch (_) {}
+                try { if (typeof ui.renderQueue === 'function') ui.renderQueue(); } catch (_) {}
+            };
+            window.addEventListener('online', refreshOfflineStates);
+            window.addEventListener('offline', refreshOfflineStates);
         }
 
         if (typeof module !== 'undefined' && module.exports) {
