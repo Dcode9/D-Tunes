@@ -6,7 +6,7 @@
  * which loads the same origin). Downloaded songs are handled separately by
  * src/js/offline.js. Bump VERSION to publish a new shell.
  */
-const VERSION = 'dtunes-shell-v1.1.1';
+const VERSION = 'dtunes-shell-v1.1.2';
 const NETWORK_TIMEOUT_MS = 3000;
 
 // Same-origin shell assets (no query strings; lookups ignore the ?v= cache-buster).
@@ -79,10 +79,23 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys
-      .filter((key) => key.startsWith('dtunes-shell-') && key !== VERSION)
-      .map((key) => caches.delete(key)));
+    const previousShells = keys.filter((key) => key.startsWith('dtunes-shell-') && key !== VERSION);
+    await Promise.all(previousShells.map((key) => caches.delete(key)));
     await self.clients.claim();
+
+    // A replaced shell means an open tab is still running the previous
+    // deployment. Reload it now; waiting for a manual refresh can leave users
+    // on stale JS for days. First installs have no previous shell and skip this.
+    if (previousShells.length > 0) {
+      const clients = await self.clients.matchAll({ type: 'window' });
+      await Promise.all(clients.map((client) => {
+        try {
+          return client.navigate(client.url).catch(() => null);
+        } catch (_) {
+          return null;
+        }
+      }));
+    }
   })());
 });
 
@@ -134,11 +147,29 @@ async function networkFirst(request, fallbackKey) {
   }
 }
 
+function urlHasSearch(url) {
+  return url.includes('?');
+}
+
+function unversionedUrl(url) {
+  return url.split('?')[0];
+}
+
 async function staleWhileRevalidate(request) {
   const cache = await caches.open(VERSION);
-  const cached = await cache.match(request, { ignoreSearch: true });
+  // Prefer the exact request; fall back to the unversioned precache entry.
+  const cached = (await cache.match(request))
+    || (await cache.match(request, { ignoreSearch: true }));
   const network = fetch(request).then((response) => {
-    if (response && (response.ok || response.type === 'opaque')) cache.put(request, response.clone());
+    if (response && (response.ok || response.type === 'opaque')) {
+      const writes = [cache.put(request, response.clone())];
+      // A ?v= request must also refresh the unversioned shell entry. Otherwise
+      // the next lookup matches the old precached copy forever after a deploy.
+      if (urlHasSearch(request.url)) {
+        writes.push(cache.put(unversionedUrl(request.url), response.clone()));
+      }
+      Promise.allSettled(writes).catch(() => {});
+    }
     return response;
   }).catch(() => null);
   if (cached) {
