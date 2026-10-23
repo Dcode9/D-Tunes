@@ -6,7 +6,12 @@
  */
 (function () {
   const api = window.electronAPI;
-  const isDesktop = Boolean((api && api.isDesktopApp) || window.isDTunesDesktop);
+  const isDesktop = Boolean((api && api.isDesktopApp) || window.isDTunesDesktop || window.dtunesDesktop?.isDesktop);
+  if (isDesktop && typeof window !== "undefined") {
+    window.isDTunesDesktop = true;
+    window.dtunesDesktop = { isDesktop: true };
+    window.isWindowsApp = () => true;
+  }
 
   const offlineIds = new Set();
   const offlineMeta = new Map();
@@ -71,37 +76,43 @@
   }
 
   window.dtunesDownloadTrack = async function (song) {
-    if (!isDesktop || !api.downloadTrack) return;
+    if (!isDesktop) return;
     if (!song || !song.id) return;
     const id = String(song.id);
-    if (offlineIds.has(id)) {
-      if (window.ui && ui.showToast) ui.showToast('Already available offline');
+    if (offlineIds.has(id) || (window.offlineStore && offlineStore.isDownloaded(id))) {
+      if (window.ui && ui.showToast) ui.showToast("Already available offline");
       return;
     }
     const streamUrl = await resolveStreamUrl(song);
     if (!streamUrl) {
-      if (window.ui && ui.showToast) ui.showToast('Could not resolve audio for download', 'error');
+      if (window.ui && ui.showToast) ui.showToast("Could not resolve audio for download", "error");
       return;
     }
-    if (window.ui && ui.showToast) ui.showToast(`Downloading "${song.name || song.title || 'track'}"...`);
+    if (window.ui && ui.showToast) ui.showToast(`Downloading "${song.name || song.title || "track"}"...`);
     try {
-      const res = await api.downloadTrack({
-        id,
-        name: song.name || song.title,
-        artist: song.artist || song.primary_artists || '',
-        album: song.album || '',
-        img: song.img || song.image || '',
-        duration: song.duration,
-        url: streamUrl
-      });
-      if (res && res.success) {
+      if (api && api.downloadTrack) {
+        const res = await api.downloadTrack({
+          id,
+          name: song.name || song.title,
+          artist: song.artist || song.primary_artists || "",
+          album: song.album || "",
+          img: song.img || song.image || "",
+          duration: song.duration,
+          url: streamUrl
+        });
+        if (res && res.success) {
+          await refreshOfflineList();
+          if (window.ui && ui.showToast) ui.showToast(`Saved "${res.name || song.name || "track"}" for offline`);
+          return;
+        }
+      }
+      if (window.offlineStore) {
+        await offlineStore.download({ ...song, url: streamUrl });
         await refreshOfflineList();
-        if (window.ui && ui.showToast) ui.showToast(`Saved "${res.name || song.name || 'track'}" for offline`);
-      } else if (window.ui && ui.showToast) {
-        ui.showToast(`Download failed: ${(res && res.error) || 'unknown error'}`, 'error');
+        if (window.ui && ui.showToast) ui.showToast(`Saved "${song.name || song.title || "track"}" for offline`);
       }
     } catch (err) {
-      if (window.ui && ui.showToast) ui.showToast('Download failed', 'error');
+      if (window.ui && ui.showToast) ui.showToast("Download failed", "error");
     }
   };
 
@@ -308,12 +319,22 @@
     window.player.playDirect = function (track) {
       if (track && track.id && offlineIds.has(String(track.id))) {
         const meta = offlineMeta.get(String(track.id));
-        const art = (meta && meta.img) || track.img || 'DTunes.svg';
+        const art = (meta && meta.img) || track.img || "DTunes.svg";
+        const trackUrl = offlineUrl(track.id);
         return originalPlayDirect.call(window.player, Object.assign({}, track, {
-          url: offlineUrl(track.id),
+          url: trackUrl,
           img: art,
           isOffline: true
         }));
+      }
+      if (track && track.id && window.offlineStore && offlineStore.isDownloaded(track.id)) {
+        return (async () => {
+          const playUrl = await offlineStore.getPlayUrl(track.id);
+          return originalPlayDirect.call(window.player, Object.assign({}, track, {
+            url: playUrl || track.url,
+            isOffline: true
+          }));
+        })();
       }
       return originalPlayDirect.call(window.player, track);
     };

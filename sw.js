@@ -119,6 +119,12 @@ function shouldSkip(url, request) {
 // the cached shell while the network request continues in the background.
 async function networkFirst(request, fallbackKey) {
   const cache = await caches.open(VERSION);
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    const cached = (await cache.match(fallbackKey))
+      || (await cache.match('/index.html'))
+      || (await cache.match('/'));
+    if (cached) return cached;
+  }
   const network = fetch(request).then((response) => {
     if (response && response.ok) cache.put(fallbackKey, response.clone());
     return response;

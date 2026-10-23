@@ -583,7 +583,39 @@
                 document.getElementById('setting-audio-quality').value = state.quality;
                 ui.renderEqualizerSettings();
                 
-                ui.renderPlaylists(); ui.renderLibraryLists(); 
+                ui.renderPlaylists(); ui.renderLibraryLists();
+
+                const isDesktop = Boolean(
+                    window.isDTunesDesktop ||
+                    (window.electronAPI && window.electronAPI.isDesktopApp) ||
+                    window.dtunesDesktop?.isDesktop ||
+                    (typeof window.isWindowsApp === "function" && window.isWindowsApp())
+                );
+                const isOffline = isDesktop && (
+                    (typeof window.isDTunesOfflineMode === "function" && window.isDTunesOfflineMode()) ||
+                    (typeof navigator !== "undefined" && !navigator.onLine)
+                );
+
+                if (isOffline) {
+                    // Windows Desktop Offline Mode: Zero network calls, zero stalls!
+                    document.getElementById("section-trending")?.classList.add("hidden");
+                    document.getElementById("section-quick-picks")?.classList.add("hidden");
+                    document.getElementById("section-for-you")?.classList.add("hidden");
+                    if (state.playHistory && state.playHistory.length > 0) {
+                        document.getElementById("section-recent")?.classList.remove("hidden");
+                        homeView.renderRecentlyPlayed();
+                    }
+                    if (window.aiHome && window.aiHome.renderAIHome) {
+                        window.aiHome.renderAIHome();
+                    }
+                    if (window.dtunesApplyOfflineModeState) {
+                        window.dtunesApplyOfflineModeState(true);
+                    }
+                    updateMarquees();
+                    if (window.setupShelfNavButtons) setupShelfNavButtons();
+                    return;
+                }
+
                 homeView.renderDiscoverSection();
                 const isNewUser = state.playHistory.length === 0;
                 
@@ -595,6 +627,7 @@
                     jiosaavnAPI.getTrending().then(trendingSongs => {
                         if (trendingSongs && trendingSongs.length) {
                             trendingGrid.innerHTML = trendingSongs.slice(0, 16).map(song => ui.createCard(song)).join('');
+                            if (window.aiHome && window.aiHome.writeTrendingCache) window.aiHome.writeTrendingCache(trendingSongs);
                             updateMarquees();
                             if (window.setupShelfNavButtons) setupShelfNavButtons();
                         }

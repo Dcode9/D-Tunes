@@ -15,6 +15,10 @@
     let _lastRenderedDateKey = null;
     let _isRenderingAIHome = false;
     let _cachedDailyPlaylists = null;
+    var state = (typeof window !== "undefined" && window.state) ? window.state : ((typeof globalThis !== "undefined" && globalThis.state) ? globalThis.state : {});
+    var jiosaavnAPI = (typeof window !== "undefined" && window.jiosaavnAPI) ? window.jiosaavnAPI : ((typeof globalThis !== "undefined" && globalThis.jiosaavnAPI) ? globalThis.jiosaavnAPI : {});
+    var songStore = (typeof window !== "undefined" && window.songStore) ? window.songStore : ((typeof globalThis !== "undefined" && globalThis.songStore) ? globalThis.songStore : {});
+    var ui = (typeof window !== "undefined" && window.ui) ? window.ui : ((typeof globalThis !== "undefined" && globalThis.ui) ? globalThis.ui : {});
 
     const DAILY_MIXES_CACHE_KEY = 'dtunes_daily_mixes_cache_v1';
     const LOCAL_MADE_FOR_YOU_CACHE_KEY = 'dtunes_made_for_you_cache';
@@ -27,20 +31,39 @@
     const TRENDING_CACHE_KEY = 'dtunes_trending_cache_v1';
     const TRENDING_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
+    const isDesktopApp = () => {
+        if (typeof window === "undefined") return false;
+        return Boolean(
+            window.isDTunesDesktop ||
+            (window.electronAPI && window.electronAPI.isDesktopApp) ||
+            window.dtunesDesktop?.isDesktop ||
+            (window.process && window.process.type === "renderer") ||
+            (typeof window.isWindowsApp === "function" && window.isWindowsApp())
+        );
+    };
+
     const isOfflineMode = () => {
         try {
-            if (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function') return window.__dtunesIsOffline();
-            const isDesktop = (typeof window !== 'undefined' && (window.dtunesDesktop?.isDesktop || (window.process && window.process.type === 'renderer') || (typeof window.isWindowsApp === 'function' && window.isWindowsApp())));
+            if (typeof window !== "undefined" && typeof window.__dtunesIsOffline === "function") {
+                return window.__dtunesIsOffline();
+            }
+            // Strict constraint: offline features are ONLY for Windows desktop version, never web
+            const isDesktop = isDesktopApp();
             if (isDesktop) {
                 // desktop offline mode active
             } else {
                 return false;
             }
-            return typeof navigator !== 'undefined' && navigator.onLine === false;
+            return typeof navigator !== "undefined" && navigator.onLine === false;
         } catch (_) {
             return false;
         }
     };
+
+    if (typeof window !== "undefined") {
+        window.isDesktopApp = isDesktopApp;
+        window.isDTunesOfflineMode = isOfflineMode;
+    }
 
     function localDateKey(date = new Date()) {
         return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -247,6 +270,7 @@
             expiresAt = null,
             offline = false,
             prependHtml = '',
+            appendHtml = '',
             emptyMessage = '',
             description = 'Playlists tailored to your taste and favorites, updated daily.'
         } = options;
@@ -371,6 +395,7 @@
 
         container.innerHTML = `
             ${prependHtml}
+            ${(playlists && playlists.length > 0) ? `
             <div class="pt-2 animate-fade-in">
                 <!-- Clean Editorial Header -->
                 <div class="flex items-center justify-between px-4 md:px-8 mb-6 pb-2 border-b border-white/10">
@@ -391,7 +416,8 @@
 
                 ${sectionsHtml}
                 ${emptyHtml}
-            </div>
+            </div>` : (emptyHtml ? `<div class="pt-2">${emptyHtml}</div>` : "")}
+            ${appendHtml || ""}
         `;
 
         // Reveal any images that are already complete from cache
@@ -519,21 +545,66 @@
         `;
     }
 
-    async function renderOfflineHome(container) {
+        function buildCachedTrendingShelf() {
+        const cached = readTrendingCache();
+        if (!cached || !Array.isArray(cached.songs) || cached.songs.length === 0) return "";
+        const cards = cached.songs.slice(0, 16).map(song => ui.createCard(song)).join("");
+        return `
+            <div class="mb-10 animate-fade-in">
+                <div class="flex items-center justify-between px-4 md:px-8 mb-4">
+                    <div>
+                        <h3 class="text-xl font-bold text-white tracking-tight">Trending Hits (Cached)</h3>
+                        <p class="text-xs text-gray-400 mt-0.5">Popular tracks cached from your recent sessions.</p>
+                    </div>
+                </div>
+                <div class="relative group/track">
+                    <div class="row-blur-left"></div>
+                    <div class="horizontal-scroll px-4 md:px-8 gap-4">${cards}</div>
+                    <div class="row-blur-right"></div>
+                </div>
+            </div>
+        `;
+    }
+
+async function renderOfflineHome(container) {
         let downloads = [];
-        if (window.offlineStore && typeof window.offlineStore.list === 'function') {
+        if (window.offlineStore && typeof window.offlineStore.list === "function") {
             try {
                 downloads = await window.offlineStore.list();
             } catch (e) {
-                console.warn('[Offline] Could not read downloads:', e);
+                console.warn("[Offline] Could not read downloads:", e);
             }
         }
+        if (window.dtunesOfflineList) {
+            try {
+                const nativeList = window.dtunesOfflineList() || [];
+                const seen = new Set(downloads.map(d => String(d.id)));
+                nativeList.forEach(item => {
+                    if (!seen.has(String(item.id))) {
+                        seen.add(String(item.id));
+                        downloads.push({
+                            id: String(item.id),
+                            name: item.name || "Unknown",
+                            artist: item.artist || "Unknown Artist",
+                            img: item.img || "",
+                            duration: item.duration || 0,
+                            url: window.dtunesOfflineUrl ? window.dtunesOfflineUrl(item.id) : "",
+                            isOffline: true
+                        });
+                    }
+                });
+            } catch (_) {}
+        }
 
-        // The offline homepage is built around local downloads. Network-only
-        // shelves below the hub (Trending) are hidden so nothing unreachable
-        // competes with what the listener can actually play.
-        document.getElementById('section-trending')?.classList.add('hidden');
-        document.getElementById('section-recent')?.classList.add('hidden');
+        downloads.forEach(song => {
+            if (window.songStore && songStore.set) songStore.set(String(song.id), song);
+        });
+
+        document.getElementById("section-trending")?.classList.add("hidden");
+        document.getElementById("section-recent")?.classList.add("hidden");
+        document.getElementById("section-quick-picks")?.classList.add("hidden");
+        document.getElementById("section-for-you")?.classList.add("hidden");
+        document.getElementById("section-downloaded-songs")?.classList.add("hidden");
 
         const cached = readDailyMixCache();
         const playlistSource = cached?.playlists || [];
@@ -543,11 +614,11 @@
             todayKey: cached?.dateKey || localDateKey(),
             expiresAt: cached?.expiresAt || null,
             offline: true,
-            prependHtml: buildOfflineBanner(downloads) + buildDownloadsShelf(downloads) + buildRecentlyPlayedShelf() + buildLibraryShelf(),
+            prependHtml: buildOfflineBanner(downloads) + buildDownloadsShelf(downloads) + buildRecentlyPlayedShelf() + buildLibraryShelf() + buildCachedTrendingShelf(),
             description: cached
-                ? 'Your daily mixes, ready for offline listening.'
-                : 'Daily mixes appear here automatically after you open D-Tunes online.',
-            emptyMessage: 'Made For You is not saved on this device yet. Open D-Tunes with a connection once and today\'s mixes will be cached here automatically.'
+                ? "Your daily mixes, ready for offline listening."
+                : "Daily mixes appear here automatically after you open D-Tunes online.",
+            emptyMessage: "Made For You is not saved on this device yet. Open D-Tunes with a connection once and today's mixes will be cached here automatically."
         });
 
         _lastRenderedDateKey = cached?.dateKey || localDateKey();
@@ -844,6 +915,8 @@
 
     window.aiHome = {
         renderAIHome,
+        writeTrendingCache,
+        readTrendingCache,
         renderOfflineHome,
         playEntirePlaylist,
         addPlaylistToQueue,
