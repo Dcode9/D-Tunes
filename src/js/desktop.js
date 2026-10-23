@@ -355,6 +355,16 @@
     ['play', 'pause', 'playing', 'loadedmetadata', 'ended', 'seeked'].forEach((evt) => {
       if (el) el.addEventListener(evt, sendMediaState);
     });
+    let lastTimeUpdate = 0;
+    if (el) {
+      el.addEventListener('timeupdate', () => {
+        const now = Date.now();
+        if (now - lastTimeUpdate > 300) {
+          lastTimeUpdate = now;
+          sendMediaState();
+        }
+      });
+    }
     if (window.player) {
       const origShuffle = window.player.toggleShuffle;
       window.player.toggleShuffle = function () {
@@ -391,7 +401,7 @@
     const slider = document.getElementById('volume-slider');
     if (slider && !fromSystem) slider.value = v;
     const el = audioEl();
-    if (systemVolumeEnabled) {
+    if (isDesktop && api && api.setSystemVolume) {
       pushSystemVolume(v);
       if (el) el.volume = 1;
     } else if (el) {
@@ -412,6 +422,13 @@
 
   async function initSystemVolume() {
     if (!isDesktop || !api.getSystemVolume) return;
+    const slider = document.getElementById('volume-slider');
+    if (slider && !slider._dtunesSystemBound) {
+      slider._dtunesSystemBound = true;
+      slider.addEventListener('input', (e) => {
+        applyVolume(e.target.value, false);
+      });
+    }
     // The helper compiles its CoreAudio shim on first use, so allow a few retries.
     for (let attempt = 0; attempt < 4; attempt++) {
       try {
