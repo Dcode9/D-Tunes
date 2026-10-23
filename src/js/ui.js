@@ -2291,7 +2291,7 @@
                         rating: 1,
                         message: `[AI Safety Report - Policy 11.16]\nFeature: ${feature}\nIssue Type: ${issue}\nSummary: ${contentSummary}\nDetails: ${details}\nMeta: ${JSON.stringify(this.currentContext?.context || {})}`,
                         user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Antigravity-Client',
-                        app_version: (typeof window !== 'undefined' && window.electronAPI) ? '1.3.4-win-desktop' : '1.3.4-web'
+                        app_version: (typeof window !== 'undefined' && window.electronAPI) ? '1.4.0-win-desktop' : '1.4.0-web'
                     };
 
                     const endpoint = 'https://gmwieijbrrztukqpfwkg.supabase.co/rest/v1/dtunes_feedback';
@@ -2555,7 +2555,7 @@
                         rating: this.selectedRating || 5,
                         message: message,
                         user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Antigravity-Client',
-                        app_version: (typeof window !== 'undefined' && window.electronAPI) ? '1.3.4-win-desktop' : '1.3.4-web'
+                        app_version: (typeof window !== 'undefined' && window.electronAPI) ? '1.4.0-win-desktop' : '1.4.0-web'
                     };
 
                     const endpoint = 'https://gmwieijbrrztukqpfwkg.supabase.co/rest/v1/dtunes_feedback';

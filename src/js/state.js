@@ -110,15 +110,6 @@
             return normalized;
         };
 
-        const appIsOffline = () => {
-            try {
-                if (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function') return window.__dtunesIsOffline();
-                return typeof navigator !== 'undefined' && navigator.onLine === false;
-            } catch (_) {
-                return false;
-            }
-        };
-
         const safeStorage = {
             get: (key, fallback = null) => {
                 try {
@@ -309,29 +300,10 @@
         };
 
         const songStore = {
-            songs: new Map(),
-            counter: 0,
-            order: [],
-            maxEntries: 5000,
-            add: (song) => {
-                if (!song) return null;
-                const raw = song.saavn_id || song.id || song.songid || song.perma_url || song.url || null;
-                const kind = (song.type === 'album' || song.type === 'artist' || song.type === 'playlist' || song.type === 'show' || song.type === 'episode') ? song.type : 'song';
-                const id = raw ? `${kind}:${raw}` : `song_${songStore.counter++}`;
-                if (!songStore.songs.has(id)) {
-                    songStore.order.push(id);
-                    if (songStore.order.length > songStore.maxEntries) {
-                        const oldest = songStore.order.shift();
-                        if (oldest !== id) songStore.songs.delete(oldest);
-                    }
-                }
-                songStore.songs.set(id, song);
-                return id;
-            },
-            get: (id) => songStore.songs.get(id),
-            clear: () => { songStore.songs.clear(); songStore.order.length = 0; songStore.counter = 0; }
+            songs: new Map(), counter: 0,
+            add: (song) => { const id = `song_${songStore.counter++}`; songStore.songs.set(id, song); return id; },
+            get: (id) => songStore.songs.get(id)
         };
-        window.songStore = songStore;
 
         const persist = {
             snapshot: () => {
@@ -358,24 +330,14 @@
                     document.getElementById('player-footer')?.classList.remove('translate-y-[150%]', 'opacity-0');
                     ui.enableControls();
                     ui.updateMetadata(state.currentTrack);
-                    const restoreTrack = state.currentTrack;
-                    const applyRestoreUrl = (url) => {
-                        if (!url) return;
-                        audio.src = url;
+                    if (state.currentTrack.url) {
+                        audio.src = state.currentTrack.url;
                         audio.addEventListener('loadedmetadata', function onMetaLoad() {
                             audio.currentTime = data.time || 0;
                             currentProgress = audio.duration ? audio.currentTime / audio.duration : 0;
                             document.getElementById('seek-bar').value = data.time || 0;
                             audio.removeEventListener('loadedmetadata', onMetaLoad);
                         });
-                    };
-                    const cachedOfflineUrl = window.offlineStore?.getPlayUrlSync?.(restoreTrack.id);
-                    if (cachedOfflineUrl) {
-                        applyRestoreUrl(cachedOfflineUrl);
-                    } else if (restoreTrack.url) {
-                        applyRestoreUrl(restoreTrack.url);
-                    } else if (window.offlineStore?.isDownloaded?.(restoreTrack.id)) {
-                        window.offlineStore.getPlayUrl(restoreTrack.id).then(applyRestoreUrl).catch(() => {});
                     }
                 }
                 ui.renderQueue();
@@ -673,9 +635,6 @@
                     ui.updateProfileUI();
                     cloudLibrary.setStatus('Sign in to sync history, library, likes, and playlists.');
                 }
-                if (window.msStoreManager && msStoreManager.updateUI) {
-                    msStoreManager.updateUI();
-                }
             },
             toggleAuth: async () => {
                 try {
@@ -747,8 +706,7 @@
                     'playbackState', 'equalizerSettings', 'audioQuality', 'preferredLanguage',
                     'dverse_session_cache', 'dverse_tokens_cookie', 'dverse_auth_tokens',
                     'dverse_supabase_auth_token', 'sb-supabase-auth-token', 'dislikedSongs',
-                    'dtunes_ai_playlists_cache_v2', 'dtunes_daily_mixes_cache_v1', 'dtunes_trending_cache_v1',
-                    'dverse_auth_return_to', 'dverse.auth.returnTo',
+                    'dtunes_ai_playlists_cache_v2', 'dverse_auth_return_to', 'dverse.auth.returnTo',
                     'sb-qvvnhvowffvbbhfgwypw-auth-token', 'dverse_desktop_auth'
                 ];
                 targetKeys.forEach(k => {
@@ -817,15 +775,15 @@
                 if (aiContainer) {
                     aiContainer.innerHTML = `
                         <div class="pt-2 animate-fade-in px-4 md:px-8">
-                            <div class="p-6 md:p-8 rounded-2xl glass-panel border border-white/10 flex flex-col md:flex-row items-center justify-between gap-6 bg-white/[0.02]">
+                            <div class="p-6 md:p-8 rounded-2xl glass-panel border border-white/10 flex flex-col md:flex-row items-center justify-between gap-6 bg-gradient-to-r from-purple-900/30 via-black/40 to-emerald-900/30">
                                 <div class="max-w-xl">
                                     <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white text-xs font-semibold mb-3">
                                         <span>Daily Mixes</span>
                                     </div>
-                                    <h2 class="text-2xl md:text-3xl font-bold font-display text-white tracking-tight">Your Music, Tailored For You</h2>
+                                    <h2 class="text-2xl md:text-3xl font-black text-white tracking-tight">Your Music, Tailored For You</h2>
                                     <p class="text-sm text-neutral-300 mt-2 leading-relaxed">Sign in to unlock personalized daily mixes based on your listening history, favorite tracks, and custom playlists.</p>
                                 </div>
-                                <button onclick="if(window.dverse && dverse.signInWithGoogle) dverse.signInWithGoogle();" class="px-6 py-3 rounded-full bg-[var(--accent-color)] text-black font-bold text-sm hover:brightness-110 active:scale-[0.98] transition flex-shrink-0 cursor-pointer flex items-center gap-2">
+                                <button onclick="if(window.dverse && dverse.signInWithGoogle) dverse.signInWithGoogle();" class="px-6 py-3 rounded-full bg-[var(--accent-color)] text-black font-bold text-sm hover:scale-105 active:scale-95 transition shadow-lg flex-shrink-0 cursor-pointer flex items-center gap-2">
                                     <span>Sign In to D-Tunes</span>
                                     <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
                                 </button>
@@ -843,30 +801,17 @@
                 if (ui.showToast) ui.showToast('Account data cleared and signed out', 'info');
             },
             init: async () => {
+                const isDesktop = Boolean((window.electronAPI && window.electronAPI.isDesktopApp) || window.isDTunesDesktop);
+                if (isDesktop && typeof navigator !== 'undefined' && !navigator.onLine) {
+                    cloudLibrary.updateUI();
+                    cloudLibrary.setStatus('Offline mode (Windows)');
+                    return;
+                }
                 if (!cloudLibrary.ready()) {
                     cloudLibrary.updateUI();
                     cloudLibrary.setStatus('D\'Verse sync is not configured.');
                     return;
                 }
-
-                // Offline boot: skip the remote session check (and its token refresh)
-                // entirely. Local library/history are already hydrated from storage.
-                if (appIsOffline()) {
-                    try {
-                        cloudLibrary.session = await window.dverse.getSession();
-                    } catch (_) {}
-                    cloudLibrary.updateUI();
-                    cloudLibrary.setStatus('Offline mode — showing your saved library.');
-                    if (!cloudLibrary._offlineRetryBound && typeof window !== 'undefined' && window.addEventListener) {
-                        cloudLibrary._offlineRetryBound = true;
-                        window.addEventListener('online', () => {
-                            cloudLibrary._offlineRetryBound = false;
-                            cloudLibrary.init().catch(() => {});
-                        }, { once: true });
-                    }
-                    return;
-                }
-
                 const triggerLoadOnce = async (source, userSession) => {
                     const uid = userSession?.user?.id;
                     if (!uid) return;
@@ -875,16 +820,13 @@
                     await cloudLibrary.load();
                 };
 
-                if (!cloudLibrary._authListenerBound && window.dverse.onAuthStateChange) {
-                    cloudLibrary._authListenerBound = true;
-                    window.dverse.onAuthStateChange(async (_event, session) => {
-                        if (cloudLibrary._isSigningOut) return;
-                        cloudLibrary.session = session;
-                        cloudLibrary.updateUI();
-                        if (session) await triggerLoadOnce(_event, session);
-                        else cloudLibrary._loadedUserId = null;
-                    });
-                }
+                window.dverse.onAuthStateChange(async (_event, session) => {
+                    if (cloudLibrary._isSigningOut) return;
+                    cloudLibrary.session = session;
+                    cloudLibrary.updateUI();
+                    if (session) await triggerLoadOnce(_event, session);
+                    else cloudLibrary._loadedUserId = null;
+                });
                 try {
                     const session = await window.dverse.getSession();
                     cloudLibrary.session = session;
@@ -896,8 +838,9 @@
                 }
             },
             load: async () => {
-                if (appIsOffline()) {
-                    cloudLibrary.setStatus('Offline mode — showing your saved library.');
+                const isDesktop = Boolean((window.electronAPI && window.electronAPI.isDesktopApp) || window.isDTunesDesktop);
+                if (isDesktop && typeof navigator !== 'undefined' && !navigator.onLine) {
+                    cloudLibrary.setStatus('Offline mode (Windows)');
                     cloudLibrary.updateUI();
                     return;
                 }

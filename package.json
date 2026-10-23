@@ -1,7 +1,7 @@
 {
   "name": "d-tunes",
-  "version": "1.0.0",
-  "description": "D'Tunes web music player with rule-based recommendations",
+  "version": "1.4.0",
+  "description": "D'Tunes music player (Beta 1.4)",
   "private": true,
   "type": "commonjs",
   "scripts": {

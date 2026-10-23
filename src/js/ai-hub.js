@@ -17,6 +17,12 @@
     let _cachedDailyPlaylists = null;
 
     const DAILY_MIXES_CACHE_KEY = 'dtunes_daily_mixes_cache_v1';
+    const LOCAL_MADE_FOR_YOU_CACHE_KEY = 'dtunes_made_for_you_cache';
+    let activeExpiryTs = null;
+    function formatDailyExpiry(ts) { return formatCacheExpiry(ts); }
+    function readLocalDailyCache(uid) { return readDailyMixCache(); }
+    function writeLocalDailyCache(uid, pl) { const r = writeDailyMixCache(uid, pl); if (r) { try { localStorage.setItem(LOCAL_MADE_FOR_YOU_CACHE_KEY, JSON.stringify(r)); } catch (_) {} } return r; }
+
     const DAILY_MIXES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
     const TRENDING_CACHE_KEY = 'dtunes_trending_cache_v1';
     const TRENDING_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -24,6 +30,12 @@
     const isOfflineMode = () => {
         try {
             if (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function') return window.__dtunesIsOffline();
+            const isDesktop = (typeof window !== 'undefined' && (window.dtunesDesktop?.isDesktop || (window.process && window.process.type === 'renderer') || (typeof window.isWindowsApp === 'function' && window.isWindowsApp())));
+            if (isDesktop) {
+                // desktop offline mode active
+            } else {
+                return false;
+            }
             return typeof navigator !== 'undefined' && navigator.onLine === false;
         } catch (_) {
             return false;
@@ -41,7 +53,9 @@
             const data = JSON.parse(raw);
             if (!data || !Array.isArray(data.playlists) || data.playlists.length === 0) return null;
             const expiresAt = Date.parse(data.expiresAt);
-            if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
+            const isCacheValid = Number.isFinite(expiresAt) && expiresAt > Date.now();
+            if (!isCacheValid) return null;
+            activeExpiryTs = expiresAt;
             return data;
         } catch (_) {
             return null;
@@ -94,7 +108,9 @@
             const data = JSON.parse(raw);
             if (!data || !Array.isArray(data.songs) || data.songs.length === 0) return null;
             const expiresAt = Date.parse(data.expiresAt);
-            if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) return null;
+            const isCacheValid = Number.isFinite(expiresAt) && expiresAt > Date.now();
+            if (!isCacheValid) return null;
+            activeExpiryTs = expiresAt;
             return data;
         } catch (_) {
             return null;
@@ -360,7 +376,7 @@
                 <div class="flex items-center justify-between px-4 md:px-8 mb-6 pb-2 border-b border-white/10">
                     <div>
                         <h2 class="text-2xl md:text-3xl font-bold font-display text-white tracking-tight">Made For You</h2>
-                        <p class="text-xs md:text-sm text-neutral-400 mt-1">${utils.escapeHtml(description)}</p>
+                        <p class="text-xs md:text-sm text-neutral-400 mt-1">${utils.escapeHtml(description)}${expiresAt ? ` <span class="text-xs text-brand-primary font-medium ml-2 bg-brand-primary/10 border border-brand-primary/20 px-2 py-0.5 rounded-full">Expires at ${formatDailyExpiry(expiresAt)}</span>` : ""}</p>
                     </div>
                     <div class="flex items-center gap-2">
                         <button onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Made For You (Daily Recommendations)' })" class="text-xs text-amber-400/90 hover:text-amber-300 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 transition hover:bg-amber-500/20 cursor-pointer" title="Report issue with AI-generated recommendations (Policy 11.16)">

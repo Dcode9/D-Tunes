@@ -2,16 +2,6 @@
     const DEFAULT_ENDPOINT = "https://ai.d-verse.in/api/chat";
     const DEFAULT_MODEL = "mercury-2.5";
     const CACHE_KEY = "dtunes_ai_playlists_cache_v2";
-    const DAILY_MIXES_CACHE_KEY = "dtunes_daily_mixes_cache_v1";
-
-    const isOffline = () => {
-        try {
-            if (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function') return window.__dtunesIsOffline();
-            return typeof navigator !== 'undefined' && navigator.onLine === false;
-        } catch (_) {
-            return false;
-        }
-    };
 
     // Curated seed taste profile when user is brand new with 0 history
     const SEED_PROFILE = [
@@ -24,15 +14,31 @@
     ];
 
     async function fetchWithRetry(url, options, retries = 2, delay = 800) {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            throw new Error('Offline');
+        }
         for (let i = 0; i <= retries; i++) {
+            if (typeof navigator !== 'undefined' && !navigator.onLine) {
+                throw new Error('Offline');
+            }
+            let timeoutId = null;
             try {
-                const res = await fetch(url, options);
+                let fetchSignal;
+                if (typeof AbortController !== 'undefined') {
+                    const controller = new AbortController();
+                    timeoutId = setTimeout(() => controller.abort(), 6000);
+                    fetchSignal = controller.signal;
+                }
+                const res = await fetch(url, { ...options, signal: fetchSignal });
+                if (timeoutId) clearTimeout(timeoutId);
                 if (!res.ok) {
                     const errorText = await res.text().catch(() => '');
                     throw new Error(`HTTP ${res.status}: ${errorText || res.statusText}`);
                 }
                 return res;
             } catch (e) {
+                if (timeoutId) clearTimeout(timeoutId);
+                if (typeof navigator !== 'undefined' && !navigator.onLine) throw e;
                 if (i === retries) throw e;
                 await new Promise(res => setTimeout(res, delay * (i + 1)));
             }
@@ -40,7 +46,6 @@
     }
 
     async function callLLM(prompt, systemPrompt = "You are an elite music curation director that outputs strictly raw JSON without markdown formatting.") {
-        if (isOffline()) throw new Error('Offline — using locally cached recommendations.');
         const payload = {
             model: DEFAULT_MODEL,
             provider: "inception",
@@ -81,6 +86,9 @@
     }
 
     async function generateCustomPlaylists(history = [], likedSongs = [], librarySongs = [], dislikedSongs = [], force = false) {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            return [];
+        }
         let effectiveHistory = history && history.length ? history : (state.playHistory || []);
         let effectiveLiked = likedSongs && likedSongs.length ? likedSongs : (state.likedIds || []);
         let effectiveLib = librarySongs && librarySongs.length ? librarySongs : (state.libraryIds || []);
@@ -310,6 +318,9 @@ Return ONLY raw JSON: {"title": "Song Name", "artist": "Artist Name"}`;
     }
 
     async function generateVibeMix(vibePrompt, options = {}) {
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            throw new Error('Offline: Vibe Mix requires an internet connection');
+        }
         const { isTimeCapsule = false, infuseTaste = true } = options;
         const disliked = (state.dislikedSongs || []).map(d => {
             if (typeof d === 'object') return `"${d.name || d.title}" by ${d.artist || 'Artist'}`;
@@ -408,7 +419,6 @@ Requirements:
 
     function clearCache() {
         localStorage.removeItem(CACHE_KEY);
-        localStorage.removeItem(DAILY_MIXES_CACHE_KEY);
     }
 
     window.ai = {

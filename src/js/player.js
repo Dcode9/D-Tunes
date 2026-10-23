@@ -269,7 +269,7 @@
         const notifyOfflineBlockedTrack = (track) => {
             if (typeof ui !== 'undefined' && ui.showToast) {
                 const name = track && track.name ? `"${track.name}" ` : 'This song ';
-                ui.showToast(`${name}isn't downloaded — it can't play offline.`);
+                ui.showToast(`${name}is not downloaded for offline playback`, 'warning', 3000);
             }
         };
 

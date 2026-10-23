@@ -16,21 +16,18 @@
                 document.getElementById('cm-add-playlist').onclick = (e) => { e.stopPropagation(); menu.classList.add('hidden'); ctxMenu.showPlaylistSelector(); };
                 document.getElementById('cm-like-song').onclick = () => { const s = songStore.get(ctxMenu.activeStoreId); if(s) player.likeSong(s.id); menu.classList.add('hidden'); };
                 document.getElementById('cm-add-library').onclick = () => { const s = songStore.get(ctxMenu.activeStoreId); if(s) player.addToLibrary(s.id); menu.classList.add('hidden'); };
-                const cmDownload = document.getElementById('cm-download');
+                const cmDownload = document.getElementById('cm-download') || document.getElementById('cm-download-song');
                 if (cmDownload) {
-                    cmDownload.onclick = (e) => {
-                        e.stopPropagation();
+                    cmDownload.onclick = () => {
                         const s = songStore.get(ctxMenu.activeStoreId);
+                        menu.classList.add('hidden');
                         if (!s) return;
-                        ui.toggleOfflineDownload(s);
-                        ui.updateDownloadContextLabel(s);
+                        if (window.dtunesIsOfflineTrack && window.dtunesIsOfflineTrack(s.id)) {
+                            if (window.dtunesDeleteOffline) window.dtunesDeleteOffline(s.id);
+                        } else if (window.dtunesDownloadTrack) {
+                            window.dtunesDownloadTrack(s);
+                        }
                     };
-                }
-                if (window.offlineStore && offlineStore.onChange) {
-                    offlineStore.onChange(() => {
-                        if (menu.classList.contains('hidden')) return;
-                        ui.updateDownloadContextLabel(songStore.get(ctxMenu.activeStoreId));
-                    });
                 }
                 const cmDislike = document.getElementById('cm-dislike-song');
                 if (cmDislike) {
@@ -70,7 +67,17 @@
                 const libraryLabel = document.getElementById('cm-add-library-label');
                 if (likeLabel && song) likeLabel.textContent = player.isLiked(song.id) ? 'Unlike song' : 'Like song';
                 if (libraryLabel && song) libraryLabel.textContent = player.isInLibrary(song.id) ? 'Remove from Library' : 'Add to Library';
-                if (typeof ui.updateDownloadContextLabel === 'function') ui.updateDownloadContextLabel(song);
+                const downloadBtn = document.getElementById('cm-download') || document.getElementById('cm-download-song');
+                if (downloadBtn) {
+                    const isDesktop = Boolean((window.electronAPI && window.electronAPI.isDesktopApp) || window.isDTunesDesktop);
+                    downloadBtn.classList.toggle('hidden', !isDesktop);
+                    const label = document.getElementById('cm-download-label') || document.getElementById('cm-download-song-label');
+                    if (label && song) {
+                        label.textContent = (window.dtunesIsOfflineTrack && window.dtunesIsOfflineTrack(song.id))
+                            ? 'Remove offline download'
+                            : 'Download for offline';
+                    }
+                }
                 const dislikeLabel = document.getElementById('cm-dislike-song-label');
                 if (dislikeLabel && song) {
                     dislikeLabel.textContent = (player.isDisliked && player.isDisliked(song.id)) ? 'Remove from hidden' : "Don't recommend this";
