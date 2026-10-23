@@ -297,15 +297,24 @@
             transform: translateZ(0);
             backface-visibility: hidden;
             contain: layout style;
-            transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.22s ease, transform 0.22s ease;
+            transition: border-color 0.2s ease, background-color 0.2s ease, box-shadow 0.22s ease;
         }
         @media (min-width: 768px) { .scroll-card { flex-basis: calc((100% - (4 * 1rem)) / 4.5); } }
         @media (min-width: 1024px) { .scroll-card { flex-basis: calc((100% - (6 * 1rem)) / 6.5); } }
 
         .scroll-card:hover {
-            box-shadow: 0 16px 32px -24px rgba(0, 0, 0, 0.9);
-            border-color: rgba(255, 255, 255, 0.18);
-            transform: translate3d(0, -2px, 0);
+            box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.55);
+            border-color: rgba(255, 255, 255, 0.25);
+            background-color: rgba(255, 255, 255, 0.04);
+            transform: none !important;
+        }
+        .scroll-card:active {
+            transform: none !important;
+        }
+        .for-you-card:hover,
+        .discover-card:hover,
+        .daily-mix-shelf:hover {
+            transform: none !important;
         }
 
         .scroll-card img,
@@ -1773,27 +1782,19 @@ button, input[type="range"], a, .scroll-card, .song-pill {
 }
 
 
-/* Progressive Album Art Unblur & Fade-In */
+/* Progressive Album Art Fade-In (Optimized, GPU-friendly) */
 .reveal-blur-img {
-    filter: blur(14px);
-    opacity: 0.15;
-    transform: scale(1.05);
-    transition: filter 0.65s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.55s ease-out, transform 0.55s ease-out;
-    will-change: filter, opacity, transform;
+    opacity: 0;
+    transition: opacity 0.25s ease-out;
 }
 .reveal-blur-img.revealed {
-    filter: blur(0px);
     opacity: 1;
-    transform: scale(1);
 }
 
 .reveal-text {
     opacity: 0;
-    transform: translateY(5px);
-    transition: opacity 0.5s ease-out 0.08s, transform 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.08s;
-    will-change: opacity, transform;
+    transition: opacity 0.25s ease-out;
 }
 .reveal-text.revealed {
     opacity: 1;
-    transform: translateY(0);
 }

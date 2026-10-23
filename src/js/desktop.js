@@ -307,7 +307,13 @@
     const originalPlayDirect = window.player.playDirect;
     window.player.playDirect = function (track) {
       if (track && track.id && offlineIds.has(String(track.id))) {
-        return originalPlayDirect.call(window.player, Object.assign({}, track, { url: offlineUrl(track.id), isOffline: true }));
+        const meta = offlineMeta.get(String(track.id));
+        const art = (meta && meta.img) || track.img || 'DTunes.svg';
+        return originalPlayDirect.call(window.player, Object.assign({}, track, {
+          url: offlineUrl(track.id),
+          img: art,
+          isOffline: true
+        }));
       }
       return originalPlayDirect.call(window.player, track);
     };

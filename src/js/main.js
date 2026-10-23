@@ -917,113 +917,67 @@
             document.addEventListener('pointercancel', endShelfDrag);
 
             // Desktop Shelf Navigation Chevrons (< and >) & Permanent Edge Blur Updates
+            let shelfNavScheduled = false;
             window.setupShelfNavButtons = () => {
-                document.querySelectorAll('.relative.group\\/track').forEach((wrapper) => {
-                    const shelf = wrapper.querySelector('.horizontal-scroll');
-                    if (!shelf) return;
+                if (shelfNavScheduled) return;
+                shelfNavScheduled = true;
+                requestAnimationFrame(() => {
+                    shelfNavScheduled = false;
+                    document.querySelectorAll('.relative.group\\/track').forEach((wrapper) => {
+                        const shelf = wrapper.querySelector('.horizontal-scroll');
+                        if (!shelf) return;
 
-                    let prevBtn = wrapper.querySelector('.shelf-nav-prev');
-                    if (!prevBtn) {
-                        prevBtn = document.createElement('button');
-                        prevBtn.type = 'button';
-                        prevBtn.className = 'shelf-nav-btn shelf-nav-prev';
-                        prevBtn.setAttribute('aria-label', 'Scroll left');
-                        prevBtn.innerHTML = '<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>';
-                        prevBtn.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            shelf.scrollBy({ left: -Math.max(260, shelf.clientWidth * 0.7), behavior: 'smooth' });
-                        });
-                        wrapper.appendChild(prevBtn);
-                    }
+                        let prevBtn = wrapper.querySelector('.shelf-nav-prev');
+                        if (!prevBtn) {
+                            prevBtn = document.createElement('button');
+                            prevBtn.type = 'button';
+                            prevBtn.className = 'shelf-nav-btn shelf-nav-prev';
+                            prevBtn.setAttribute('aria-label', 'Scroll left');
+                            prevBtn.innerHTML = '<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7"/></svg>';
+                            prevBtn.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                shelf.scrollBy({ left: -Math.max(260, shelf.clientWidth * 0.7), behavior: 'smooth' });
+                            });
+                            wrapper.appendChild(prevBtn);
+                        }
 
-                    let nextBtn = wrapper.querySelector('.shelf-nav-next');
-                    if (!nextBtn) {
-                        nextBtn = document.createElement('button');
-                        nextBtn.type = 'button';
-                        nextBtn.className = 'shelf-nav-btn shelf-nav-next';
-                        nextBtn.setAttribute('aria-label', 'Scroll right');
-                        nextBtn.innerHTML = '<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>';
-                        nextBtn.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            shelf.scrollBy({ left: Math.max(260, shelf.clientWidth * 0.7), behavior: 'smooth' });
-                        });
-                        wrapper.appendChild(nextBtn);
-                    }
+                        let nextBtn = wrapper.querySelector('.shelf-nav-next');
+                        if (!nextBtn) {
+                            nextBtn = document.createElement('button');
+                            nextBtn.type = 'button';
+                            nextBtn.className = 'shelf-nav-btn shelf-nav-next';
+                            nextBtn.setAttribute('aria-label', 'Scroll right');
+                            nextBtn.innerHTML = '<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 5l7 7-7 7"/></svg>';
+                            nextBtn.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                shelf.scrollBy({ left: Math.max(260, shelf.clientWidth * 0.7), behavior: 'smooth' });
+                            });
+                            wrapper.appendChild(nextBtn);
+                        }
 
-                    const updateShelfVisuals = () => {
-                        const maxScroll = shelf.scrollWidth - shelf.clientWidth;
-                        const hasScrollableContent = maxScroll > 4;
-                        const leftBlur = wrapper.querySelector('.row-blur-left');
-                        const rightBlur = wrapper.querySelector('.row-blur-right');
+                        const updateShelfVisuals = () => {
+                            const maxScroll = shelf.scrollWidth - shelf.clientWidth;
+                            const hasScrollableContent = maxScroll > 4;
+                            const leftBlur = wrapper.querySelector('.row-blur-left');
+                            const rightBlur = wrapper.querySelector('.row-blur-right');
 
-                        if (prevBtn) prevBtn.classList.toggle('is-visible', hasScrollableContent && shelf.scrollLeft > 6);
-                        if (nextBtn) nextBtn.classList.toggle('is-visible', hasScrollableContent && shelf.scrollLeft < maxScroll - 6);
+                            if (prevBtn) prevBtn.classList.toggle('is-visible', hasScrollableContent && shelf.scrollLeft > 6);
+                            if (nextBtn) nextBtn.classList.toggle('is-visible', hasScrollableContent && shelf.scrollLeft < maxScroll - 6);
 
-                        // Edge blurs are permanently visible by default, only hidden when at boundary extremes
-                        if (leftBlur) leftBlur.classList.toggle('edge-hidden', !hasScrollableContent || shelf.scrollLeft <= 2);
-                        if (rightBlur) rightBlur.classList.toggle('edge-hidden', !hasScrollableContent || shelf.scrollLeft >= maxScroll - 2);
-                    };
+                            if (leftBlur) leftBlur.classList.toggle('edge-hidden', !hasScrollableContent || shelf.scrollLeft <= 2);
+                            if (rightBlur) rightBlur.classList.toggle('edge-hidden', !hasScrollableContent || shelf.scrollLeft >= maxScroll - 2);
+                        };
 
-                    if (!shelf._navListenerBound) {
-                        shelf._navListenerBound = true;
-                        shelf.addEventListener('scroll', updateShelfVisuals, { passive: true });
-                    }
-                    updateShelfVisuals();
+                        if (!shelf._navListenerBound) {
+                            shelf._navListenerBound = true;
+                            shelf.addEventListener('scroll', updateShelfVisuals, { passive: true });
+                        }
+                        updateShelfVisuals();
+                    });
                 });
             };
 
-            // Dynamic backdrop recalculation when hovering cards that intersect edge blur zones
-            document.addEventListener('mouseover', (e) => {
-                const card = e.target.closest('.scroll-card, .for-you-card, .discover-card');
-                if (!card) return;
-                const shelf = card.closest('.horizontal-scroll');
-                if (!shelf) return;
-                const wrapper = shelf.closest('.relative');
-                if (!wrapper) return;
-
-                const cardRect = card.getBoundingClientRect();
-                const shelfRect = shelf.getBoundingClientRect();
-                const leftBlur = wrapper.querySelector('.row-blur-left');
-                const rightBlur = wrapper.querySelector('.row-blur-right');
-
-                const nearLeft = cardRect.left < shelfRect.left + 72 && cardRect.right > shelfRect.left;
-                const nearRight = cardRect.right > shelfRect.right - 72 && cardRect.left < shelfRect.right;
-
-                if (nearLeft && leftBlur) {
-                    leftBlur.style.backdropFilter = 'blur(14.1px)';
-                    setTimeout(() => { if (leftBlur) leftBlur.style.backdropFilter = ''; }, 260);
-                }
-                if (nearRight && rightBlur) {
-                    rightBlur.style.backdropFilter = 'blur(14.1px)';
-                    setTimeout(() => { if (rightBlur) rightBlur.style.backdropFilter = ''; }, 260);
-                }
-            });
-
-            document.addEventListener('mouseout', (e) => {
-                const card = e.target.closest('.scroll-card, .for-you-card, .discover-card');
-                if (!card) return;
-                const shelf = card.closest('.horizontal-scroll');
-                if (!shelf) return;
-                const wrapper = shelf.closest('.relative');
-                if (!wrapper) return;
-
-                const cardRect = card.getBoundingClientRect();
-                const shelfRect = shelf.getBoundingClientRect();
-                const leftBlur = wrapper.querySelector('.row-blur-left');
-                const rightBlur = wrapper.querySelector('.row-blur-right');
-
-                const nearLeft = cardRect.left < shelfRect.left + 72 && cardRect.right > shelfRect.left;
-                const nearRight = cardRect.right > shelfRect.right - 72 && cardRect.left < shelfRect.right;
-
-                if (nearLeft && leftBlur) {
-                    leftBlur.style.backdropFilter = 'blur(13.9px)';
-                    setTimeout(() => { if (leftBlur) leftBlur.style.backdropFilter = ''; }, 260);
-                }
-                if (nearRight && rightBlur) {
-                    rightBlur.style.backdropFilter = 'blur(13.9px)';
-                    setTimeout(() => { if (rightBlur) rightBlur.style.backdropFilter = ''; }, 260);
-                }
-            });
+            // Edge blurs maintain constant GPU composite cache without per-frame reflow
 
             // iOS Platform Optimizations (Hardware Volume & AudioContext Unlock)
             const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);

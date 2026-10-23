@@ -1942,9 +1942,21 @@
                 const safeArt = sanitizeImageUrl(track.img);
                 const artImg = document.getElementById('curr-art-img');
                 if (artImg) {
-                    artImg.crossOrigin = 'anonymous';
-                    artImg.src = safeArt;
+                    artImg.removeAttribute('crossorigin');
+                    artImg.onerror = function () {
+                        if (this.src && this.src.includes('500x500')) {
+                            this.src = this.src.replace('500x500', '150x150');
+                            return;
+                        }
+                        if (this.src && this.src.includes('150x150')) {
+                            this.src = this.src.replace('150x150', '50x50');
+                            return;
+                        }
+                        this.onerror = null;
+                        this.src = FALLBACK_ART;
+                    };
                     artImg.onload = () => applyDynamicTrackTheme(artImg);
+                    artImg.src = safeArt;
                     if (artImg.complete && artImg.naturalWidth > 0) applyDynamicTrackTheme(artImg);
                 }
                 ui.setPlayerLoading(!!options.loading);

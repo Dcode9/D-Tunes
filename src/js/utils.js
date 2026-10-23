@@ -118,20 +118,21 @@
 
         const GITHUB_DETUNED_SVG = 'https://raw.githubusercontent.com/Datamaverik/D-Tunes/main/assets/DTunes2.svg';
         const FALLBACK_ART_CANDIDATES = [
-            GITHUB_DETUNED_SVG,
-            'assets/DTunes2.svg',
-            './assets/DTunes2.svg',
-            '/assets/DTunes2.svg',
             'DTunes.svg',
-            './DTunes.svg',
-            '/DTunes.svg'
+            '/DTunes.svg',
+            'assets/DTunes.svg',
+            'assets/DTunes_logo.png',
+            'assets/icon.png'
         ];
-        const FALLBACK_ART = FALLBACK_ART_CANDIDATES[0];
+        const FALLBACK_ART = 'DTunes.svg';
 
         const sanitizeImageUrl = (value) => {
-            const url = String(value || '').trim();
+            let url = String(value || '').trim();
             if (!url || url === 'undefined' || url === 'null') {
                 return FALLBACK_ART;
+            }
+            if (url.startsWith('http://')) {
+                url = 'https://' + url.slice(7);
             }
             return url;
         };
@@ -140,6 +141,15 @@
             document.addEventListener('error', (event) => {
                 const target = event.target;
                 if (!(target instanceof HTMLImageElement)) {
+                    return;
+                }
+
+                if (target.src && target.src.includes('500x500')) {
+                    target.src = target.src.replace('500x500', '150x150');
+                    return;
+                }
+                if (target.src && target.src.includes('150x150')) {
+                    target.src = target.src.replace('150x150', '50x50');
                     return;
                 }
 
