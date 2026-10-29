@@ -473,14 +473,16 @@
                     if (hasStreamUrl) {
                         // Instant playback with known streaming URL
                         await setupAndStartPlayback(track.url);
-                        // Refresh details asynchronously in background for 320kbps upgrade and accurate lyrics
-                        jiosaavnAPI.getSong(track.id).then((freshDetails) => {
-                            if (currentRequestId === playRequestId && freshDetails) {
-                                state.currentTrack = { ...state.currentTrack, ...freshDetails };
-                                ui.updateMetadata(state.currentTrack);
-                                if (typeof lyricsManager !== 'undefined') lyricsManager.fetchLyricsForTrack(state.currentTrack);
-                            }
-                        }).catch(() => {});
+                        // Refresh details asynchronously in background for 320kbps upgrade and accurate lyrics (online only)
+                        if (!track.isOffline && !String(track.url).startsWith('dtunes-media://')) {
+                            jiosaavnAPI.getSong(track.id).then((freshDetails) => {
+                                if (currentRequestId === playRequestId && freshDetails) {
+                                    state.currentTrack = { ...state.currentTrack, ...freshDetails };
+                                    ui.updateMetadata(state.currentTrack);
+                                    if (typeof lyricsManager !== 'undefined') lyricsManager.fetchLyricsForTrack(state.currentTrack);
+                                }
+                            }).catch(() => {});
+                        }
                     } else {
                         // URL not in memory; fetch before playing
                         let freshDetails = await jiosaavnAPI.getSong(track.id);

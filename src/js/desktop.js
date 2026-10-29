@@ -75,6 +75,23 @@
     return null;
   }
 
+  function resolveArtUrl(song) {
+    if (!song) return '';
+    if (typeof song.img === 'string' && /^https?:\/\//i.test(song.img)) return song.img;
+    if (typeof song.image === 'string' && /^https?:\/\//i.test(song.image)) return song.image;
+    if (Array.isArray(song.image) && song.image.length > 0) {
+      const last = song.image[song.image.length - 1];
+      const u = (last && (last.url || last.link)) || (typeof last === 'string' ? last : '');
+      if (typeof u === 'string' && /^https?:\/\//i.test(u)) return u;
+    }
+    if (Array.isArray(song.img) && song.img.length > 0) {
+      const last = song.img[song.img.length - 1];
+      const u = (last && (last.url || last.link)) || (typeof last === 'string' ? last : '');
+      if (typeof u === 'string' && /^https?:\/\//i.test(u)) return u;
+    }
+    return (typeof song.img === 'string' ? song.img : '') || (typeof song.image === 'string' ? song.image : '');
+  }
+
   window.dtunesDownloadTrack = async function (song) {
     if (!isDesktop) return;
     if (!song || !song.id) return;
@@ -96,7 +113,7 @@
           name: song.name || song.title,
           artist: song.artist || song.primary_artists || "",
           album: song.album || "",
-          img: song.img || song.image || "",
+          img: resolveArtUrl(song),
           duration: song.duration,
           url: streamUrl
         });
@@ -141,33 +158,8 @@
     if (!section || !grid) return;
 
     const list = Array.from(offlineMeta.values());
-    if (countEl) {
-      countEl.textContent = `${list.length} song${list.length === 1 ? '' : 's'}`;
-    }
 
-    if (list.length === 0) {
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        section.classList.remove('hidden');
-        if (actions) actions.classList.add('hidden');
-        grid.innerHTML = `
-          <div class="w-full px-6 py-8 rounded-2xl glass-panel border border-white/10 bg-white/[0.03] text-center my-2">
-            <div class="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-gray-400 mx-auto mb-3">
-              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/></svg>
-            </div>
-            <p class="text-sm font-semibold text-white">No Downloaded Songs Yet</p>
-            <p class="text-xs text-neutral-400 mt-1 max-w-md mx-auto">When connected, right-click any track or open song options and choose <span class="text-cyan-300 font-semibold">Download for offline</span> to store music on this PC.</p>
-          </div>
-        `;
-      } else {
-        section.classList.add('hidden');
-      }
-      return;
-    }
-
-    section.classList.remove('hidden');
-    if (actions) actions.classList.remove('hidden');
-
-    // Register all downloaded songs into songStore so clicking cards works immediately!
+    // Register all downloaded songs into songStore so cards and queue can resolve them
     list.forEach(song => {
       const appSong = {
         id: String(song.id),
@@ -184,6 +176,35 @@
         songStore.set(String(song.id), appSong);
       }
     });
+
+    const isOffline = (window.dtunesNetwork && window.dtunesNetwork.isOffline()) || (typeof navigator !== 'undefined' && !navigator.onLine);
+    if (!isOffline) {
+      // Home page downloaded songs shelf MUST ONLY show when offline
+      section.classList.add('hidden');
+      return;
+    }
+
+    if (countEl) {
+      countEl.textContent = `${list.length} song${list.length === 1 ? '' : 's'}`;
+    }
+
+    if (list.length === 0) {
+      section.classList.remove('hidden');
+      if (actions) actions.classList.add('hidden');
+      grid.innerHTML = `
+        <div class="w-full px-6 py-8 rounded-2xl glass-panel border border-white/10 bg-white/[0.03] text-center my-2">
+          <div class="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center text-gray-400 mx-auto mb-3">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/></svg>
+          </div>
+          <p class="text-sm font-semibold text-white">No Downloaded Songs Yet</p>
+          <p class="text-xs text-neutral-400 mt-1 max-w-md mx-auto">When connected, right-click any track or open song options and choose <span class="text-cyan-300 font-semibold">Download for offline</span> to store music on this PC.</p>
+        </div>
+      `;
+      return;
+    }
+
+    section.classList.remove('hidden');
+    if (actions) actions.classList.remove('hidden');
 
     grid.innerHTML = list.map(song => {
       const appSong = {

@@ -20,7 +20,8 @@ let lastHandledToken = null;
 // Modern Chrome User-Agent
 app.userAgentFallback = MODERN_CHROME_UA;
 
-// Enables Windows taskbar integration (thumbnail toolbar buttons, progress, jump list)
+// App name and Windows Application User Model ID for system integration & Action Center
+app.setName("D'Tunes");
 app.setAppUserModelId('DhairyaShah.DTunes');
 
 // Internal scheme used to stream decrypted offline downloads. It is only known
@@ -521,29 +522,59 @@ const OFFLINE_DIR = path.join(app.getPath('userData'), 'offline_media');
 const OFFLINE_INDEX = path.join(app.getPath('userData'), 'offline_index.json');
 const OFFLINE_KEY_FILE = path.join(app.getPath('userData'), 'offline.key');
 const OFFLINE_MAGIC = Buffer.from('DTUNE1');
+const OFFLINE_MASTER_SALT = Buffer.from('DTunes.Offline.MasterSecret.v1.4', 'utf8');
 let offlineKeyCache = null;
 
+function getMachineIdentity() {
+  let machineGuid = '';
+  try {
+    const { execSync } = require('child_process');
+    const out = execSync('reg query HKLM\\SOFTWARE\\Microsoft\\Cryptography /v MachineGuid', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const m = /MachineGuid\s+REG_SZ\s+(\S+)/i.exec(out);
+    if (m && m[1]) machineGuid = m[1].trim();
+  } catch (_) {}
+  const username = process.env.USERNAME || process.env.USER || 'dtunes_user';
+  const hostname = process.env.COMPUTERNAME || 'dtunes_host';
+  return `${machineGuid || hostname}:${username}`;
+}
+
 function getOfflineKey() {
-  if (offlineKeyCache) return offlineKeyCache;
+  if (offlineKeyCache && offlineKeyCache.length === 32) return offlineKeyCache;
+
+  // 1. Try reading stored key with safeStorage if available
   try {
     if (fs.existsSync(OFFLINE_KEY_FILE)) {
       const stored = fs.readFileSync(OFFLINE_KEY_FILE);
-      const hex = safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(stored) : stored.toString('utf8');
-      offlineKeyCache = Buffer.from(hex, 'hex');
-      if (offlineKeyCache.length === 32) return offlineKeyCache;
+      if (safeStorage.isEncryptionAvailable()) {
+        try {
+          const hex = safeStorage.decryptString(stored);
+          const buf = Buffer.from(hex, 'hex');
+          if (buf.length === 32) {
+            offlineKeyCache = buf;
+            return offlineKeyCache;
+          }
+        } catch (_) {
+          // safeStorage failed (e.g. Local State reset); fall through to persistent machine key
+        }
+      }
     }
-    const key = crypto.randomBytes(32);
-    const hex = key.toString('hex');
-    const payload = safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(hex) : Buffer.from(hex, 'utf8');
-    fs.mkdirSync(path.dirname(OFFLINE_KEY_FILE), { recursive: true });
-    fs.writeFileSync(OFFLINE_KEY_FILE, payload, { mode: 0o600 });
-    offlineKeyCache = key;
-    return key;
-  } catch (err) {
-    console.warn('[Offline] Key unavailable, using ephemeral key:', err.message);
-    offlineKeyCache = crypto.randomBytes(32);
-    return offlineKeyCache;
-  }
+  } catch (_) {}
+
+  // 2. Derive stable, machine-specific 256-bit AES key (bound to this PC and user account)
+  const identity = getMachineIdentity();
+  const derivedKey = crypto.pbkdf2Sync(identity, OFFLINE_MASTER_SALT, 100000, 32, 'sha256');
+
+  // Attempt to persist for safeStorage if possible, but key is always recoverable from machine identity
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      const payload = safeStorage.encryptString(derivedKey.toString('hex'));
+      fs.mkdirSync(path.dirname(OFFLINE_KEY_FILE), { recursive: true });
+      fs.writeFileSync(OFFLINE_KEY_FILE, payload, { mode: 0o600 });
+    }
+  } catch (_) {}
+
+  offlineKeyCache = derivedKey;
+  return derivedKey;
 }
 
 function encryptBuffer(plain) {
@@ -554,14 +585,14 @@ function encryptBuffer(plain) {
 }
 
 function decryptBuffer(payload) {
-  if (payload.length < 33 || !payload.slice(0, 6).equals(OFFLINE_MAGIC)) {
+  if (payload.length < 33 || !payload.subarray(0, 6).equals(OFFLINE_MAGIC)) {
     throw new Error('Not a D-Tunes offline file');
   }
-  const iv = payload.slice(6, 18);
-  const tag = payload.slice(18, 34);
+  const iv = payload.subarray(6, 18);
+  const tag = payload.subarray(18, 34);
   const decipher = crypto.createDecipheriv('aes-256-gcm', getOfflineKey(), iv);
   decipher.setAuthTag(tag);
-  return Buffer.concat([decipher.update(payload.slice(34)), decipher.final()]);
+  return Buffer.concat([decipher.update(payload.subarray(34)), decipher.final()]);
 }
 
 function readOfflineIndex() {
@@ -575,6 +606,48 @@ function writeOfflineIndex(index) {
 
 function offlineFileName(id) {
   return `${String(id).replace(/[^a-zA-Z0-9_-]/g, '_')}.dtune`;
+}
+
+function extractArtworkUrl(data) {
+  if (!data) return '';
+  const candidate = data.img || data.image;
+  if (typeof candidate === 'string' && /^https?:\/\//i.test(candidate)) return candidate;
+  if (Array.isArray(candidate) && candidate.length > 0) {
+    const last = candidate[candidate.length - 1];
+    const u = (last && (last.url || last.link)) || (typeof last === 'string' ? last : '');
+    if (typeof u === 'string' && /^https?:\/\//i.test(u)) return u;
+  }
+  if (Array.isArray(data.image) && data.image.length > 0) {
+    const last = data.image[data.image.length - 1];
+    const u = (last && (last.url || last.link)) || (typeof last === 'string' ? last : '');
+    if (typeof u === 'string' && /^https?:\/\//i.test(u)) return u;
+  }
+  return '';
+}
+
+function detectAudioMime(buf) {
+  if (!buf || buf.length < 8) return 'audio/mp4';
+  if (buf.length >= 12 && buf.subarray(4, 8).toString('binary') === 'ftyp') {
+    return 'audio/mp4';
+  }
+  if (buf.subarray(0, 3).toString('binary') === 'ID3' || (buf[0] === 0xFF && (buf[1] & 0xE0) === 0xE0)) {
+    return 'audio/mpeg';
+  }
+  if (buf.subarray(0, 4).toString('binary') === 'OggS') {
+    return 'audio/ogg';
+  }
+  if (buf.subarray(0, 4).toString('binary') === 'fLaC') {
+    return 'audio/flac';
+  }
+  return 'audio/mp4';
+}
+
+function detectImageMime(buf) {
+  if (!buf || buf.length < 4) return 'image/jpeg';
+  if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg';
+  if (buf[0] === 0x89 && buf.subarray(1, 4).toString('binary') === 'PNG') return 'image/png';
+  if (buf.length >= 12 && buf.subarray(0, 4).toString('binary') === 'RIFF' && buf.subarray(8, 12).toString('binary') === 'WEBP') return 'image/webp';
+  return 'image/jpeg';
 }
 
 async function handleDownloadTrack(data = {}) {
@@ -599,8 +672,8 @@ async function handleDownloadTrack(data = {}) {
     fs.writeFileSync(path.join(OFFLINE_DIR, file), encryptBuffer(plain));
 
     let artFile = null;
-    const imgUrl = data.img || data.image;
-    if (imgUrl && /^https?:\/\//i.test(imgUrl)) {
+    const imgUrl = extractArtworkUrl(data);
+    if (imgUrl) {
       try {
         const artResp = await net.fetch(imgUrl, {
           headers: { 'User-Agent': MODERN_CHROME_UA, 'Accept': 'image/*' }
@@ -653,22 +726,31 @@ function registerOfflineProtocol() {
           const artPath = path.join(OFFLINE_DIR, entry.artFile);
           if (fs.existsSync(artPath)) {
             const artData = fs.readFileSync(artPath);
-            return new Response(artData, {
+            const mime = detectImageMime(artData);
+            return new Response(new Uint8Array(artData), {
               status: 200,
               headers: {
-                'Content-Type': 'image/jpeg',
+                'Content-Type': mime,
                 'Cache-Control': 'public, max-age=31536000',
                 'Access-Control-Allow-Origin': '*'
               }
             });
           }
         }
-        const fallbackPath = path.join(__dirname, 'assets', 'icon.png');
-        if (fs.existsSync(fallbackPath)) {
-          return new Response(fs.readFileSync(fallbackPath), {
-            status: 200,
-            headers: { 'Content-Type': 'image/png', 'Access-Control-Allow-Origin': '*' }
-          });
+        const fallbackCandidates = [
+          path.join(__dirname, 'assets', 'icon.png'),
+          path.join(__dirname, 'assets', 'DTunes_logo.png'),
+          path.join(__dirname, 'DTunes.svg')
+        ];
+        for (const fb of fallbackCandidates) {
+          if (fs.existsSync(fb)) {
+            const fbData = fs.readFileSync(fb);
+            const fbMime = fb.endsWith('.svg') ? 'image/svg+xml' : 'image/png';
+            return new Response(new Uint8Array(fbData), {
+              status: 200,
+              headers: { 'Content-Type': fbMime, 'Access-Control-Allow-Origin': '*' }
+            });
+          }
         }
         return new Response('Not found', { status: 404 });
       }
@@ -683,8 +765,9 @@ function registerOfflineProtocol() {
 
       const audio = decryptBuffer(fs.readFileSync(filePath));
       const total = audio.length;
+      const mime = detectAudioMime(audio);
       const headers = {
-        'Content-Type': 'audio/mpeg',
+        'Content-Type': mime,
         'Accept-Ranges': 'bytes',
         'Cache-Control': 'no-store',
         'Access-Control-Allow-Origin': '*'
@@ -699,20 +782,121 @@ function registerOfflineProtocol() {
           if (!Number.isFinite(start)) start = 0;
           if (!Number.isFinite(end) || end >= total) end = total - 1;
           if (start > end) { start = 0; end = total - 1; }
-          const slice = audio.slice(start, end + 1);
+          const slice = audio.subarray(start, end + 1);
           headers['Content-Range'] = `bytes ${start}-${end}/${total}`;
           headers['Content-Length'] = String(slice.length);
-          return new Response(slice, { status: 206, headers });
+          return new Response(new Uint8Array(slice), { status: 206, headers });
         }
       }
 
       headers['Content-Length'] = String(total);
-      return new Response(audio, { status: 200, headers });
+      return new Response(new Uint8Array(audio), { status: 200, headers });
     } catch (err) {
       console.error('[Offline] Protocol error:', err);
       return new Response('Error', { status: 500 });
     }
   });
+}
+
+function ensureWindowsAppIdentity() {
+  if (process.platform !== 'win32') return;
+  try {
+    const lnkDir = path.join(process.env.APPDATA || '', 'Microsoft', 'Windows', 'Start Menu', 'Programs');
+    if (!fs.existsSync(lnkDir)) return;
+    const lnkPath = path.join(lnkDir, "D'Tunes.lnk");
+    const exePath = process.execPath;
+    const iconPath = path.join(__dirname, 'assets', 'icon.ico');
+
+    const script = `
+$lnk = [System.IO.Path]::Combine($env:APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'D''Tunes.lnk')
+$exe = '${exePath.replace(/'/g, "''")}'
+$icon = '${iconPath.replace(/'/g, "''")}'
+$code = @"
+using System;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
+
+public class AppIdentityShortcut {
+    [ComImport, Guid("00021401-0000-0000-C000-000000000046")]
+    internal class ShellLink {}
+
+    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("000214F9-0000-0000-C000-000000000046")]
+    internal interface IShellLinkW {
+        void GetPath([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszFile, int cch, IntPtr pfd, int fFlags);
+        void GetIDList(out IntPtr ppidl);
+        void SetIDList(IntPtr pidl);
+        void GetDescription([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszName, int cch);
+        void SetDescription([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+        void GetWorkingDirectory([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszDir, int cch);
+        void SetWorkingDirectory([MarshalAs(UnmanagedType.LPWStr)] string pszDir);
+        void GetArguments([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszArgs, int cch);
+        void SetArguments([MarshalAs(UnmanagedType.LPWStr)] string pszArgs);
+        void GetHotkey(out short pwHotkey);
+        void SetHotkey(short wHotkey);
+        void GetShowCmd(out int piShowCmd);
+        void SetShowCmd(int iShowCmd);
+        void GetIconLocation([Out, MarshalAs(UnmanagedType.LPWStr)] System.Text.StringBuilder pszIconPath, int cch, out int piIcon);
+        void SetIconLocation([MarshalAs(UnmanagedType.LPWStr)] string pszIconPath, int iIcon);
+        void SetRelativePath([MarshalAs(UnmanagedType.LPWStr)] string pszPathRel, int dwReserved);
+        void Resolve(IntPtr hwnd, int fFlags);
+        void SetPath([MarshalAs(UnmanagedType.LPWStr)] string pszFile);
+    }
+
+    [ComImport, InterfaceType(ComInterfaceType.InterfaceIsIUnknown), Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99")]
+    internal interface IPropertyStore {
+        void GetCount(out uint cProps);
+        void GetAt(uint iProp, out PropertyKey pkey);
+        void GetValue(ref PropertyKey key, out PropVariant pv);
+        void SetValue(ref PropertyKey key, ref PropVariant pv);
+        void Commit();
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 4)]
+    internal struct PropertyKey {
+        public Guid fmtid;
+        public uint pid;
+        public PropertyKey(Guid guid, uint id) { fmtid = guid; pid = id; }
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    internal struct PropVariant {
+        [FieldOffset(0)] public ushort vt;
+        [FieldOffset(8)] public IntPtr pwszVal;
+    }
+
+    public static void CreateOrUpdate(string lnk, string exe, string appId, string icon, string desc) {
+        var link = (IShellLinkW)new ShellLink();
+        link.SetPath(exe);
+        link.SetWorkingDirectory(System.IO.Path.GetDirectoryName(exe));
+        if (!string.IsNullOrEmpty(icon) && System.IO.File.Exists(icon)) link.SetIconLocation(icon, 0);
+        if (!string.IsNullOrEmpty(desc)) link.SetDescription(desc);
+        var propStore = (IPropertyStore)link;
+        var pkey = new PropertyKey(new Guid("9F4C2855-9F79-48A1-6840-02C66A2B3D25"), 5);
+        var pv = new PropVariant();
+        pv.vt = 31;
+        pv.pwszVal = Marshal.StringToCoTaskMemUni(appId);
+        try {
+            propStore.SetValue(ref pkey, ref pv);
+            propStore.Commit();
+        } finally {
+            Marshal.FreeCoTaskMem(pv.pwszVal);
+        }
+        var file = (IPersistFile)link;
+        file.Save(lnk, true);
+    }
+}
+"@
+Add-Type -TypeDefinition $code -Language CSharp
+[AppIdentityShortcut]::CreateOrUpdate($lnk, $exe, "DhairyaShah.DTunes", $icon, "D''Tunes Music")
+`;
+    const cp = require('child_process');
+    cp.exec(`powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "${script.replace(/\r?\n/g, ' ')}"`, (err) => {
+      if (err) console.warn('[AppIdentity] Shortcut setup note:', err.message);
+      else console.log('[AppIdentity] Windows Start Menu identity verified');
+    });
+  } catch (err) {
+    console.warn('[AppIdentity] Error ensuring identity:', err);
+  }
 }
 
 // ============================================================
@@ -1134,6 +1318,7 @@ setInterval(() => {
 }, 2500);
 
 app.whenReady().then(() => {
+  ensureWindowsAppIdentity();
   startAuthLoopbackServer();
   registerOfflineProtocol();
   createWindow();
