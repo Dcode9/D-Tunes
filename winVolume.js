@@ -2,9 +2,12 @@
 
 // Windows system (master) volume control via Core Audio, with zero native
 // dependencies: a single long-lived PowerShell worker compiles a tiny C#
-// CoreAudio helper once, then reads volume values from stdin.
+// CoreAudio helper once, reads volume values from stdin, and watches for
+// external volume changes (e.g. keyboard media keys or taskbar slider)
+// to push them back to the app in real time.
 
 const { spawn } = require('child_process');
+const { EventEmitter } = require('events');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -14,6 +17,7 @@ $ErrorActionPreference = 'SilentlyContinue'
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 [Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 interface IAudioEndpointVolume {
@@ -60,6 +64,10 @@ class MMDeviceEnumerator { }
 public static class DTunesAudio {
     static readonly Guid IID_IAudioEndpointVolume = new Guid("5CDF2C82-841E-4546-9722-0CF74078229A");
     static IAudioEndpointVolume endpoint;
+    static float lastVol = -1f;
+    static Thread watchThread;
+    static volatile bool running = false;
+    static readonly object syncRoot = new object();
 
     static void Ensure() {
         if (endpoint != null) return;
@@ -76,6 +84,9 @@ public static class DTunesAudio {
         Ensure();
         if (v < 0f) v = 0f;
         if (v > 1f) v = 1f;
+        lock (syncRoot) {
+            lastVol = v;
+        }
         Marshal.ThrowExceptionForHR(endpoint.SetMasterVolumeLevelScalar(v, Guid.Empty));
     }
 
@@ -85,10 +96,56 @@ public static class DTunesAudio {
         Marshal.ThrowExceptionForHR(endpoint.GetMasterVolumeLevelScalar(out v));
         return v;
     }
+
+    public static void StartWatcher() {
+        if (running) return;
+        running = true;
+        try {
+            float initial = Get();
+            lock (syncRoot) { lastVol = initial; }
+            Console.WriteLine("VOL " + initial.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        } catch {}
+        watchThread = new Thread(() => {
+            while (running) {
+                try {
+                    Thread.Sleep(150);
+                    Ensure();
+                    float cur;
+                    if (endpoint.GetMasterVolumeLevelScalar(out cur) == 0) {
+                        bool changed = false;
+                        lock (syncRoot) {
+                            if (lastVol < 0f || Math.Abs(cur - lastVol) >= 0.008f) {
+                                lastVol = cur;
+                                changed = true;
+                            }
+                        }
+                        if (changed) {
+                            Console.WriteLine("VOL " + cur.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                        }
+                    }
+                } catch {
+                    endpoint = null;
+                }
+            }
+        });
+        watchThread.IsBackground = true;
+        watchThread.Start();
+    }
+
+    public static void StopWatcher() {
+        running = false;
+    }
 }
 '@
-if ($?) { [Console]::Out.WriteLine('VOLREADY') } else { [Console]::Out.WriteLine('VOLFAIL') }
+
+if ($?) {
+    [DTunesAudio]::StartWatcher()
+    [Console]::Out.WriteLine('VOLREADY')
+} else {
+    [Console]::Out.WriteLine('VOLFAIL')
+}
 [Console]::Out.Flush()
+
 while (($line = [Console]::In.ReadLine()) -ne $null) {
     $line = $line.Trim()
     if ($line.Length -eq 0) { continue }
@@ -106,116 +163,156 @@ while (($line = [Console]::In.ReadLine()) -ne $null) {
 }
 `;
 
-let child = null;
-let ready = false;
-let unusable = false;
-let startFailed = false;
-let lastSet = null;
-let stdoutBuf = '';
-const waiters = [];
-const getQueue = [];
-
-function start() {
-  if (child || startFailed || process.platform !== 'win32') return;
-  try {
-    const scriptPath = path.join(os.tmpdir(), `dtunes-volume-${process.pid}.ps1`);
-    fs.writeFileSync(scriptPath, PS_SCRIPT, 'utf8');
-    child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', scriptPath], {
-      windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
-    child.stdout.setEncoding('utf8');
-    child.stdout.on('data', onData);
-    child.stderr.setEncoding('utf8');
-    child.stderr.on('data', () => {});
-    child.on('exit', () => { child = null; ready = false; });
-    child.on('error', () => { startFailed = true; child = null; });
-  } catch (err) {
-    startFailed = true;
-    child = null;
+class WinVolumeManager extends EventEmitter {
+  constructor() {
+    super();
+    this.child = null;
+    this.ready = false;
+    this.unusable = false;
+    this.startFailed = false;
+    this.lastSet = null;
+    this.lastKnown = null;
+    this.stdoutBuf = '';
+    this.waiters = [];
+    this.getQueue = [];
+    this.scriptPath = null;
   }
-}
 
-function onData(chunk) {
-  stdoutBuf += chunk;
-  let nl;
-  while ((nl = stdoutBuf.indexOf('\n')) !== -1) {
-    const line = stdoutBuf.slice(0, nl).trim();
-    stdoutBuf = stdoutBuf.slice(nl + 1);
-    if (line === 'VOLREADY') {
-      ready = true;
-      if (lastSet !== null) writeLine(lastSet);
-      while (waiters.length) waiters.shift()(true);
-      continue;
-    }
-    if (line === 'VOLFAIL') {
-      unusable = true;
-      while (waiters.length) waiters.shift()(false);
-      continue;
-    }
-    if (line.startsWith('VAL ')) {
-      const cb = getQueue.shift();
-      if (cb) cb(parseFloat(line.slice(4)));
-      continue;
-    }
-    if (line === 'ERR') {
-      const cb = getQueue.shift();
-      if (cb) cb(null);
-      continue;
-    }
+  isSupported() {
+    return process.platform === 'win32';
   }
-}
 
-function writeLine(value) {
-  if (!child || !ready) return;
-  try { child.stdin.write(`${value}\n`); } catch (err) {}
-}
-
-function whenReady(timeoutMs, cb) {
-  if (ready) { cb(true); return; }
-  if (unusable || startFailed) { cb(false); return; }
-  start();
-  let done = false;
-  const timer = setTimeout(() => { if (!done) { done = true; cb(false); } }, timeoutMs);
-  waiters.push((ok) => {
-    if (done) return;
-    done = true;
-    clearTimeout(timer);
-    cb(ok);
-  });
-}
-
-function setVolume(value) {
-  const val = Math.max(0, Math.min(1, Number(value)));
-  if (!Number.isFinite(val)) return;
-  lastSet = val;
-  if (ready) { writeLine(val); return; }
-  whenReady(10000, (ok) => { if (ok) writeLine(lastSet); });
-}
-
-function getVolume(timeoutMs = 8000) {
-  return new Promise((resolve) => {
-    whenReady(timeoutMs, (ok) => {
-      if (!ok || !ready) { resolve(null); return; }
-      let settled = false;
-      const timer = setTimeout(() => { if (!settled) { settled = true; resolve(null); } }, timeoutMs);
-      getQueue.push((v) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        resolve(v);
+  start() {
+    if (this.child || this.startFailed || process.platform !== 'win32') return;
+    try {
+      this.scriptPath = path.join(os.tmpdir(), `dtunes-volume-${process.pid}.ps1`);
+      fs.writeFileSync(this.scriptPath, PS_SCRIPT, 'utf8');
+      this.child = spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', this.scriptPath], {
+        windowsHide: true,
+        stdio: ['pipe', 'pipe', 'pipe']
       });
-      try { child.stdin.write('GET\n'); } catch (err) { if (!settled) { settled = true; clearTimeout(timer); resolve(null); } }
-    });
-  });
-}
-
-function dispose() {
-  if (child) {
-    try { child.kill(); } catch (err) {}
-    child = null;
+      this.child.stdout.setEncoding('utf8');
+      this.child.stdout.on('data', (chunk) => this._onData(chunk));
+      this.child.stderr.setEncoding('utf8');
+      this.child.stderr.on('data', () => {});
+      this.child.on('exit', () => {
+        this.child = null;
+        this.ready = false;
+        try { if (this.scriptPath && fs.existsSync(this.scriptPath)) fs.unlinkSync(this.scriptPath); } catch (_) {}
+      });
+      this.child.on('error', () => {
+        this.startFailed = true;
+        this.child = null;
+      });
+    } catch (err) {
+      this.startFailed = true;
+      this.child = null;
+    }
   }
-  ready = false;
+
+  _onData(chunk) {
+    this.stdoutBuf += chunk;
+    let nl;
+    while ((nl = this.stdoutBuf.indexOf('\n')) !== -1) {
+      const line = this.stdoutBuf.slice(0, nl).trim();
+      this.stdoutBuf = this.stdoutBuf.slice(nl + 1);
+      if (line === 'VOLREADY') {
+        this.ready = true;
+        if (this.lastSet !== null) this._writeLine(this.lastSet);
+        while (this.waiters.length) this.waiters.shift()(true);
+        continue;
+      }
+      if (line === 'VOLFAIL') {
+        this.unusable = true;
+        while (this.waiters.length) this.waiters.shift()(false);
+        continue;
+      }
+      if (line.startsWith('VOL ')) {
+        const vol = parseFloat(line.slice(4));
+        if (Number.isFinite(vol)) {
+          this.lastKnown = vol;
+          this.emit('change', vol);
+        }
+        continue;
+      }
+      if (line.startsWith('VAL ')) {
+        const cb = this.getQueue.shift();
+        const vol = parseFloat(line.slice(4));
+        if (Number.isFinite(vol)) this.lastKnown = vol;
+        if (cb) cb(vol);
+        continue;
+      }
+      if (line === 'ERR') {
+        const cb = this.getQueue.shift();
+        if (cb) cb(null);
+        continue;
+      }
+    }
+  }
+
+  _writeLine(value) {
+    if (!this.child || !this.ready) return;
+    try { this.child.stdin.write(`${value}\n`); } catch (err) {}
+  }
+
+  whenReady(timeoutMs, cb) {
+    if (this.ready) { cb(true); return; }
+    if (this.unusable || this.startFailed) { cb(false); return; }
+    this.start();
+    let done = false;
+    const timer = setTimeout(() => { if (!done) { done = true; cb(false); } }, timeoutMs);
+    this.waiters.push((ok) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      cb(ok);
+    });
+  }
+
+  setVolume(value) {
+    const val = Math.max(0, Math.min(1, Number(value)));
+    if (!Number.isFinite(val)) return;
+    this.lastSet = val;
+    this.lastKnown = val;
+    if (this.ready) { this._writeLine(val); return; }
+    this.whenReady(10000, (ok) => { if (ok) this._writeLine(this.lastSet); });
+  }
+
+  getVolume(timeoutMs = 8000) {
+    return new Promise((resolve) => {
+      if (this.lastKnown !== null && this.ready) {
+        // Return known volume quickly if available
+      }
+      this.whenReady(timeoutMs, (ok) => {
+        if (!ok || !this.ready) { resolve(this.lastKnown); return; }
+        let settled = false;
+        const timer = setTimeout(() => { if (!settled) { settled = true; resolve(this.lastKnown); } }, timeoutMs);
+        this.getQueue.push((v) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(v !== null ? v : this.lastKnown);
+        });
+        try { this.child.stdin.write('GET\n'); } catch (err) {
+          if (!settled) { settled = true; clearTimeout(timer); resolve(this.lastKnown); }
+        }
+      });
+    });
+  }
+
+  dispose() {
+    if (this.child) {
+      try { this.child.kill(); } catch (err) {}
+      this.child = null;
+    }
+    this.ready = false;
+    try { if (this.scriptPath && fs.existsSync(this.scriptPath)) fs.unlinkSync(this.scriptPath); } catch (_) {}
+  }
 }
 
-module.exports = { setVolume, getVolume, dispose, isSupported: () => process.platform === 'win32' };
+const manager = new WinVolumeManager();
+if (process.platform === 'win32') {
+  manager.start();
+}
+
+module.exports = manager;

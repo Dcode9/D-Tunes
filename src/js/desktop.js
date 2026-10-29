@@ -281,33 +281,116 @@
 
   window.dtunesApplyOfflineModeState = applyOfflineModeState;
 
+    // ----- Robust Multi-Angle Network Engine -----
+  const dtunesNetwork = (function () {
+    let _isOnline = (typeof navigator !== 'undefined') ? navigator.onLine : true;
+    let _checking = false;
+    const _listeners = new Set();
+
+    function setStatus(online) {
+      const changed = _isOnline !== online;
+      _isOnline = online;
+      if (changed) {
+        for (const fn of _listeners) {
+          try { fn(online); } catch (_) {}
+        }
+        window.dispatchEvent(new CustomEvent('dtunes:connectivity-changed', { detail: { online } }));
+      }
+    }
+
+    async function verifyRealInternet() {
+      // 1. Fast local checks (OS and browser interface)
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        return false;
+      }
+      if (isDesktop && api && api.checkNetwork) {
+        try {
+          const sysOnline = await api.checkNetwork();
+          if (!sysOnline) return false;
+        } catch (_) {}
+      }
+
+      // 2. Active lightweight probe to verify actual WAN data reachability
+      try {
+        let fetchSignal;
+        let timer;
+        if (typeof AbortController !== 'undefined') {
+          const controller = new AbortController();
+          timer = setTimeout(() => controller.abort(), 2000);
+          fetchSignal = controller.signal;
+        }
+        const res = await fetch('https://tunes.d-verse.in/assets/favicon.png?_probe=' + Date.now(), {
+          method: 'HEAD',
+          cache: 'no-store',
+          signal: fetchSignal
+        });
+        if (timer) clearTimeout(timer);
+        return res.ok || res.type === 'opaque';
+      } catch (err) {
+        // Fallback reachability check in case domain CDN is slow
+        try {
+          let fetchSignal2;
+          let timer2;
+          if (typeof AbortController !== 'undefined') {
+            const controller2 = new AbortController();
+            timer2 = setTimeout(() => controller2.abort(), 2000);
+            fetchSignal2 = controller2.signal;
+          }
+          await fetch('https://www.cloudflare.com/cdn-cgi/trace', {
+            method: 'GET',
+            cache: 'no-store',
+            mode: 'no-cors',
+            signal: fetchSignal2
+          });
+          if (timer2) clearTimeout(timer2);
+          return true;
+        } catch (_) {
+          return false;
+        }
+      }
+    }
+
+    async function checkNow(quiet = false) {
+      if (_checking) return _isOnline;
+      _checking = true;
+      try {
+        const actuallyOnline = await verifyRealInternet();
+        setStatus(actuallyOnline);
+        return actuallyOnline;
+      } finally {
+        _checking = false;
+      }
+    }
+
+    return {
+      isOnline: () => _isOnline,
+      isOffline: () => !_isOnline,
+      checkNow,
+      onChange: (fn) => {
+        _listeners.add(fn);
+        return () => _listeners.delete(fn);
+      },
+      setStatus
+    };
+  })();
+
+  window.dtunesNetwork = dtunesNetwork;
+  window.__dtunesIsOffline = () => dtunesNetwork.isOffline();
+
   window.dtunesCheckConnection = async function () {
     if (window.ui && ui.showToast) ui.showToast('Checking connection...');
-    try {
-      let fetchSignal;
-      let timer;
-      if (typeof AbortController !== 'undefined') {
-        const controller = new AbortController();
-        timer = setTimeout(() => controller.abort(), 3000);
-        fetchSignal = controller.signal;
-      }
-      const res = await fetch('https://tunes.d-verse.in/assets/favicon.png?t=' + Date.now(), {
-        method: 'HEAD',
-        cache: 'no-store',
-        signal: fetchSignal
-      });
-      if (timer) clearTimeout(timer);
-      if (res.ok || res.type === 'opaque') {
-        if (window.ui && ui.showToast) ui.showToast('Connected! Online mode active.', 'success');
-        applyOfflineModeState(false);
-        if (window.homeView && homeView.init) homeView.init();
-        return true;
-      }
-    } catch (e) {
-      /* still offline */
+    const online = await dtunesNetwork.checkNow();
+    if (online) {
+      if (window.ui && ui.showToast) ui.showToast('Connected! Online mode active.', 'success');
+      applyOfflineModeState(false);
+      if (window.homeView && homeView.init) homeView.init();
+      window.dispatchEvent(new CustomEvent('dtunes:network-restored'));
+      return true;
+    } else {
+      if (window.ui && ui.showToast) ui.showToast('Still offline. Please check your internet connection.', 'warning');
+      applyOfflineModeState(true);
+      return false;
     }
-    if (window.ui && ui.showToast) ui.showToast('Still offline. Please check your internet connection.', 'warning');
-    return false;
   };
 
   // ----- Offline-first playback routing -----
@@ -404,7 +487,7 @@
     sendMediaState();
   }
 
-  // ----- System-level volume from the in-app slider -----
+    // ----- System-level volume from the in-app slider -----
   let volumeSendTimer = null;
   function pushSystemVolume(v) {
     if (!api.setSystemVolume) return;
@@ -420,10 +503,17 @@
     if (!Number.isFinite(v)) return;
     window.dtunesVolume = v;
     const slider = document.getElementById('volume-slider');
-    if (slider && !fromSystem) slider.value = v;
+    if (slider) {
+      // If updating from Windows system volume, sync slider position unless actively being dragged
+      if (!fromSystem || !slider._dtunesUserDragging) {
+        slider.value = v;
+      }
+    }
     const el = audioEl();
     if (isDesktop && api && api.setSystemVolume) {
-      pushSystemVolume(v);
+      if (!fromSystem) {
+        pushSystemVolume(v);
+      }
       if (el) el.volume = 1;
     } else if (el) {
       el.volume = v;
@@ -446,19 +536,32 @@
     const slider = document.getElementById('volume-slider');
     if (slider && !slider._dtunesSystemBound) {
       slider._dtunesSystemBound = true;
+      slider.addEventListener('pointerdown', () => { slider._dtunesUserDragging = true; });
+      slider.addEventListener('pointerup', () => { slider._dtunesUserDragging = false; });
+      slider.addEventListener('change', () => { slider._dtunesUserDragging = false; });
       slider.addEventListener('input', (e) => {
         applyVolume(e.target.value, false);
       });
     }
-    // The helper compiles its CoreAudio shim on first use, so allow a few retries.
+
+    // Subscribe to system master volume changes (from hardware volume keys / taskbar slider)
+    if (api.onSystemVolumeChanged && !api._dtunesVolumeSubscribed) {
+      api._dtunesVolumeSubscribed = true;
+      api.onSystemVolumeChanged((vol) => {
+        if (typeof vol === 'number' && Number.isFinite(vol)) {
+          systemVolumeEnabled = true;
+          applyVolume(vol, true);
+        }
+      });
+    }
+
+    // Initial read with retry shim compilation
     for (let attempt = 0; attempt < 4; attempt++) {
       try {
         const current = await api.getSystemVolume();
         if (typeof current === 'number' && current >= 0) {
           systemVolumeEnabled = true;
           applyVolume(current, true);
-          const slider = document.getElementById('volume-slider');
-          if (slider) slider.value = current;
           window.addEventListener('focus', async () => {
             try {
               const v = await api.getSystemVolume();
@@ -472,26 +575,51 @@
       }
       await new Promise((resolve) => setTimeout(resolve, 1500));
     }
-    // Helper unavailable: fall back to app-only volume (original player.setVolume).
   }
 
   // ----- Connectivity feedback & mode switching -----
   function initConnectivity() {
-    window.addEventListener('online', () => {
-      if (isDesktop) {
-        applyOfflineModeState(false);
-        if (window.homeView && homeView.init) {
-          homeView.init();
+    window.addEventListener('online', async () => {
+      const ok = await dtunesNetwork.checkNow();
+      if (ok) {
+        if (isDesktop) {
+          applyOfflineModeState(false);
+          if (window.homeView && homeView.init) {
+            homeView.init();
+          }
         }
+        if (window.ui && ui.showToast) ui.showToast('Back online! Syncing music...', 'success');
+        window.dispatchEvent(new CustomEvent('dtunes:network-restored'));
       }
-      if (window.ui && ui.showToast) ui.showToast('Back online! Syncing music...', 'success');
     });
+
     window.addEventListener('offline', () => {
+      dtunesNetwork.setStatus(false);
       if (isDesktop) {
         applyOfflineModeState(true);
       }
       if (window.ui && ui.showToast) ui.showToast('Offline — downloaded songs & cached music ready', 'warning');
+      window.dispatchEvent(new CustomEvent('dtunes:network-lost'));
     });
+
+    if (isDesktop && api.onNetworkStatusChanged) {
+      api.onNetworkStatusChanged(async (sysOnline) => {
+        if (!sysOnline) {
+          dtunesNetwork.setStatus(false);
+          applyOfflineModeState(true);
+          if (window.ui && ui.showToast) ui.showToast('Offline — downloaded songs & cached music ready', 'warning');
+          window.dispatchEvent(new CustomEvent('dtunes:network-lost'));
+        } else {
+          const ok = await dtunesNetwork.checkNow();
+          if (ok) {
+            applyOfflineModeState(false);
+            if (window.homeView && homeView.init) homeView.init();
+            if (window.ui && ui.showToast) ui.showToast('Back online! Syncing music...', 'success');
+            window.dispatchEvent(new CustomEvent('dtunes:network-restored'));
+          }
+        }
+      });
+    }
   }
 
   function boot() {
@@ -501,9 +629,25 @@
     initConnectivity();
     if (!isDesktop) return;
 
-    const isOffline = typeof navigator !== 'undefined' && !navigator.onLine;
-    if (isOffline) {
+    let initialOffline = (typeof navigator !== 'undefined' && !navigator.onLine);
+    if (!initialOffline && api.checkNetwork) {
+      try {
+        api.checkNetwork().then((sysOnline) => {
+          if (!sysOnline) {
+            dtunesNetwork.setStatus(false);
+            applyOfflineModeState(true);
+          }
+        }).catch(() => {});
+      } catch (_) {}
+    }
+    dtunesNetwork.setStatus(!initialOffline);
+
+    if (initialOffline) {
       applyOfflineModeState(true);
+    } else {
+      dtunesNetwork.checkNow().then((isReallyOnline) => {
+        if (!isReallyOnline) applyOfflineModeState(true);
+      }).catch(() => {});
     }
 
     refreshOfflineList().then(() => {

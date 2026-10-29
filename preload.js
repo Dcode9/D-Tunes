@@ -17,6 +17,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteOfflineTrack: (id) => ipcRenderer.invoke('offline-delete', id),
   setSystemVolume: (value) => ipcRenderer.send('system-volume-set', value),
   getSystemVolume: () => ipcRenderer.invoke('system-volume-get'),
+  onSystemVolumeChanged: (cb) => {
+    const handler = (_event, val) => cb(val);
+    ipcRenderer.on('system-volume-changed', handler);
+    return () => ipcRenderer.removeListener('system-volume-changed', handler);
+  },
+  checkNetwork: () => ipcRenderer.invoke('net-is-online'),
+  onNetworkStatusChanged: (cb) => {
+    const handler = (_event, isOnline) => cb(isOnline);
+    ipcRenderer.on('network-status-changed', handler);
+    return () => ipcRenderer.removeListener('network-status-changed', handler);
+  },
   fetchSpotifyEmbed: (url) => ipcRenderer.invoke('fetch-spotify-embed', url)
 });
 

@@ -7,15 +7,25 @@
 
         const clientSearchCache = new Map();
 
+        const isNetworkOffline = () => {
+            if (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function') {
+                return window.__dtunesIsOffline();
+            }
+            return typeof navigator !== 'undefined' && !navigator.onLine;
+        };
+
         const jiosaavnAPI = {
             fetchWithRetry: async (url, retries = 3) => {
                 if (typeof navigator !== 'undefined' && !navigator.onLine) {
                     throw new Error('Offline');
                 }
+                if (isNetworkOffline()) {
+                    throw new Error('Offline');
+                }
                 let apiSwitchAttempts = JIOSAAVN_API_ENDPOINTS.length;
                 while (apiSwitchAttempts > 0) {
                     for (let i = 0; i < retries; i++) {
-                        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+                        if (isNetworkOffline()) {
                             throw new Error('Offline');
                         }
                         let timeoutId = null;
@@ -35,7 +45,7 @@
                             return data;
                         } catch (error) {
                             if (timeoutId) clearTimeout(timeoutId);
-                            if (typeof navigator !== 'undefined' && !navigator.onLine) {
+                            if (isNetworkOffline()) {
                                 throw error;
                             }
                             if (i === retries - 1) { if (switchToNextApi()) { apiSwitchAttempts--; break; } }
@@ -46,7 +56,7 @@
                 }
             },
             searchSongs: async (query, limit = 20) => {
-                if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
+                if (isNetworkOffline()) return [];
                 const normalizedQ = (query || '').toLowerCase().trim();
                 if (!normalizedQ) return [];
                 const cacheKey = `${normalizedQ}:${limit}`;
@@ -66,7 +76,7 @@
                 } catch (e) { return []; }
             },
             searchAlbums: async (query) => {
-                if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
+                if (isNetworkOffline()) return [];
                 try {
                     const res = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/search/albums?query=${encodeURIComponent(query)}&limit=8`);
                     return (res.data?.results || []).map(a => ({
@@ -76,7 +86,7 @@
                 } catch(e) { return []; }
             },
             searchArtists: async (query) => {
-                if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
+                if (isNetworkOffline()) return [];
                 try {
                     const res = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/search/artists?query=${encodeURIComponent(query)}&limit=8`);
                     return (res.data?.results || []).map(a => ({
@@ -86,7 +96,7 @@
                 } catch(e) { return []; }
             },
             searchAll: async (query) => {
-                if (typeof navigator !== 'undefined' && !navigator.onLine) return { top: null, songs: [], albums: [], artists: [] };
+                if (isNetworkOffline()) return { top: null, songs: [], albums: [], artists: [] };
                 try {
                     const [songs, albums, artists] = await Promise.all([
                         jiosaavnAPI.searchSongs(query, 20),
@@ -106,6 +116,7 @@
             },
             getTrending: async (limit = 25) => {
                 if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
+                if (isNetworkOffline()) return [];
                 const trendingPlaylists = ['47599074', '1297282877', '1261305331', '158221835'];
                 const allSongs = [];
                 for (const plId of trendingPlaylists) {
@@ -127,7 +138,7 @@
                 return utils.deduplicateSongs(allSongs).slice(0, limit);
             },
             getSongSuggestions: async (id, limit = 20) => {
-                if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
+                if (isNetworkOffline()) return [];
                 try {
                     const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/songs/${encodeURIComponent(id)}/suggestions`);
                     const list = Array.isArray(data.data) ? data.data : (data.data?.results || []);
@@ -136,14 +147,14 @@
                 } catch (e) { return []; }
             },
             getSong: async (id) => {
-                if (typeof navigator !== 'undefined' && !navigator.onLine) return null;
+                if (isNetworkOffline()) return null;
                 try {
                     const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/songs/${id}`);
                     if (data.data && data.data.length > 0) return jiosaavnAPI.normalizeSong(data.data[0]); return null;
                 } catch (e) { return null; }
             },
             getAlbum: async (id) => {
-                if (typeof navigator !== 'undefined' && !navigator.onLine) return null;
+                if (isNetworkOffline()) return null;
                 try {
                     const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/albums?id=${id}`);
                     if (data.data) {

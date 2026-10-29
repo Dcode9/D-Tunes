@@ -173,6 +173,31 @@
             if (audio.error && (audio.error.code === 1 || audio.error.code === 0)) {
                 return;
             }
+            const isOfflineNow = typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function'
+                ? window.__dtunesIsOffline()
+                : (typeof navigator !== 'undefined' && !navigator.onLine);
+            const isDownloadedNow = typeof offlineStore !== 'undefined' && offlineStore && offlineStore.isDownloaded && offlineStore.isDownloaded(state.currentTrack.id);
+
+            if (isOfflineNow && !isDownloadedNow) {
+                // If offline and current track is an online stream, stop retries and pause gracefully
+                const pausedTime = Math.max(0, audio.currentTime || 0);
+                audio.pause();
+                state.playing = false;
+                state.loading = false;
+                isAudioRecoveryPending = false;
+                state._playbackPausedDueToNetwork = {
+                    trackId: state.currentTrack.id,
+                    position: pausedTime
+                };
+                ui.setPlayerLoading(false);
+                ui.updatePlayBtn();
+                if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
+                if (window.ui && ui.showToast) {
+                    ui.showToast('Offline — streaming paused. Downloaded songs are ready to play.', 'warning', 4000);
+                }
+                return;
+            }
+
             isAudioRecoveryPending = true;
             state.loading = true;
             ui.setPlayerLoading(true);
@@ -512,6 +537,39 @@
                 updateMediaPosition();
             },
             next: (force = false) => { 
+                const isOfflineNow = typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function'
+                    ? window.__dtunesIsOffline()
+                    : (typeof navigator !== 'undefined' && !navigator.onLine);
+
+                if (isOfflineNow) {
+                    while (state.userQueue.length > 0) {
+                        const candidate = state.userQueue.shift();
+                        if (!isOfflineBlockedTrack(candidate)) {
+                            player.playDirect(candidate);
+                            return;
+                        }
+                    }
+                    if (state.queue.length > 0) {
+                        for (let offset = 1; offset <= state.queue.length; offset++) {
+                            const nextIdx = (state.idx + offset) % state.queue.length;
+                            if (nextIdx === 0 && state.repeat !== 1 && !force) break;
+                            const candidate = state.queue[nextIdx];
+                            if (candidate && !isOfflineBlockedTrack(candidate)) {
+                                state.idx = nextIdx;
+                                player.playDirect(candidate);
+                                return;
+                            }
+                        }
+                        audio.pause();
+                        state.playing = false;
+                        state.loading = false;
+                        ui.setPlayerLoading(false);
+                        ui.updatePlayBtn();
+                        if (ui.showToast) ui.showToast('No more downloaded songs in queue', 'warning');
+                        return;
+                    }
+                }
+
                 if (state.userQueue.length > 0) {
                     const nextSong = state.userQueue.shift();
                     player.playDirect(nextSong);
@@ -580,6 +638,28 @@
                 if (audio.currentTime > 3) {
                     audio.currentTime = 0;
                     if (typeof viz !== 'undefined' && viz.start) viz.start();
+                    updateMediaPosition();
+                    return;
+                }
+                const isOfflineNow = typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function'
+                    ? window.__dtunesIsOffline()
+                    : (typeof navigator !== 'undefined' && !navigator.onLine);
+
+                if (isOfflineNow) {
+                    for (let offset = 1; offset <= state.queue.length; offset++) {
+                        let prevIdx = state.idx - offset;
+                        if (prevIdx < 0) {
+                            if (state.repeat === 1) prevIdx = state.queue.length - 1;
+                            else break;
+                        }
+                        const candidate = state.queue[prevIdx];
+                        if (candidate && !isOfflineBlockedTrack(candidate)) {
+                            state.idx = prevIdx;
+                            player.playDirect(candidate);
+                            return;
+                        }
+                    }
+                    audio.currentTime = 0;
                     updateMediaPosition();
                     return;
                 }
@@ -946,12 +1026,74 @@
             if (typeof viz !== 'undefined' && viz.start) viz.start();
         });
 
+        let stallCheckTimer = null;
         ['loadstart', 'waiting', 'stalled'].forEach((eventName) => {
             audio.addEventListener(eventName, () => {
                 if (!state.currentTrack) return;
                 state.loading = true;
                 ui.setPlayerLoading(true);
+
+                if (eventName === 'waiting' || eventName === 'stalled') {
+                    if (stallCheckTimer) clearTimeout(stallCheckTimer);
+                    stallCheckTimer = setTimeout(() => {
+                        stallCheckTimer = null;
+                        if (!state.playing || !state.currentTrack) return;
+                        const isOffline = typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function'
+                            ? window.__dtunesIsOffline()
+                            : (typeof navigator !== 'undefined' && !navigator.onLine);
+                        const isDownloaded = typeof offlineStore !== 'undefined' && offlineStore && offlineStore.isDownloaded && offlineStore.isDownloaded(state.currentTrack.id);
+                        if (isOffline && !isDownloaded) {
+                            const pausedTime = Math.max(0, audio.currentTime || 0);
+                            audio.pause();
+                            state.playing = false;
+                            state.loading = false;
+                            state._playbackPausedDueToNetwork = {
+                                trackId: state.currentTrack.id,
+                                position: pausedTime
+                            };
+                            ui.setPlayerLoading(false);
+                            ui.updatePlayBtn();
+                            if (typeof desktop !== 'undefined' && desktop.sendMediaState) {
+                                desktop.sendMediaState();
+                            }
+                            if (window.ui && ui.showToast) {
+                                const min = Math.floor(pausedTime / 60);
+                                const sec = Math.floor(pausedTime % 60).toString().padStart(2, '0');
+                                ui.showToast(`Streaming paused — connection lost at ${min}:${sec}. Downloaded songs ready.`, 'warning', 4500);
+                            }
+                        }
+                    }, 1800);
+                }
             });
+        });
+
+        // Resume stream if connection is restored
+        window.addEventListener('dtunes:network-restored', async () => {
+            if (state._playbackPausedDueToNetwork && state.currentTrack && state._playbackPausedDueToNetwork.trackId === state.currentTrack.id) {
+                const resumePos = state._playbackPausedDueToNetwork.position || 0;
+                state._playbackPausedDueToNetwork = null;
+                if (window.ui && ui.showToast) {
+                    ui.showToast('Connection restored! Resuming music...', 'success', 3000);
+                }
+                try {
+                    if (state.currentTrack.url) {
+                        audio.crossOrigin = 'anonymous';
+                        audio.src = state.currentTrack.url;
+                        audio.load();
+                        if (resumePos > 0) {
+                            try { audio.currentTime = resumePos; } catch (_) {}
+                        }
+                        await audio.play();
+                        state.playing = true;
+                        ui.updatePlayBtn();
+                        if (typeof desktop !== 'undefined' && desktop.sendMediaState) {
+                            desktop.sendMediaState();
+                        }
+                    }
+                } catch (err) {
+                    console.warn('[DTunes] Reconnect resume error:', err);
+                }
+            }
         });
         ['canplay', 'canplaythrough', 'loadeddata', 'loadedmetadata'].forEach((eventName) => {
             audio.addEventListener(eventName, () => {
@@ -1017,4 +1159,41 @@
         });
 
 
-window.player = player;
+        window.requestPlay = requestPlay;
+        window.requestPause = requestPause;
+        player.updateMediaPosition = updateMediaPosition;
+
+        // Register initial MediaSession action handlers so Windows SMTC detects transport capability immediately
+        if ('mediaSession' in navigator) {
+            const safeSet = (act, fn) => {
+                try { navigator.mediaSession.setActionHandler(act, fn); } catch (_) {}
+            };
+            safeSet('play', () => requestPlay());
+            safeSet('pause', () => requestPause());
+            safeSet('stop', () => requestPause());
+            safeSet('previoustrack', () => player.prev());
+            safeSet('nexttrack', () => player.next(true));
+            safeSet('seekbackward', (details) => {
+                audio.currentTime = Math.max(audio.currentTime - (details?.seekOffset || 10), 0);
+                updateMediaPosition();
+            });
+            safeSet('seekforward', (details) => {
+                audio.currentTime = Math.min(audio.currentTime + (details?.seekOffset || 10), audio.duration || 0);
+                updateMediaPosition();
+            });
+            safeSet('seekto', (details) => {
+                if (!details || !Number.isFinite(details.seekTime)) return;
+                audio.currentTime = Math.max(0, Math.min(details.seekTime, audio.duration || details.seekTime));
+                updateMediaPosition();
+            });
+        }
+
+        window.__dtunesMediaHandlers = {
+            play: () => requestPlay(),
+            pause: () => requestPause(),
+            playpause: () => { if (state.playing || !audio.paused) requestPause(); else requestPlay(); },
+            nexttrack: () => player.next(true),
+            previoustrack: () => player.prev()
+        };
+
+        window.player = player;

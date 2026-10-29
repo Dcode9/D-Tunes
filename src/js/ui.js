@@ -1964,32 +1964,69 @@
                 const isLiked = state.likedIds.some(item => (typeof item === 'string' ? item === track.id : item.id === track.id));
                 likeBtn.className = isLiked ? 'text-red-500 transition flex-shrink-0 ml-2' : 'text-gray-400 hover:text-red-500 transition flex-shrink-0 ml-2';
 
-                if ('mediaSession' in navigator) {
-                    navigator.mediaSession.metadata = new MediaMetadata({
-                        title: track.name || track.title || 'Unknown Track',
-                        artist: options.loading ? `Loading • ${track.artist || ''}` : (track.artist || 'Unknown Artist'),
-                        album: track.album || 'D\'Tunes',
-                        artwork: [
-                            { src: safeArt, sizes: '96x96', type: 'image/jpeg' },
-                            { src: safeArt, sizes: '128x128', type: 'image/jpeg' },
-                            { src: safeArt, sizes: '192x192', type: 'image/jpeg' },
-                            { src: safeArt, sizes: '256x256', type: 'image/jpeg' },
-                            { src: safeArt, sizes: '384x384', type: 'image/jpeg' },
-                            { src: safeArt, sizes: '512x512', type: 'image/jpeg' }
-                        ]
-                    });
+                if ('mediaSession' in navigator && typeof MediaMetadata !== 'undefined') {
+                    try {
+                        let artUrl = safeArt;
+                        if (!artUrl || typeof artUrl !== 'string' || artUrl.endsWith('.svg') || artUrl.includes('.svg?')) {
+                            artUrl = 'assets/icon.png';
+                        }
+                        if (typeof window !== 'undefined' && window.location) {
+                            try { artUrl = new URL(artUrl, window.location.href).href; } catch (_) {}
+                        }
+                        const artworkList = [
+                            { src: artUrl, sizes: '96x96', type: 'image/png' },
+                            { src: artUrl, sizes: '128x128', type: 'image/png' },
+                            { src: artUrl, sizes: '192x192', type: 'image/png' },
+                            { src: artUrl, sizes: '256x256', type: 'image/png' },
+                            { src: artUrl, sizes: '384x384', type: 'image/png' },
+                            { src: artUrl, sizes: '512x512', type: 'image/png' }
+                        ];
+                        navigator.mediaSession.metadata = new MediaMetadata({
+                            title: track.name || track.title || 'Unknown Track',
+                            artist: options.loading ? `Loading • ${track.artist || ''}` : (track.artist || 'Unknown Artist'),
+                            album: track.album || "D'Tunes",
+                            artwork: artworkList
+                        });
+                        navigator.mediaSession.playbackState = (state.playing || !document.getElementById('audio-el')?.paused) ? 'playing' : 'paused';
+                    } catch (e) {
+                        console.warn('[MediaSession] Metadata update error:', e);
+                    }
+
                     const safeSetHandler = (action, handler) => {
                         try { navigator.mediaSession.setActionHandler(action, handler); } catch (e) {}
                     };
-                    safeSetHandler('play', requestPlay);
-                    safeSetHandler('pause', requestPause);
-                    safeSetHandler('previoustrack', player.prev);
-                    safeSetHandler('nexttrack', () => player.next(true));
-                    safeSetHandler('seekbackward', (details) => { audio.currentTime = Math.max(audio.currentTime - (details.seekOffset || 10), 0); updateMediaPosition(); });
-                    safeSetHandler('seekforward', (details) => { audio.currentTime = Math.min(audio.currentTime + (details.seekOffset || 10), audio.duration || 0); updateMediaPosition(); });
+                    safeSetHandler('play', () => {
+                        if (window.requestPlay) window.requestPlay();
+                        else if (window.player && window.player.togglePlay) window.player.togglePlay();
+                        else document.getElementById('audio-el')?.play();
+                    });
+                    safeSetHandler('pause', () => {
+                        if (window.requestPause) window.requestPause();
+                        else if (window.player && window.player.togglePlay) window.player.togglePlay();
+                        else document.getElementById('audio-el')?.pause();
+                    });
+                    safeSetHandler('previoustrack', () => window.player?.prev?.());
+                    safeSetHandler('nexttrack', () => window.player?.next?.(true));
+                    safeSetHandler('seekbackward', (details) => {
+                        const a = document.getElementById('audio-el');
+                        if (a) {
+                            a.currentTime = Math.max(a.currentTime - (details?.seekOffset || 10), 0);
+                            if (window.player?.updateMediaPosition) window.player.updateMediaPosition();
+                        }
+                    });
+                    safeSetHandler('seekforward', (details) => {
+                        const a = document.getElementById('audio-el');
+                        if (a) {
+                            a.currentTime = Math.min(a.currentTime + (details?.seekOffset || 10), a.duration || 0);
+                            if (window.player?.updateMediaPosition) window.player.updateMediaPosition();
+                        }
+                    });
                     safeSetHandler('seekto', (details) => {
-                        if (!details || !Number.isFinite(details.seekTime)) return;
-                        audio.currentTime = Math.max(0, Math.min(details.seekTime, audio.duration || details.seekTime)); updateMediaPosition();
+                        const a = document.getElementById('audio-el');
+                        if (a && details && Number.isFinite(details.seekTime)) {
+                            a.currentTime = Math.max(0, Math.min(details.seekTime, a.duration || details.seekTime));
+                            if (window.player?.updateMediaPosition) window.player.updateMediaPosition();
+                        }
                     });
                 }
                 

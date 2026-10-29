@@ -739,13 +739,15 @@ function thumbarIcon(name) {
 
 function updateTaskbarProgress() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  const { hasTrack, duration, position, playing } = lastMediaState;
+  const { hasTrack, duration, position } = lastMediaState;
   if (!hasTrack || !duration || duration <= 0) {
     mainWindow.setProgressBar(-1);
     return;
   }
   const fraction = Math.max(0, Math.min(1, position / duration));
-  mainWindow.setProgressBar(fraction, { mode: playing ? 'normal' : 'paused' });
+  // Keep mode: 'normal' (accent/green) at all times so Windows renders the task
+  // as active and progressing/frozen at the current point, rather than yellow.
+  mainWindow.setProgressBar(fraction, { mode: 'normal' });
 }
 
 function updateThumbarButtons() {
@@ -823,7 +825,17 @@ function createWindow() {
 
   Menu.setApplicationMenu(null);
 
-  mainWindow.loadURL(TARGET_URL);
+  const localIndexPath = path.join(__dirname, 'index.html');
+  const errorHtmlPath = path.join(__dirname, 'error.html');
+
+  // Cold boot network check: if offline at start, immediately load local index.html
+  // without waiting 30 seconds for remote loadURL to time out.
+  if (!net.isOnline() && fs.existsSync(localIndexPath)) {
+    console.log('[Window] Cold boot offline: loading local index.html directly');
+    mainWindow.loadFile(localIndexPath);
+  } else {
+    mainWindow.loadURL(TARGET_URL);
+  }
 
   mainWindow.webContents.on('did-finish-load', () => {
     if (pendingAuthUrl) {
@@ -840,8 +852,6 @@ function createWindow() {
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
     if (errorCode === -3) return; // Ignore aborted navigation
     console.warn(`[Window] did-fail-load: ${errorCode} (${errorDescription}) on ${validatedURL}`);
-    const localIndexPath = path.join(__dirname, 'index.html');
-    const errorHtmlPath = path.join(__dirname, 'error.html');
     if (fs.existsSync(localIndexPath)) {
       console.log('[Window] Loading local index.html for offline playback');
       mainWindow.loadFile(localIndexPath);
@@ -977,12 +987,11 @@ function triggerWebMediaAction(action) {
 }
 
 function setupGlobalMediaShortcuts() {
-  try {
-    globalShortcut.register('MediaPlayPause', () => triggerWebMediaAction('playpause'));
-    globalShortcut.register('MediaNextTrack', () => triggerWebMediaAction('nexttrack'));
-    globalShortcut.register('MediaPreviousTrack', () => triggerWebMediaAction('previoustrack'));
-    globalShortcut.register('MediaStop', () => triggerWebMediaAction('pause'));
-  } catch (err) { }
+  // Chromium's MediaSessionService + HardwareMediaKeyHandling communicates
+  // natively with Windows SystemMediaTransportControls (SMTC) to display Now Playing
+  // media controls in Windows 11 Control Center / Quick Settings.
+  // Registering globalShortcut for Media keys on Windows steals the key from SMTC,
+  // so we let SMTC bind naturally while keeping web fallback handlers available.
 }
 
 ipcMain.on('window-minimize', () => {
@@ -1100,6 +1109,29 @@ ipcMain.handle('offline-delete', (_event, id) => {
 
 ipcMain.on('system-volume-set', (_event, value) => winVolume.setVolume(value));
 ipcMain.handle('system-volume-get', () => winVolume.getVolume());
+ipcMain.handle('net-is-online', () => net.isOnline());
+
+// Forward system master volume changes (from hardware volume keys / taskbar)
+// to the renderer to keep the in-app volume slider in exact sync.
+winVolume.on('change', (vol) => {
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+    mainWindow.webContents.send('system-volume-changed', vol);
+  }
+});
+
+// Periodic background network reachability check to notify renderer
+let lastKnownNetState = net.isOnline();
+setInterval(() => {
+  try {
+    const cur = net.isOnline();
+    if (cur !== lastKnownNetState) {
+      lastKnownNetState = cur;
+      if (mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents) {
+        mainWindow.webContents.send('network-status-changed', cur);
+      }
+    }
+  } catch (_) {}
+}, 2500);
 
 app.whenReady().then(() => {
   startAuthLoopbackServer();
