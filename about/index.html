@@ -37,7 +37,7 @@ body{margin:0;background:#000;color:#fff;font-family:J,system-ui,sans-serif;-web
 .slide{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1.1fr;align-items:center;padding:0 clamp(20px,6vw,96px);gap:2vw;pointer-events:none}
 .txt{will-change:opacity,filter,transform}
 .kicker{font-size:14px;letter-spacing:.14em;text-transform:uppercase;color:#8a8d94;margin-bottom:18px}
-h1,h2{margin:0;font-weight:600;font-size:clamp(46px,7.2vw,116px);line-height:1;letter-spacing:-.035em;background:linear-gradient(100deg,#5d6068 0%,#8a8d94 30%,#fff 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
+h1,h2{margin:0;font-weight:600;font-size:clamp(46px,7.2vw,116px);line-height:1;letter-spacing:-.035em;padding-bottom:.14em;margin-bottom:-.14em;background:linear-gradient(100deg,#5d6068 0%,#8a8d94 30%,#fff 78%);-webkit-background-clip:text;background-clip:text;color:transparent}
 p{font-size:clamp(17px,1.7vw,24px);color:#9ca0a8;max-width:30ch;line-height:1.4;margin:22px 0 0}
 .art{height:min(78vh,80vw);display:flex;justify-content:center;align-items:center;will-change:opacity,filter}
 .art img{max-height:100%;max-width:100%;-webkit-mask-image:radial-gradient(closest-side,#000 82%,transparent 100%);mask-image:radial-gradient(closest-side,#000 82%,transparent 100%)}
@@ -51,9 +51,9 @@ p{font-size:clamp(17px,1.7vw,24px);color:#9ca0a8;max-width:30ch;line-height:1.4;
 .wm.in{opacity:1;transition:opacity .5s}
 .flinks{display:flex;gap:6px 22px;flex-wrap:wrap;justify-content:center;font-size:14px}.flinks a{color:#8a92a3;text-decoration:none}.flinks a:hover,.flinks a:focus-visible{color:#fff}
 
-.pw{position:relative;color:#fff;-webkit-text-fill-color:#fff;transition:color .2s,-webkit-text-fill-color .2s}.pw:hover .period,.live .pw .period,.pw:focus-within .period{opacity:0}
+.pw{display:inline-block;width:.26em;position:relative;color:#fff;-webkit-text-fill-color:#fff;transition:color .2s,-webkit-text-fill-color .2s}.pw .period{opacity:0}
 .pp{all:unset;position:absolute;left:-.3em;right:-.3em;top:-.1em;bottom:-.1em;cursor:pointer}
-.pp .tri{position:absolute;left:50%;bottom:.2em;width:.56em;height:.56em;margin-left:-.28em;opacity:0;transition:opacity .25s;pointer-events:none}
+.pp .tri{position:absolute;left:50%;bottom:var(--dot-bottom,.15em);width:var(--dot-size,.12em);height:var(--dot-size,.12em);margin-left:calc(var(--dot-size,.12em)/-2);opacity:1;pointer-events:none}
 .pp .tri path{fill:#fff;stroke:#fff;stroke-width:5;stroke-linejoin:round}
 .pp:hover .tri,.pp:focus-visible .tri,.live .pp .tri{opacity:1}
 .pp:focus-visible{outline:2px solid #8fc4ff;outline-offset:6px;border-radius:8px}
@@ -91,7 +91,7 @@ p{font-size:clamp(17px,1.7vw,24px);color:#9ca0a8;max-width:30ch;line-height:1.4;
 <li>Custom recommendations: daily mixes built from what you listen to.</li>
 <li>Vibe Mix: generate a Vibe Mix that fits the moment. Available on Windows &amp; web.</li>
 <li>Offline playback: save tracks and keep listening offline. Available on Windows, coming to Android.</li></ul></section></noscript>
-<section class="end" id="end"><div class="top"><h2>Press play<span class="pw"><span class="period">.</span><button class="pp" id="pp" type="button" aria-expanded="false" aria-label="Play. Unlock the harp"><svg class="tri" viewBox="0 0 100 100" aria-hidden="true"><path d="M31 18 Q25 14 25 22 L25 78 Q25 86 32 82 L83 54 Q90 50 83 46 Z"/></svg></button></span></h2><p>Ad-free music with high-quality audio. Get D'Tunes on your device.</p><div class="row"><a class="btn dl" href="https://play.google.com/store/apps/details?id=com.dcode9.dtunes">Get it on Google Play</a></div></div>
+<section class="end" id="end"><div class="top"><h2>Press play<span class="pw"><span class="period" aria-hidden="true"></span><button class="pp" id="pp" type="button" aria-expanded="false" aria-label="Play. Unlock the harp"><svg class="tri" viewBox="0 0 100 100" aria-hidden="true"><path id="morph-dot" d="M50 6 C74 6 94 26 94 50 C94 74 74 94 50 94 C26 94 6 74 6 50 C6 26 26 6 50 6 Z"/></svg></button></span></h2><p>Ad-free music with high-quality audio. Get D'Tunes on your device.</p><div class="row"><a class="btn dl" href="https://play.google.com/store/apps/details?id=com.dcode9.dtunes">Get it on Google Play</a></div></div>
 <div class="stage"><div class="wm" id="wm" aria-hidden="true">D'Tunes</div><canvas id="harp" tabindex="0" role="group" aria-label="Harp. Drag across the strings to play. With a keyboard, use left and right arrows to pick a string and space to pluck."></canvas><div class="hctl"><button id="strum" type="button">Strum</button><button id="sbtn" type="button" aria-pressed="false">Mute</button><button id="cbtn" type="button">Close</button></div></div>
 <div><nav class="flinks" aria-label="Get D'Tunes"><a href="https://play.google.com/store/apps/details?id=com.dcode9.dtunes">Google Play</a><a href="https://apps.microsoft.com/detail/9p4w2jhq03n1">Microsoft Store</a><a href="https://tunes.d-verse.in/">Open the web app</a><a href="/download">All downloads</a></nav></div></section>
 </main>
@@ -139,6 +139,15 @@ dd.forEach((d,n)=>d.onclick=()=>{const h=document.querySelector('.snap').offsetH
  new IntersectionObserver((es,io)=>{if(es[0].isIntersecting){wm.classList.add('in');raf=requestAnimationFrame(run);io.disconnect()}},{threshold:.5}).observe(end);
  let px=0,py=0,pend=false;const mv=e=>{const r=wm.getBoundingClientRect(),c=e.touches?e.touches[0]:e;px=(c.clientX-r.left)/r.width*100;py=(c.clientY-r.top)/r.height*100;if(!pend){pend=true;requestAnimationFrame(()=>{pend=false;wm.style.setProperty('--mx',px+'%');wm.style.setProperty('--my',py+'%')})}};
  end.addEventListener('pointermove',mv,{passive:true});end.addEventListener('touchmove',mv,{passive:true});})();
+/* The punctuation itself morphs within its measured ink box. */
+(function(){const button=document.getElementById('pp'),wrap=button.parentElement,path=document.getElementById('morph-dot'),label=wrap.querySelector('.period');
+ const A=[50,6,74,6,94,26,94,50,94,74,74,94,50,94,26,94,6,74,6,50,6,26,26,6,50,6],B=[22,8,22,2,28,3,34,7,52,18,74,34,91,44,98,48,98,52,91,56,74,66,34,93,22,92];let value=0,target=0,raf=0;
+ function draw(){value+=(target-value)*.2;if(Math.abs(value-target)<.002)value=target;const n=A.map((v,i)=>v+(B[i]-v)*value);path.setAttribute('d',`M${n[0]} ${n[1]} C${n.slice(2,8).join(' ')} C${n.slice(8,14).join(' ')} C${n.slice(14,20).join(' ')} C${n.slice(20).join(' ')} Z`);raf=value!==target?requestAnimationFrame(draw):0}
+ function set(v){target=v;if(reduced.matches)value=v;if(!raf)raf=requestAnimationFrame(draw)}
+ button.addEventListener('pointerenter',e=>{if(e.pointerType==='mouse')set(1)});button.addEventListener('pointerleave',()=>{if(document.activeElement!==button)set(0)});button.addEventListener('focus',()=>set(1));button.addEventListener('blur',()=>set(0));
+ function size(){const h=wrap.closest('h2'),cs=getComputedStyle(h),can=document.createElement('canvas'),c=can.getContext('2d');c.font=cs.font;const m=c.measureText('.'),fs=parseFloat(cs.fontSize),ink=Math.max(m.actualBoundingBoxAscent+m.actualBoundingBoxDescent,fs*.08);wrap.style.width=m.width+'px';wrap.style.setProperty('--dot-size',ink/0.88+'px');wrap.style.setProperty('--dot-bottom',(parseFloat(cs.lineHeight)-fs)/2+fs*.01+'px')}
+ document.fonts.ready.then(size);addEventListener('resize',size);
+})();
 const V={
  pluck(c,d,t,f,v){const o=c.createOscillator(),o2=c.createOscillator(),g=c.createGain(),g2=c.createGain(),lp=c.createBiquadFilter();
   o.type='triangle';o.frequency.value=f;o2.type='sine';o2.frequency.value=f*2;g2.gain.value=.22;
