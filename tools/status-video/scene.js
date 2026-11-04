@@ -29,6 +29,26 @@ const smax = (a, b, k) => -smin(-a, -b, k);
 // half of a 180-degree shutter at 24 fps: motion blur integrates over [t - SH, t + SH]
 const SH = 1 / 96;
 
+// ---------------------------------------------------------------- soundtrack sync (frame indices @ 24 fps unless noted)
+// Strong onsets of audio-3ae9e05b.mp3; [time s, weight]. Cuts and accents snap to these.
+const HITS = [
+  [5.04, .55], [5.67, .45], [7.11, .55], [7.59, .45], [9.5, .65], [9.66, .75], [10.12, .65], [11.73, .5],
+  [12.42, .85], [12.68, .5], [13, .4], [14.28, .5], [15.07, .55], [16.81, .5], [18.09, .95], [19.67, .95],
+  [20.33, .85], [22.87, .5], [23.5, .65], [24.94, .55], [25.4, .7], [27, .75], [27.96, .85], [28.28, .5], [29.56, .7],
+];
+function hit(t) {
+  let v = 0;
+  for (const [h, s] of HITS) { const d = t - h; if (d >= 0 && d < 1.15) v = Math.max(v, s * Math.exp(-d * 5.2)); }
+  return v;
+}
+const fr = f => f / FPS;
+const F_SHRINK = 71, F_BURST = 149, F_MIX = 298;
+const T_SHRINK = fr(F_SHRINK), T_BURST = fr(F_BURST);
+// D'Verse edit marks (689 / 764 / 805) match a 30 fps NLE timecode on this 24 fps master.
+const NLE = 30, T_RIBBON = 689 / NLE, T_SWIPE0 = 764 / NLE, T_SWIPE1 = 805 / NLE;
+const SCN = [121, 171, 243, F_MIX, 362].map(fr);
+const CARD_T0 = fr(434), BTN = fr(488), CARD_OUT = fr(549);
+
 // ---------------------------------------------------------------- canvas helpers
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = Math.max(1, Math.ceil(w)); c.height = Math.max(1, Math.ceil(h)); return c; };
 const c2d = c => c.getContext('2d');
@@ -166,19 +186,15 @@ function ribbon(x, prog, cfg, alpha) {
   for (let i = N - 1; i >= 0; i--) x.lineTo((outer[i][0] + inner[i][0]) / 2, (outer[i][1] + inner[i][1]) / 2);
   x.closePath(); x.fillStyle = `rgba(255,255,255,${Math.min(1, 0.8 * b)})`; x.fill(); x.restore();
 }
-// Loading ribbon: starts at the middle of the left edge, runs up and over the top at the engine's own speed
-// (0.25 * 0.8 perimeters/s, corner boost 1.3) and eases to a stop at the middle of the right edge. The beam
-// takes over there at rest, so the sweep's slow-in starts from the ribbon's slow-out.
-const R_START = 23.3;
+// Loading ribbon: frame 689 (NLE) → perimeter glow starts; docks at swipe start (764); beam swipe 764→805.
+const R_START = T_RIBBON, T_DOCK = T_SWIPE0, SWEEP_T0 = T_SWIPE0, SWEEP_D = T_SWIPE1 - T_SWIPE0;
 const RIB = (() => {
   const p0 = (L_TOP + 3 * L_ARC + L_RIGHT + L_TOP + L_RIGHT / 2) / PER, pd = (L_TOP + L_ARC + L_RIGHT / 2) / PER + 1, dt = 1 / 2400, tab = [p0];
   let p = p0;
   while (p < pd) { const n = ((p % 1) + 1) % 1; p += 0.25 * 0.8 * (1 + 0.3 * 0.5 * (1 + Math.cos(n * Math.PI * 8))) * dt; tab.push(Math.min(p, pd)); }
   return { tab, dt, p0, pd, dur: (tab.length - 1) * dt };
 })();
-// time warp: engine speed for the first 62 %, then a quadratic slow-out into the dock
-const RIB_A = 0.62, RIB_V = 1 / (RIB_A + (1 - RIB_A) / 2), RIB_D = RIB.dur * RIB_V;
-const T_DOCK = R_START + RIB_D, SWEEP_T0 = T_DOCK + 0.05, SWEEP_D = 1.4;
+const RIB_A = 0.62, RIB_V = 1 / (RIB_A + (1 - RIB_A) / 2);
 function ribbonProg(t) {
   const u = inv(R_START, T_DOCK, t);
   const w = u <= RIB_A ? RIB_V * u : RIB_V * RIB_A + RIB_V * (u - RIB_A) - (RIB_V * (u - RIB_A) ** 2) / (2 * (1 - RIB_A));
@@ -262,28 +278,29 @@ function litSilver(tb, p) {
   }
 }
 
-// D'Verse material: the WwdcTextEffect.tsx layer stack, lit by letter: full light through the first `e`,
-// the falloff carried entirely across the `r`, and `s`, `e` left as plain unlit type.
+// D'Verse material: every letter shares the same readable silver body; a smooth glow profile (plateau on D,
+// long taper on Verse) adds light without blowing the D out. `mix` eases the profile in after the swipe.
 const C = (h, a = 1) => [...hex(h), a], Z = [0, 0, 0, 0];
-function litDVerse(tb) {
-  if (tb.key === 'dv') return; tb.key = 'dv';
+function dverseGlowPct(tb, pct) {
+  const ch = tb.chars[0], pD = tb.pct(ch[0][1]), pTail = tb.pct(ch[2][0]) + 14;
+  if (pct <= pD) return 1;
+  return Math.max(0.08, 1 - smooth(inv(pD, pTail, pct)));
+}
+function litDVerse(tb, mix = 1) {
+  const key = 'dv' + mix.toFixed(3); if (tb.key === key) return; tb.key = key;
   const L = tb.L, lx = c2d(L), x0 = tb.tx0, x1 = tb.tx0 + tb.tw, S = tb.S; clear(lx);
-  const ch = tb.chars[0], e1 = tb.pct(ch[3][1]), r0 = tb.pct(ch[4][0]), r1 = tb.pct(ch[4][1]), rm = (r0 + r1) / 2, rw = r1 - r0;
-  const sg = (st, s = 1.6) => smoothGradient(lx, x0, x1, st, s);
-  const y0 = tb.base[0] - tb.cap, body = lx.createLinearGradient(0, y0, 0, tb.base[0] + 0.05 * tb.size);
-  body.addColorStop(0, '#2a2a30'); body.addColorStop(0.3, '#18181c'); body.addColorStop(0.65, '#0c0c0f'); body.addColorStop(1, '#050506');
-  tint(L, S, tb.M, body, 'source-over', 1);                                                     // A dark body
-  tint(L, S, tb.R, 'rgba(160,165,185,.45)', 'screen', 0.9);                                      // B edge specular (clean contour)
-  tint(L, S, tb.TC, 'rgb(180,185,200)', 'screen', 0.18 * 0.85);                                  // C top-edge catch
-  tint(L, S, tb.M, sg([[0, C('#ffffff')], [r0, C('#ffffff')], [rm, C('#9da1ae')], [r1, C('#5c606c')], [100, C('#565a66')]]), 'screen', 0.95); // D illumination
-  tint(L, S, tb.M, sg([[0, Z], [r1, Z], [100, [190, 200, 225, 0.1]]], 4), 'screen', 0.8);       // E opposite rim
-  tint(L, S, tb.M, sg([[0, [255, 160, 50, 0.95]], [e1, [255, 190, 80, 0.9]], [rm, [255, 180, 70, 0.2]], [r1, Z], [100, Z]]), 'screen', 0.92, -3, 0.5,
-    'blur(2px) drop-shadow(-4.5px 0 9px rgba(255,165,55,.9))');                                  // F amber fringe
-  tint(L, S, tb.M, sg([[0, Z], [e1 - 10, [190, 235, 255, 0.3]], [r0 + 0.25 * rw, [140, 220, 255, 0.75]], [r1, Z], [100, Z]]), 'screen', 0.82, 2, -0.5,
-    'blur(1.6px) drop-shadow(3px 0 7px rgba(100,190,255,.8))');                                   // G cyan fringe
-  tint(L, S, tb.M, sg([[0, C('#ffffff')], [e1 - 2, C('#ffffff')], [r0, [255, 255, 255, 0.55]], [rm, Z], [100, Z]]), 'screen', 1, 0, 0,
-    'drop-shadow(0 0 4px #fff) drop-shadow(0 0 16px rgba(255,255,255,.95)) drop-shadow(0 0 36px rgba(240,245,255,.6))'); // H incandescent core
-  tint(L, S, tb.M, sg([[0, C('#ffffff')], [e1 - 3, C('#ffffff')], [e1, [255, 255, 255, 0.7]], [r0 + 0.4 * rw, Z], [100, Z]]), 'screen', 1, 0, 0, 'drop-shadow(0 0 2px #fff)'); // I apex filament
+  const peak = 0.42 * clamp(mix), sg = (st, s = 2.4) => smoothGradient(lx, x0, x1, st, s);
+  const run = fn => { const g = lx.createLinearGradient(x0, 0, x1, 0); for (let i = 0; i <= 80; i++) { const u = i / 80, p = u * 100; g.addColorStop(u, fn(p)); } return g; };
+  const base = run(p => rgba(silver(0.55 + 0.2 * dverseGlowPct(tb, p) * peak), 1));
+  tint(L, S, tb.M, base, 'source-over', 1);
+  tint(L, S, tb.R, 'rgba(175,182,198,.38)', 'screen', 0.85);
+  tint(L, S, tb.TC, 'rgb(200,205,218)', 'screen', 0.14);
+  if (peak > 0.02) {
+    const g = p => dverseGlowPct(tb, p) * peak;
+    tint(L, S, tb.M, run(p => rgba([255, 255, 255], 0.38 * g(p))), 'screen', 1);
+    tint(L, S, tb.M, run(p => rgba([255, 172, 88], 0.22 * g(p))), 'screen', 1, -2, 0.4, 'blur(1.4px)');
+    tint(L, S, tb.M, run(p => rgba([150, 210, 255], 0.18 * g(p))), 'screen', 1, 1.5, -0.4, 'blur(1.2px)');
+  }
 }
 
 // Kinetic type: each unit (word or letter) moves inside its own line window. anim(unit, t) -> {dy, a}.
@@ -356,8 +373,7 @@ const mix = (i, o) => ({ dy: i.dy + o.dy, a: i.a * o.a });
 // on the edge of frame, or centre stage. Moves between poses run along arcs with anticipation and overshoot;
 // size lags position (follow-through), velocity stretches the object along its path and banks it into turns.
 const OS = mk(W, H), osx = c2d(OS);
-const ICON_Y = 800, STAGE_Y = 1300, BURST = 3.2, CARD_T0 = 18.09, CARD_Y = 860;
-const SCN = [5.09, 7.09, 10.09, 12.42, 15.09];
+const ICON_Y = 800, STAGE_Y = 1300, CARD_Y = 860;
 const OBJS = [
   { id: 's1', fit: 'h', big: 1040, spot: [70, 1000, 430, -9], bend: -0.2 },
   { id: 's5', fit: 'w', big: 1060, spot: [1015, 1070, 460, 8], bend: 0.25 },
@@ -369,14 +385,14 @@ const POSE = (x, y, size, o = {}) => ({ x, y, size, rot: 0, a: 1, dof: 0, c: 0, 
 OBJS.forEach((o, j) => {
   const [sx, sy, ssz, srot] = o.spot, spot = POSE(sx, sy, ssz, { rot: srot, a: 0.55, dof: 5 }), centre = POSE(W / 2, STAGE_Y, o.big, { c: 1 });
   const origin = POSE(W / 2, ICON_Y, 50, { a: 0, rot: j % 2 ? 32 : -32 }), segs = [];
-  if (j === 0) segs.push({ t0: BURST, t1: BURST + 1.15, A: origin, B: centre, bend: 0.2, kind: 'burst' });
-  else segs.push({ t0: BURST + 0.04 * j, t1: BURST + 0.04 * j + 0.95, A: origin, B: spot, bend: j % 2 ? 0.32 : -0.32, kind: 'burst' });
-  if (j > 0) segs.push({ t0: SCN[j] - 0.22, t1: SCN[j] + 0.62, A: spot, B: centre, bend: o.bend, kind: 'travel' });
-  if (j < 4) segs.push({ t0: SCN[j + 1] - 0.3, t1: SCN[j + 1] + 0.5, A: centre, B: spot, bend: -o.bend, kind: 'travel' });
-  const t0 = j === 4 ? CARD_T0 + 0.16 : CARD_T0 + 0.04 * j;
-  segs.push({ t0, t1: t0 + 0.6, A: j === 4 ? centre : spot, B: POSE(W / 2, CARD_Y, 36, { a: 0, rot: j % 2 ? -40 : 40 }), bend: j % 2 ? 0.25 : -0.25, kind: 'implode' });
+  if (j === 0) segs.push({ t0: T_BURST, t1: T_BURST + 0.95, A: origin, B: centre, bend: 0.2, kind: 'burst' });
+  else segs.push({ t0: T_BURST + 0.035 * j, t1: T_BURST + 0.035 * j + 0.88, A: origin, B: spot, bend: j % 2 ? 0.32 : -0.32, kind: 'burst' });
+  if (j > 0) segs.push({ t0: SCN[j] - 0.18, t1: SCN[j] + 0.58, A: spot, B: centre, bend: o.bend, kind: 'travel' });
+  if (j < 4) segs.push({ t0: SCN[j + 1] - 0.26, t1: SCN[j + 1] + 0.48, A: centre, B: spot, bend: -o.bend, kind: 'travel' });
+  const t0 = j === 4 ? CARD_T0 + 0.12 : CARD_T0 + 0.035 * j;
+  segs.push({ t0, t1: t0 + 0.55, A: j === 4 ? centre : spot, B: POSE(W / 2, CARD_Y, 36, { a: 0, rot: j % 2 ? -40 : 40 }), bend: j % 2 ? 0.25 : -0.25, kind: 'implode' });
   o.segs = segs;
-  o.arrive = j === 0 ? BURST + 1.15 : SCN[j] + 0.62;
+  o.arrive = j === 0 ? T_BURST + 0.95 : SCN[j] + 0.58;
 });
 function segPose(s, t) {
   const u = inv(s.t0, s.t1, t), A_ = s.A, B = s.B;
@@ -403,6 +419,7 @@ function poseOf(j, t) {
   const c = p.c, ph = j * 1.9;
   p.y += c * 10 * Math.sin(t * 1.5 + ph); p.rot += c * 1.3 * Math.sin(t * 0.75 + ph);
   p.x += (1 - c) * 10 * Math.sin(t * 0.33 + ph); p.y += (1 - c) * 14 * Math.sin(t * 0.27 + ph * 1.3);
+  if (c > 0.85) { const k = 1 + 0.024 * hit(t); p.size *= k; }
   return p;
 }
 function xform(x, im, fit, p, vx, vy) {
@@ -417,31 +434,19 @@ function drawPose(x, o, j, t, k, op) {
   const a = poseOf(j, t - SH), b = poseOf(j, t + SH), im = A[o.id];
   const vx = (b.x - a.x) / (2 * SH), vy = (b.y - a.y) / (2 * SH);
   x.save(); reset(x); xform(x, im, o.fit, p, vx, vy);
-  if (p.c > 0.01) { x.globalCompositeOperation = op === 'lighter' ? 'lighter' : 'screen'; x.globalAlpha = clamp(p.a * p.c * 0.22 * k); x.drawImage(im.glow, -im.w / 2, -im.h / 2, im.w, im.h); }
   x.globalCompositeOperation = op; x.globalAlpha = clamp(p.a * k);
   if (p.dof > 0.3) x.filter = `blur(${p.dof.toFixed(2)}px)`;
   x.drawImage(im.c, -im.w / 2, -im.h / 2); x.restore();
 }
-function glint(o, j, t, u) {
-  // one soft specular pass across the glass after the object lands, only on its own bright surfaces
-  const p = poseOf(j, t), im = A[o.id];
-  clear(osx); xform(osx, im, o.fit, p, 0, 0); osx.drawImage(im.c, -im.w / 2, -im.h / 2); reset(osx);
-  const sx = lerp(p.x - 700, p.x + 700, inOutSine(u)), g = osx.createLinearGradient(sx - 220, p.y + 120, sx + 220, p.y - 120);
-  for (let i = 0; i <= 12; i++) { const v = i / 12, d = (v - 0.5) / 0.22; g.addColorStop(v, `rgba(255,255,255,${(0.9 * Math.exp(-d * d)).toFixed(4)})`); }
-  osx.globalCompositeOperation = 'source-in'; osx.fillStyle = g; osx.fillRect(0, 0, W, H);
-  ctx.save(); reset(ctx); ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = clamp(p.a * p.c * 0.6 * Math.sin(Math.PI * u)); ctx.drawImage(OS, 0, 0); ctx.restore();
-}
 function drawObjects(t) {
-  if (t < BURST - 0.05 || t > CARD_T0 + 0.9) return;
+  if (t < T_BURST - 0.05 || t > CARD_T0 + 0.9) return;
   const list = OBJS.map((o, j) => ({ o, j, p: poseOf(j, t) })).filter(e => e.p.a > 0.002 || poseOf(e.j, t + SH).a > 0.002).sort((a, b) => a.p.c - b.p.c);
   for (const { o, j } of list) {
     const pa = poseOf(j, t - SH), pb = poseOf(j, t + SH);
     const d = Math.hypot(pb.x - pa.x, pb.y - pa.y) + Math.abs(pb.size - pa.size) * 0.5 + Math.abs(pb.rot - pa.rot) * 6;
     const n = clamp(Math.ceil(d / 6), 1, 14);
-    if (n === 1) {
-      drawPose(ctx, o, j, t, 1, 'source-over');
-      const gu = inv(o.arrive + 0.15, o.arrive + 1.05, t); if (gu > 0 && gu < 1) glint(o, j, t, gu);
-    } else {
+    if (n === 1) drawPose(ctx, o, j, t, 1, 'source-over');
+    else {
       clear(osx);
       for (let i = 0; i < n; i++) drawPose(osx, o, j, t - SH + (2 * SH * (i + 0.5)) / n, 1 / n, 'lighter');
       ctx.save(); reset(ctx); ctx.drawImage(OS, 0, 0); ctx.restore();
@@ -463,22 +468,23 @@ const SC = [
   { lines: ['Mix by', 'mood.'], sub: 'Generate a Vibe Mix on Windows & web.' },
   { lines: ['Take it', 'anywhere.'], sub: 'Save tracks offline on Windows & web.' },
 ];
-const HEAD_Y = 420, BTN = 20.09, CARD_OUT = 23.4;
+const HEAD_Y = 420;
 const TB = {};
 
-// Intro: the mark fades up and settles, the name rises in letter by letter and catches one pass of light.
-// On the first downbeat of the build the mark pulls back (anticipation), collapses, and the features burst out of it.
+// Intro: mark fades up; from frame 71 it swells then shrinks; at frame 149 it explodes into the feature burst.
 function intro(t) {
-  if (t > BURST + 0.2) return;
-  const ui = inv(0.3, 1.3, t), v = inv(2.96, 3.3, t);
-  const s = (0.94 + 0.06 * outCubic(ui)) * (1 + 0.012 * inv(1.3, 2.96, t)) * Math.max(0, 1 - inBack(v, 1.4));
-  drawIcon(W / 2, ICON_Y + 18 * (1 - outCubic(ui)), 460, s, smooth(ui) * (1 - ss(3.2, 3.32, t)));
+  if (t > T_BURST + 0.15) return;
+  const ui = inv(0.3, 1.3, t), sh = inv(T_SHRINK, T_BURST, t);
+  const bump = sh > 0 && sh < 0.14 ? 1 + 0.04 * Math.sin(Math.PI * sh / 0.14) : 1;
+  const collapse = sh > 0.06 ? 1 - inBack(inv(0.06, 1, sh), 1.15) : 1;
+  const s = (0.94 + 0.06 * outCubic(ui)) * bump * collapse * (1 + 0.018 * hit(t));
+  drawIcon(W / 2, ICON_Y + 18 * (1 - outCubic(ui)), 460, s, smooth(ui) * (1 - ss(T_BURST - 0.08, T_BURST, t)));
   const tb = TB.intro, lp = sweepP(t, 1.55, 1.2);
   litSilver(tb, lp);
-  const src = compose(tb, (u, tt) => mix(unitIn(tt, 0.7 + 0.045 * u.k, tb.size, 0.65), unitOut(tt, 2.84 + 0.02 * u.k, tb.size, 0.34)), t);
-  drawBlock(tb, src, 1235 - tb.base[0], 0.55, lp);
+  const src = compose(tb, (u, tt) => mix(unitIn(tt, 0.7 + 0.045 * u.k, tb.size, 0.65), unitOut(tt, T_BURST - 0.35 + 0.02 * u.k, tb.size, 0.36)), t);
+  drawBlock(tb, src, 1235 - tb.base[0], 0.55, lp, 1 + 0.012 * hit(t));
   label('NOW ON WINDOWS AND ANDROID', { y: 1345, font: '600 30px J', color: '#8fb8ff' }, tt => {
-    const k = outCubic(inv(1.3, 2.1, tt)), x = unitOut(tt, 2.8, 30, 0.34);
+    const k = outCubic(inv(1.3, 2.1, tt)), x = unitOut(tt, T_BURST - 0.38, 30, 0.36);
     return { dy: (1 - k) * 14 + x.dy, a: k * x.a, track: lerp(0.5, 0.24, k) * 30 };
   }, t);
 }
@@ -489,7 +495,7 @@ function sceneText(k, t) {
   const tb = TB['s' + k], lp = sweepP(t, t0 + 0.45);
   litSilver(tb, lp);
   const src = compose(tb, (u, tt) => mix(unitIn(tt, t0 + 0.18 + 0.06 * u.k, tb.size), unitOut(tt, t1 - 0.42 + 0.03 * u.k, tb.size)), t);
-  drawBlock(tb, src, HEAD_Y - tb.base[0], 0.5, lp);
+  drawBlock(tb, src, HEAD_Y - tb.base[0], 0.5, lp, 1 + 0.01 * hit(t));
   label(SC[k].sub, { y: HEAD_Y + tb.lineH + 96, font: '400 40px I', color: '#aab0bd' },
     tt => mix(unitIn(tt, t0 + 0.42, 40, 0.75), unitOut(tt, t1 - 0.4, 40, 0.34)), t);
 }
@@ -560,7 +566,7 @@ function card(t) {
   const X = (d, dur = 0.5) => inv(CARD_OUT + d, CARD_OUT + d + dur, t);
   const xo = d => ({ dy: -inBack(X(d), 1.6) * 110, a: 1 - smooth(inv(0.35, 1, X(d))) });
   const pop = inv(18.52, 19.25, t), lx = xo(0);
-  drawIcon(W / 2, lerp(CARD_Y, 640, m) + lx.dy, lerp(380, 330, m), lerp(0.25, 1, spring(pop, 0.9, 6)), smooth(inv(0, 0.22, pop)) * lx.a);
+  drawIcon(W / 2, lerp(CARD_Y, 640, m) + lx.dy, lerp(380, 330, m), lerp(0.25, 1, spring(pop, 0.9, 6)) * (1 + 0.014 * hit(t)), smooth(inv(0, 0.22, pop)) * lx.a);
   const tb = TB.card, lp = sweepP(t, 19.3, 1.25);
   litSilver(tb, lp);
   const src = compose(tb, (u, tt) => mix(unitIn(tt, 18.72 + 0.035 * u.k, tb.size, 0.65), unitOut(tt, CARD_OUT + 0.06 + 0.015 * u.k, tb.size, 0.38)), t);
@@ -580,42 +586,44 @@ function card(t) {
 function endState(t) {
   const prog = inv(SWEEP_T0, SWEEP_T0 + SWEEP_D, t), e = inOutQuad(prog);
   const cfg = {}; for (const k in STATE_3) cfg[k] = lerp(STATE_1[k], STATE_3[k], e);
-  const bxp = (1 - e) * W, fade = ss(0, 0.45, bxp / W);
-  return { prog, cfg, bxp, fade };
+  const bxp = (1 - e) * W;
+  const fade = ss(0, 0.55, bxp / W);
+  const settle = t >= SWEEP_T0 + SWEEP_D ? smooth(inv(SWEEP_T0 + SWEEP_D, SWEEP_T0 + SWEEP_D + 0.9, t)) : 0;
+  return { prog, e, cfg, bxp, fade, settle };
 }
 function endPass(t, pass) {
   if (t < R_START - 0.05) return;
   const s = endState(t), tb = TB.end, ty = 960 - (tb.base[0] - tb.cap / 2);
   const shown = t >= SWEEP_T0, uncover = s.prog < 1 ? s.bxp : null;
+  const glowMix = s.settle > 0 ? s.settle : s.prog * 0.35;
   if (pass === 'behind') {
     if (!shown || s.fade <= 0.003) return uncover;
-    // WwdcTextEffect halos around the light (amber / white core / cyan), travelling with the beam and fading with it
+    const safe = s.bxp > tb.tx0 + 48;
+    if (!safe) return uncover;
     const halo = (dx, w, h, stops, blur, op) => {
-      gx.save(); gx.filter = gblur(blur); gx.globalAlpha = op * s.fade; gx.translate(s.bxp + dx, 960); gx.scale(w / 2, h / 2);
+      gx.save(); gx.filter = gblur(blur); gx.globalAlpha = op * s.fade * 0.55; gx.translate(s.bxp + dx, 960); gx.scale(w / 2, h / 2);
       const g = gx.createRadialGradient(0, 0, 0, 0, 0, Math.SQRT2); for (const [u, c] of stops) g.addColorStop(u, c);
       gx.fillStyle = g; gx.beginPath(); gx.arc(0, 0, 1, 0, Math.PI * 2); gx.fill(); gx.restore();
     };
-    halo(12, 432, 324, [[0, 'rgba(255,180,60,.35)'], [0.35, 'rgba(255,145,30,.2)'], [0.7, 'rgba(255,145,30,0)'], [1, 'rgba(0,0,0,0)']], 38, 0.9);
-    halo(0, 302, 238, [[0, 'rgba(255,255,255,.6)'], [0.3, 'rgba(255,250,240,.4)'], [0.7, 'rgba(255,250,240,0)'], [1, 'rgba(0,0,0,0)']], 26, 0.95);
-    halo(-12, 346, 259, [[0, 'rgba(100,190,255,.2)'], [0.35, 'rgba(80,160,255,.12)'], [0.65, 'rgba(80,160,255,0)'], [1, 'rgba(0,0,0,0)']], 34, 0.85);
+    halo(10, 380, 280, [[0, 'rgba(255,180,60,.22)'], [0.4, 'rgba(255,145,30,.12)'], [1, 'rgba(0,0,0,0)']], 34, 0.85);
+    halo(0, 260, 200, [[0, 'rgba(255,255,255,.35)'], [0.45, 'rgba(255,250,240,.18)'], [1, 'rgba(0,0,0,0)']], 22, 0.8);
     return uncover;
   }
   if (pass === 'main') {
     if (!shown) return;
-    litDVerse(tb);
-    const push = 1 + 0.018 * ss(SWEEP_T0, DUR, t);
+    litDVerse(tb, glowMix);
+    const push = 1 + 0.012 * ss(SWEEP_T0, DUR, t) + 0.008 * hit(t);
     let src = tb.L;
     if (uncover !== null) {
       const T = tb.T, x = c2d(T); clear(x); x.drawImage(tb.L, 0, 0); x.globalCompositeOperation = 'destination-in';
-      const g = x.createLinearGradient(uncover - 40, 0, uncover + 40, 0); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, '#000'); x.fillStyle = g; x.fillRect(0, 0, W, tb.h); src = T;
+      const g = x.createLinearGradient(uncover - 48, 0, uncover + 48, 0); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, '#000'); x.fillStyle = g; x.fillRect(0, 0, W, tb.h); src = T;
     }
     ctx.save(); reset(ctx); ctx.translate(W / 2, 960); ctx.scale(push, push); ctx.translate(-W / 2, -960); ctx.drawImage(src, 0, ty); ctx.restore();
     return;
   }
-  // front: the light itself. Ribbon and beam cross-fade while both sit still at the right-edge dock.
-  const hand = ss(T_DOCK - 0.3, T_DOCK + 0.2, t);
-  if (t < T_DOCK + 0.2) ribbon(gx, ribbonProg(t), STATE_1, ss(R_START, R_START + 0.45, t) * (1 - hand));
-  if (t > T_DOCK - 0.3 && s.prog < 1) beam(gx, s.bxp, H * 0.5, s.cfg, hand * s.fade);
+  const hand = ss(T_DOCK - 0.28, T_DOCK + 0.18, t);
+  if (t < T_DOCK + 0.15) ribbon(gx, ribbonProg(t), STATE_1, ss(R_START, R_START + 0.4, t) * (1 - hand));
+  if (t > T_DOCK - 0.25 && s.prog < 1) beam(gx, s.bxp, H * 0.5, s.cfg, hand * s.fade * 0.92);
 }
 
 // ---------------------------------------------------------------- frame
@@ -624,7 +632,7 @@ function drawBG(t) {
   reset(ctx); ctx.fillStyle = '#040406'; ctx.fillRect(0, 0, W, H);
   const v = ctx.createRadialGradient(W / 2, H * 0.5, 0, W / 2, H * 0.5, H * 0.62); v.addColorStop(0, '#08080e'); v.addColorStop(1, '#040406');
   ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
-  const pa = 0.85 * (1 - ss(23.3, 24.4, t));
+  const pa = 0.85 * (1 - ss(T_RIBBON, T_RIBBON + 1.1, t)) * (0.92 + 0.08 * hit(t));
   if (pa > 0.003) {
     const z = 1.16 + 0.04 * Math.sin(t * 0.21), pw = W * z, ph = H * z;
     ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = clamp(pa);
