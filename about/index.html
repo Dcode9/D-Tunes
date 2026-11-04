@@ -69,7 +69,7 @@ p{font-size:clamp(17px,1.7vw,24px);color:#9ca0a8;max-width:30ch;line-height:1.4;
 .hctl button:hover,.hctl button:focus-visible{color:#fff}
 .hctl button:focus-visible{outline:2px solid #8fc4ff;outline-offset:3px;border-radius:4px}
 .flinks a{position:relative}
-.flinks{gap:2px 2px;margin:-14px -10px}.flinks a{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:14px 10px;box-sizing:border-box}
+.flinks a::after{content:"";position:absolute;inset:-3px -10px}
 @media(prefers-reduced-motion:reduce){.pp .tri{transition:none}}
 .fnote{font-size:12px;color:#4b5563;margin-top:10px;max-width:none}
 @media(max-width:760px){
@@ -137,7 +137,7 @@ dd.forEach((d,n)=>d.onclick=()=>{const h=document.querySelector('.snap').offsetH
  if(reduced.matches){wm.classList.add('in');return}
  wm.style.filter='url(#gbw)';ga.setAttribute('stdDeviation',(DIFF*1.4*lite).toFixed(2));gd.setAttribute('scale',(SCAT*lite).toFixed(1));
  new IntersectionObserver((es,io)=>{if(es[0].isIntersecting){wm.classList.add('in');raf=requestAnimationFrame(run);io.disconnect()}},{threshold:.5}).observe(end);
- let px=0,py=0,pend=false;const mv=e=>{const r=wm.getBoundingClientRect(),c=e.touches?e.touches[0]:e;px=Math.max(0,Math.min(100,(c.clientX-r.left)/r.width*100));py=Math.max(0,Math.min(100,(c.clientY-r.top)/r.height*100));if(!pend){pend=true;requestAnimationFrame(()=>{pend=false;wm.style.setProperty('--mx',px+'%');wm.style.setProperty('--my',py+'%')})}};
+ let px=0,py=0,pend=false;const mv=e=>{const r=wm.getBoundingClientRect(),c=e.touches?e.touches[0]:e;px=(c.clientX-r.left)/r.width*100;py=(c.clientY-r.top)/r.height*100;if(!pend){pend=true;requestAnimationFrame(()=>{pend=false;wm.style.setProperty('--mx',px+'%');wm.style.setProperty('--my',py+'%')})}};
  end.addEventListener('pointermove',mv,{passive:true});end.addEventListener('touchmove',mv,{passive:true});})();
 const V={
  pluck(c,d,t,f,v){const o=c.createOscillator(),o2=c.createOscillator(),g=c.createGain(),g2=c.createGain(),lp=c.createBiquadFilter();
