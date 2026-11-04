@@ -46,6 +46,16 @@
   ],
   "redirects": [
     {
+      "source": "/windows",
+      "destination": "https://apps.microsoft.com/detail/9P4W2JHQ03N1",
+      "permanent": false
+    },
+    {
+      "source": "/android",
+      "destination": "https://play.google.com/store/apps/details?id=com.dcode9.dtunes",
+      "permanent": false
+    },
+    {
       "source": "/:path*",
       "has": [
         { "type": "host", "value": "tunes.dverse.fun" }
