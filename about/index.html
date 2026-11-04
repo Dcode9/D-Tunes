@@ -50,6 +50,27 @@ p{font-size:clamp(17px,1.7vw,24px);color:#9ca0a8;max-width:30ch;line-height:1.4;
 .wm{display:block;width:100%;text-align:center;white-space:nowrap;padding:0 .06em;font-weight:800;font-size:clamp(72px,21vw,340px);line-height:.9;letter-spacing:-.05em;margin:20px 0 6px;user-select:none;color:transparent;-webkit-background-clip:text;background-clip:text;background-image:radial-gradient(circle clamp(180px,26vw,420px) at var(--mx,72%) var(--my,35%),#fff 0%,#9fd0ff 32%,rgba(255,255,255,.07) 72%);opacity:0;will-change:opacity,filter}
 .wm.in{opacity:1;transition:opacity .5s}
 .flinks{display:flex;gap:6px 22px;flex-wrap:wrap;justify-content:center;font-size:14px}.flinks a{color:#8a92a3;text-decoration:none}.flinks a:hover,.flinks a:focus-visible{color:#fff}
+
+.pw{position:relative;color:#fff;-webkit-text-fill-color:#fff;transition:color .2s,-webkit-text-fill-color .2s}.pw:hover .period,.live .pw .period,.pw:focus-within .period{opacity:0}
+.pp{all:unset;position:absolute;left:-.3em;right:-.3em;top:-.1em;bottom:-.1em;cursor:pointer}
+.pp .tri{position:absolute;left:50%;bottom:.2em;width:.56em;height:.56em;margin-left:-.28em;opacity:0;transition:opacity .25s;pointer-events:none}
+.pp .tri path{fill:#fff;stroke:#fff;stroke-width:5;stroke-linejoin:round}
+.pp:hover .tri,.pp:focus-visible .tri,.live .pp .tri{opacity:1}
+.pp:focus-visible{outline:2px solid #8fc4ff;outline-offset:6px;border-radius:8px}
+
+.stage{position:relative;width:100%}
+#harp{position:absolute;left:0;top:-24px;width:100%;height:calc(100% + 48px);touch-action:pan-y;cursor:crosshair;z-index:2;display:none}
+.live #harp{display:block}
+#harp:focus-visible{outline:2px solid #8fc4ff;outline-offset:4px;border-radius:12px}
+.hctl{position:absolute;left:0;right:0;bottom:-30px;display:none;justify-content:center;gap:4px 2px;font-size:14px;z-index:3}
+.live .hctl{display:flex}
+.hctl button{all:unset;cursor:pointer;color:#8a92a3;position:relative;font-size:14px}
+.hctl button{display:inline-flex;min-height:44px;align-items:center;padding:0 10px}
+.hctl button:hover,.hctl button:focus-visible{color:#fff}
+.hctl button:focus-visible{outline:2px solid #8fc4ff;outline-offset:3px;border-radius:4px}
+.flinks a{position:relative}
+.flinks{gap:2px 2px;margin:-14px -10px}.flinks a{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:14px 10px;box-sizing:border-box}
+@media(prefers-reduced-motion:reduce){.pp .tri{transition:none}}
 .fnote{font-size:12px;color:#4b5563;margin-top:10px;max-width:none}
 @media(max-width:760px){
  .slide{grid-template-columns:1fr;grid-template-rows:auto 1fr;align-content:center;padding-top:132px;gap:0}.nav{padding:14px 16px}.brand{font-size:17px;gap:8px}.brand img{width:30px;height:30px}.btn{padding:10px 16px;font-size:13px}.dots{right:8px}
@@ -70,8 +91,8 @@ p{font-size:clamp(17px,1.7vw,24px);color:#9ca0a8;max-width:30ch;line-height:1.4;
 <li>Custom recommendations: daily mixes built from what you listen to.</li>
 <li>Vibe Mix: generate a Vibe Mix that fits the moment. Available on Windows &amp; web.</li>
 <li>Offline playback: save tracks and keep listening offline. Available on Windows, coming to Android.</li></ul></section></noscript>
-<section class="end" id="end"><div class="top"><h2>Press play.</h2><p>Ad-free music with high-quality audio. Get D'Tunes on your device.</p><div class="row"><a class="btn dl" href="https://play.google.com/store/apps/details?id=com.dcode9.dtunes">Get it on Google Play</a></div></div>
-<div class="wm" id="wm" aria-hidden="true">D'Tunes</div>
+<section class="end" id="end"><div class="top"><h2>Press play<span class="pw"><span class="period">.</span><button class="pp" id="pp" type="button" aria-expanded="false" aria-label="Play. Unlock the harp"><svg class="tri" viewBox="0 0 100 100" aria-hidden="true"><path d="M31 18 Q25 14 25 22 L25 78 Q25 86 32 82 L83 54 Q90 50 83 46 Z"/></svg></button></span></h2><p>Ad-free music with high-quality audio. Get D'Tunes on your device.</p><div class="row"><a class="btn dl" href="https://play.google.com/store/apps/details?id=com.dcode9.dtunes">Get it on Google Play</a></div></div>
+<div class="stage"><div class="wm" id="wm" aria-hidden="true">D'Tunes</div><canvas id="harp" tabindex="0" role="group" aria-label="Harp. Drag across the strings to play. With a keyboard, use left and right arrows to pick a string and space to pluck."></canvas><div class="hctl"><button id="strum" type="button">Strum</button><button id="sbtn" type="button" aria-pressed="false">Mute</button><button id="cbtn" type="button">Close</button></div></div>
 <div><nav class="flinks" aria-label="Get D'Tunes"><a href="https://play.google.com/store/apps/details?id=com.dcode9.dtunes">Google Play</a><a href="https://apps.microsoft.com/detail/9p4w2jhq03n1">Microsoft Store</a><a href="https://tunes.d-verse.in/">Open the web app</a><a href="/download">All downloads</a></nav></div></section>
 </main>
 <script>
@@ -116,8 +137,62 @@ dd.forEach((d,n)=>d.onclick=()=>{const h=document.querySelector('.snap').offsetH
  if(reduced.matches){wm.classList.add('in');return}
  wm.style.filter='url(#gbw)';ga.setAttribute('stdDeviation',(DIFF*1.4*lite).toFixed(2));gd.setAttribute('scale',(SCAT*lite).toFixed(1));
  new IntersectionObserver((es,io)=>{if(es[0].isIntersecting){wm.classList.add('in');raf=requestAnimationFrame(run);io.disconnect()}},{threshold:.5}).observe(end);
- let px=0,py=0,pend=false;const mv=e=>{const r=wm.getBoundingClientRect(),c=e.touches?e.touches[0]:e;px=(c.clientX-r.left)/r.width*100;py=(c.clientY-r.top)/r.height*100;if(!pend){pend=true;requestAnimationFrame(()=>{pend=false;wm.style.setProperty('--mx',px+'%');wm.style.setProperty('--my',py+'%')})}};
+ let px=0,py=0,pend=false;const mv=e=>{const r=wm.getBoundingClientRect(),c=e.touches?e.touches[0]:e;px=Math.max(0,Math.min(100,(c.clientX-r.left)/r.width*100));py=Math.max(0,Math.min(100,(c.clientY-r.top)/r.height*100));if(!pend){pend=true;requestAnimationFrame(()=>{pend=false;wm.style.setProperty('--mx',px+'%');wm.style.setProperty('--my',py+'%')})}};
  end.addEventListener('pointermove',mv,{passive:true});end.addEventListener('touchmove',mv,{passive:true});})();
+const V={
+ pluck(c,d,t,f,v){const o=c.createOscillator(),o2=c.createOscillator(),g=c.createGain(),g2=c.createGain(),lp=c.createBiquadFilter();
+  o.type='triangle';o.frequency.value=f;o2.type='sine';o2.frequency.value=f*2;g2.gain.value=.22;
+  lp.type='lowpass';lp.Q.value=.7;lp.frequency.setValueAtTime(Math.min(7000,f*9),t);lp.frequency.exponentialRampToValueAtTime(Math.max(500,f*2.2),t+.7);
+  g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(.3*v,t+.006);g.gain.exponentialRampToValueAtTime(.0001,t+1.8);
+  o.connect(lp);o2.connect(g2);g2.connect(lp);lp.connect(g);g.connect(d);o.start(t);o2.start(t);o.stop(t+1.9);o2.stop(t+1.9)},
+ kick(c,d,t,v){const o=c.createOscillator(),g=c.createGain();o.type='sine';o.frequency.setValueAtTime(130,t);o.frequency.exponentialRampToValueAtTime(42,t+.14);
+  g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(.7*v,t+.004);g.gain.exponentialRampToValueAtTime(.0001,t+.38);o.connect(g);g.connect(d);o.start(t);o.stop(t+.4)},
+ hat(c,d,t,v){const n=c.createBufferSource(),len=Math.floor(c.sampleRate*.08),b=c.createBuffer(1,len,c.sampleRate),a=b.getChannelData(0);for(let i=0;i<len;i++)a[i]=Math.random()*2-1;
+  n.buffer=b;const hp=c.createBiquadFilter();hp.type='highpass';hp.frequency.value=7000;const g=c.createGain();g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(.16*v,t+.002);g.gain.exponentialRampToValueAtTime(.0001,t+.06);
+  n.connect(hp);hp.connect(g);g.connect(d);n.start(t);n.stop(t+.09)}
+};
+const Snd={ctx:null,bus:null,master:null,on:false,
+ start(){if(!this.ctx){const C=window.AudioContext||window.webkitAudioContext;if(!C)return false;const c=this.ctx=new C(),comp=c.createDynamicsCompressor(),m=this.master=c.createGain();m.gain.value=0;
+  const bus=this.bus=c.createGain(),dl=c.createDelay(1);dl.delayTime.value=.3;const fb=c.createGain();fb.gain.value=.32;const lp=c.createBiquadFilter();lp.type='lowpass';lp.frequency.value=2200;const wet=c.createGain();wet.gain.value=.3;
+  bus.connect(m);bus.connect(dl);dl.connect(lp);lp.connect(fb);fb.connect(dl);lp.connect(wet);wet.connect(m);m.connect(comp);comp.connect(c.destination)}
+  this.ctx.resume();return true},
+ set(on){if(on&&!this.start())return false;this.on=on;if(this.ctx){const t=this.ctx.currentTime;this.master.gain.cancelScheduledValues(t);this.master.gain.setTargetAtTime(on?.8:0,t,.04)}document.dispatchEvent(new CustomEvent('snd',{detail:on}));return true},
+ play(fn,...a){if(!this.on||!this.ctx)return;fn(this.ctx,this.bus,this.ctx.currentTime+.005,...a)}
+};
+(function(){const end=document.getElementById('end'),cv=document.getElementById('harp'),c=cv.getContext('2d'),wm=document.getElementById('wm');
+ const F=[146.83,164.81,185,220,246.94,293.66,329.63,369.99,440,493.88,587.33,659.25,739.99],n=F.length;
+ let W=0,H=0,px=null,pp=null,kc=-1,raf=0;const S=F.map(()=>({a:0,t:0,g:0})),rp=[];
+ const X=i=>W*(.08+.84*i/(n-1));
+ function size(){const d=Math.min(2,devicePixelRatio||1),r=cv.getBoundingClientRect();W=r.width;H=r.height;cv.width=Math.round(W*d);cv.height=Math.round(H*d);c.setTransform(d,0,0,d,0,0);kick()}
+ function pluck(i,vel,y){const s=S[i];s.a=Math.max(s.a,reduced.matches?0:6+22*vel);s.t=0;s.g=1;Snd.play(V.pluck,F[i],.35+.65*vel);if(!reduced.matches)rp.push({x:X(i),y:y==null?H/2:y,r:4,a:.7});kick()}
+ const pos=e=>{const r=cv.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top,t:e.timeStamp}};
+ cv.addEventListener('pointermove',e=>{const p=pos(e);if(pp){const dt=Math.max(8,p.t-pp.t),v=cl(Math.abs(p.x-pp.x)/dt/1.8);for(let i=0;i<n;i++){const x=X(i);if((pp.x-x)*(p.x-x)<0){const u=(x-pp.x)/(p.x-pp.x);pluck(i,Math.max(.25,v),pp.y+(p.y-pp.y)*u)}}}pp=p;px=p;kick()});
+ const clearPointer=()=>{px=pp=null;kick()};cv.addEventListener('pointerleave',clearPointer);cv.addEventListener('pointercancel',clearPointer);cv.addEventListener('pointerup',e=>{if(e.pointerType!=='mouse')clearPointer()});
+ cv.addEventListener('pointerdown',e=>{const p=pos(e);let bi=0,bd=1e9;for(let i=0;i<n;i++){const d=Math.abs(X(i)-p.x);if(d<bd){bd=d;bi=i}}if(bd<W/n*.6)pluck(bi,.8,p.y);pp=p;px=p});
+ cv.addEventListener('keydown',e=>{if(e.key==='ArrowRight'||e.key==='ArrowLeft'){kc=kc<0?(e.key==='ArrowRight'?0:n-1):Math.max(0,Math.min(n-1,kc+(e.key==='ArrowRight'?1:-1)));e.preventDefault();kick()}else if(e.key===' '||e.key==='Enter'){if(kc<0)kc=0;pluck(kc,.8);e.preventDefault()}});
+ cv.addEventListener('blur',()=>{kc=-1;kick()});
+ document.getElementById('strum').onclick=()=>{for(let i=0;i<n;i++)setTimeout(()=>pluck(i,.7),i*85)};
+ function kick(){if(!raf)raf=requestAnimationFrame(draw)}
+ function draw(){c.clearRect(0,0,W,H);let busy=false;
+  for(let i=0;i<n;i++){const s=S[i],x=X(i),near=px?Math.exp(-Math.pow((px.x-x)/70,2)):0,hot=Math.max(near*.8,s.g,kc===i?.9:0);s.g*=.94;s.a*=.965;s.t++;if(s.a<.15)s.a=0;
+   const amp=s.a*Math.cos(s.t*.55),gr=c.createLinearGradient(0,0,0,H);gr.addColorStop(0,`rgba(160,210,255,${.1+hot*.7})`);gr.addColorStop(.5,`rgba(235,246,255,${.2+hot*.8})`);gr.addColorStop(1,`rgba(160,210,255,${.1+hot*.7})`);
+   c.strokeStyle=gr;c.lineWidth=1.2+hot*1.6;c.shadowColor='rgba(120,180,255,.9)';c.shadowBlur=hot*18;c.beginPath();const m=22;for(let k=0;k<=m;k++){const u=k/m,xx=x+amp*Math.sin(Math.PI*u);k?c.lineTo(xx,u*H):c.moveTo(xx,0)}c.stroke();
+   if(s.a>0||s.g>.01||near>.01)busy=true}
+  c.shadowBlur=0;for(let k=rp.length-1;k>=0;k--){const r=rp[k];r.r+=3.2;r.a*=.93;c.strokeStyle=`rgba(170,215,255,${r.a})`;c.lineWidth=1.5;c.beginPath();c.arc(r.x,r.y,r.r,0,6.283);c.stroke();if(r.a<.02)rp.splice(k,1)}
+  raf=(busy||px||rp.length)?requestAnimationFrame(draw):0}
+ addEventListener('resize',size);window.__harpSize=size;})();
+
+(function(){const end=document.getElementById('end'),pp=document.getElementById('pp'),sb=document.getElementById('sbtn'),cv=document.getElementById('harp');
+ function open(){end.classList.add('live');pp.setAttribute('aria-expanded','true');window.__harpSize&&window.__harpSize();Snd.set(true);Snd.play(V.pluck,293.66,.5);cv.focus({preventScroll:true})}
+ function close(){end.classList.remove('live');pp.setAttribute('aria-expanded','false');Snd.set(false)}
+ pp.onclick=()=>end.classList.contains('live')?close():open();
+ document.getElementById('cbtn').onclick=()=>{close();pp.focus({preventScroll:true})};
+ sb.onclick=()=>{Snd.set(!Snd.on)};
+ document.addEventListener('snd',e=>{sb.textContent=e.detail?'Mute':'Sound on';sb.setAttribute('aria-pressed',e.detail?'true':'false')});
+ document.addEventListener('visibilitychange',()=>{if(document.hidden&&Snd.on)Snd.set(false)});
+ addEventListener('keydown',e=>{if(e.key==='Escape'&&end.classList.contains('live')){close();pp.focus({preventScroll:true})}});
+ new IntersectionObserver(es=>{if(!es[0].isIntersecting&&Snd.on)Snd.set(false)},{threshold:0}).observe(end);
+})();
 </script><div class="ios" id="ios"><div><h3>Add D'Tunes to your Home Screen</h3><ol><li>Open <b>tunes.d-verse.in</b> in Safari.</li><li>Tap the Share button.</li><li>Choose <b>Add to Home Screen</b>.</li><li>Tap <b>Add</b>.</li></ol><button id="iosx">Got it</button></div></div>
 <script>
 const PLAY="https://play.google.com/store/apps/details?id=com.dcode9.dtunes",WEB="https://tunes.d-verse.in/",WINDOWS_STORE_URL="https://apps.microsoft.com/detail/9p4w2jhq03n1";
