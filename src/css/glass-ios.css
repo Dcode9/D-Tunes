@@ -1,0 +1,240 @@
+/* ============================================================
+   D'Tunes - iOS Liquid Glass (branch: ios-glass-redesign)
+   Applies only when html[data-os="ios"] is set by the inline
+   detector in index.html. Android + desktop keep the classic UI.
+   Recipe adapted from ReactBits GlassSurface (on Safari it renders
+   its backdrop-filter fallback path): translucent fill, heavy blur
+   + saturation, hairline light border, inset specular highlights.
+   ============================================================ */
+
+html[data-os="ios"] {
+    --ios-glass-fill: rgba(255, 255, 255, 0.09);
+    --ios-glass-deep: rgba(22, 22, 28, 0.55);
+    --ios-glass-line: rgba(255, 255, 255, 0.22);
+    --ios-glass-hi:
+        inset 0 1px 0 rgba(255, 255, 255, 0.28),
+        inset 0 -1px 0 rgba(255, 255, 255, 0.07);
+    --ios-glass-drop:
+        0 14px 34px rgba(0, 0, 0, 0.42),
+        0 2px 8px rgba(0, 0, 0, 0.22);
+    --ios-glass-fx: blur(22px) saturate(1.8) brightness(1.16);
+}
+
+/* Ambient colour wash so the glass has light to bend */
+html[data-os="ios"] body {
+    background:
+        radial-gradient(130% 55% at 50% -12%, color-mix(in srgb, var(--accent-color, #22d3ee) 16%, transparent), transparent 62%),
+        radial-gradient(90% 45% at 88% 112%, rgba(45, 212, 191, 0.09), transparent 58%),
+        radial-gradient(70% 40% at 8% 108%, rgba(34, 211, 238, 0.06), transparent 55%),
+        #050505;
+}
+
+/* Every glass panel gets the brighter iOS material */
+html[data-os="ios"] .glass-panel {
+    background: var(--ios-glass-fill);
+    backdrop-filter: var(--ios-glass-fx);
+    -webkit-backdrop-filter: var(--ios-glass-fx);
+    border: 1px solid var(--ios-glass-line);
+    box-shadow: var(--ios-glass-hi);
+}
+
+/* Specular top-light shared by the floating chrome */
+html[data-os="ios"] header.glass-panel::after,
+html[data-os="ios"] #mobile-nav::after,
+html[data-os="ios"] #player-card::after,
+html[data-os="ios"] #info-island::after,
+html[data-os="ios"] #queue-preview-pill::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(180deg,
+        rgba(255, 255, 255, 0.13) 0%,
+        rgba(255, 255, 255, 0.03) 34%,
+        rgba(255, 255, 255, 0) 55%);
+}
+
+/* ---- Header ---- */
+html[data-os="ios"] header.glass-panel {
+    background: var(--ios-glass-deep);
+    backdrop-filter: blur(24px) saturate(1.8) brightness(1.2);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8) brightness(1.2);
+    border: 1px solid var(--ios-glass-line);
+    box-shadow: var(--ios-glass-hi), var(--ios-glass-drop);
+}
+
+/* Phone: lift the header off the edges into a floating island */
+html[data-os="ios"][data-ui-mode="mobile"] header.glass-panel {
+    top: calc(8px + env(safe-area-inset-top)) !important;
+    left: 12px !important;
+    right: 12px !important;
+    border-radius: 22px !important;
+    border: 1px solid var(--ios-glass-line) !important;
+    padding-top: 10px !important;
+    padding-bottom: 10px !important;
+}
+
+/* ---- Bottom nav -> floating glass pill ---- */
+html[data-os="ios"] #mobile-nav {
+    background: var(--ios-glass-deep);
+    backdrop-filter: blur(24px) saturate(1.8) brightness(1.2);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8) brightness(1.2);
+    border: 1px solid var(--ios-glass-line);
+    box-shadow: var(--ios-glass-hi), var(--ios-glass-drop);
+}
+
+html[data-os="ios"][data-ui-mode="mobile"] #mobile-nav {
+    left: 14px !important;
+    right: 14px !important;
+    bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+    border-radius: 24px;
+    padding: 8px 10px !important;
+    background: var(--ios-glass-deep) !important;
+}
+
+html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open #mobile-nav {
+    transform: translateY(calc(100% + 20px)) !important;
+}
+
+html[data-os="ios"] #mobile-nav button {
+    transition: transform 0.14s ease, color 0.2s ease;
+}
+html[data-os="ios"] #mobile-nav button:active {
+    transform: scale(0.9);
+}
+
+/* ---- Compact player ---- */
+html[data-os="ios"][data-ui-mode="mobile"] body:not(.mobile-keyboard-open):not(.mobile-player-open) #player-footer {
+    bottom: calc(88px + env(safe-area-inset-bottom)) !important;
+}
+
+html[data-os="ios"] #player-card {
+    position: relative;
+    border-radius: 26px;
+    background: rgba(26, 26, 32, 0.55);
+    backdrop-filter: blur(24px) saturate(1.8) brightness(1.2);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8) brightness(1.2);
+    border: 1px solid var(--ios-glass-line);
+    box-shadow: var(--ios-glass-hi), 0 20px 44px rgba(0, 0, 0, 0.5);
+}
+
+html[data-os="ios"] #info-island {
+    position: relative;
+    border-radius: 22px;
+    background: rgba(255, 255, 255, 0.10);
+    backdrop-filter: var(--ios-glass-fx);
+    -webkit-backdrop-filter: var(--ios-glass-fx);
+    border: 1px solid var(--ios-glass-line);
+    box-shadow: var(--ios-glass-hi), var(--ios-glass-drop);
+}
+
+html[data-os="ios"] #queue-preview-pill {
+    position: relative;
+    background: rgba(255, 255, 255, 0.10);
+    backdrop-filter: var(--ios-glass-fx);
+    -webkit-backdrop-filter: var(--ios-glass-fx);
+    border: 1px solid var(--ios-glass-line);
+    box-shadow: var(--ios-glass-hi);
+}
+
+/* Play button keeps its white disc, gains a glassy lift */
+html[data-os="ios"] #btn-play {
+    box-shadow: 0 10px 28px rgba(255, 255, 255, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+
+/* ---- Fullscreen mobile player ---- */
+html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open #player-footer {
+    background: radial-gradient(circle at 50% 8%, color-mix(in srgb, var(--accent-color, #22d3ee) 30%, #18181f), #08080b 74%) !important;
+    backdrop-filter: blur(30px) saturate(1.6) !important;
+    -webkit-backdrop-filter: blur(30px) saturate(1.6) !important;
+}
+
+html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open #album-art-wrapper,
+html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open .album-art-card,
+html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open .album-art-card img {
+    border-radius: 24px !important;
+}
+
+/* Segmented tabs (Playing / Queue / History / Lyrics) */
+html[data-os="ios"] .mobile-player-tabs {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16) !important;
+    backdrop-filter: blur(16px) saturate(1.6);
+    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+}
+html[data-os="ios"] .mobile-tab-btn.active {
+    box-shadow: 0 2px 12px color-mix(in srgb, var(--accent-color) 45%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Round glass buttons in the expanded player header */
+html[data-os="ios"] .mobile-player-header > button {
+    background: rgba(255, 255, 255, 0.10);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(14px) saturate(1.6);
+    -webkit-backdrop-filter: blur(14px) saturate(1.6);
+}
+
+/* ---- Menus & modals ---- */
+html[data-os="ios"] #profile-dropdown,
+html[data-os="ios"] #context-menu {
+    background: rgba(24, 24, 30, 0.62);
+    backdrop-filter: blur(24px) saturate(1.8) brightness(1.2);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8) brightness(1.2);
+    border: 1px solid var(--ios-glass-line);
+    border-radius: 20px;
+    box-shadow: var(--ios-glass-hi), 0 18px 44px rgba(0, 0, 0, 0.52);
+}
+
+html[data-os="ios"] #profile-modal .glass-panel,
+html[data-os="ios"] #playlist-modal .glass-panel,
+html[data-os="ios"] #playlist-selector-modal .glass-panel,
+html[data-os="ios"] #equalizer-modal .glass-panel,
+html[data-os="ios"] #spotify-modal .glass-panel {
+    background: rgba(24, 24, 30, 0.60);
+    backdrop-filter: blur(28px) saturate(1.8) brightness(1.2);
+    -webkit-backdrop-filter: blur(28px) saturate(1.8) brightness(1.2);
+    border: 1px solid var(--ios-glass-line);
+    border-radius: 28px;
+    box-shadow: var(--ios-glass-hi), 0 26px 64px rgba(0, 0, 0, 0.55);
+}
+
+/* ---- Search (mobile shell + dropdown) ---- */
+html[data-os="ios"][data-ui-mode="mobile"] body.mobile-search-open #search-shell {
+    background: rgba(22, 22, 28, 0.60);
+    backdrop-filter: blur(24px) saturate(1.8) brightness(1.2);
+    -webkit-backdrop-filter: blur(24px) saturate(1.8) brightness(1.2);
+    border: 1px solid var(--ios-glass-line);
+    box-shadow: var(--ios-glass-hi);
+}
+
+html[data-os="ios"][data-ui-mode="mobile"] #search-dropdown .search-blur-bg {
+    background: rgba(16, 16, 22, 0.72);
+    backdrop-filter: blur(26px) saturate(1.8) brightness(1.2);
+    -webkit-backdrop-filter: blur(26px) saturate(1.8) brightness(1.2);
+    border: 1px solid var(--ios-glass-line);
+    border-radius: 1.5rem;
+}
+
+html[data-os="ios"][data-ui-mode="mobile"] #search-dropdown .search-results-content {
+    background: rgba(16, 16, 22, 0.78);
+    backdrop-filter: blur(26px) saturate(1.8) brightness(1.15);
+    -webkit-backdrop-filter: blur(26px) saturate(1.8) brightness(1.15);
+    border: 1px solid var(--ios-glass-line);
+    border-radius: 1.5rem;
+}
+
+/* Respect reduced transparency */
+@media (prefers-reduced-transparency: reduce) {
+    html[data-os="ios"] .glass-panel,
+    html[data-os="ios"] header.glass-panel,
+    html[data-os="ios"] #mobile-nav,
+    html[data-os="ios"] #player-card,
+    html[data-os="ios"] #info-island,
+    html[data-os="ios"] #profile-dropdown,
+    html[data-os="ios"] #context-menu {
+        background: rgba(16, 16, 22, 0.97);
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+    }
+}
