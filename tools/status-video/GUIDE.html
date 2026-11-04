@@ -3,21 +3,21 @@
 h1{font-size:21pt;margin:0 0 4px}h2{break-after:avoid;font-size:13pt;margin:20px 0 6px;color:#16407a}p{margin:4px 0}
 .sub{color:#556;margin-bottom:10px}code,pre{font-family:Menlo,Consolas,monospace;font-size:9.8pt;background:#f1f4f9;border-radius:4px}
 code{padding:1px 4px}pre{padding:9px 11px;white-space:pre-wrap;margin:6px 0}li{margin:3px 0}.note{border-left:3px solid #16407a;padding:2px 10px;background:#f6f8fc;margin:10px 0}
-</style><h1>Rebuild the D'Tunes Status video</h1><div class=sub>Source: tools/status-video in the D-Tunes repo. Output: 30.09s, 1080x1920, 24fps (v8).</div>
+</style><h1>Rebuild the D'Tunes Status video</h1><div class=sub>Source: tools/status-video in the D-Tunes repo. Output: 30.09s, 1080x1920, 24fps (v9).</div>
 <h2>1. What you need</h2>
 <p>Google Chrome, Python 3 (standard library only) and ffmpeg. The soundtrack MP3 is not in the repo. Use the same file: <code>audio-3ae9e05b.mp3</code> (54.12s).</p>
 <h2>2. Build</h2>
 <pre>cd tools/status-video
 ./build.sh /path/to/audio-3ae9e05b.mp3 dtunes_status.mp4
 # Windows: python build.py C:\path\to\audio-3ae9e05b.mp3 dtunes_status.mp4</pre>
-<p>It takes about 7 minutes. Chrome draws each of the 722 frames from <code>scene.js</code>; the audio is the first 30.09s with a fade out from 23.09 to 30.09; ffmpeg joins them.</p>
+<p>It takes about 6 minutes. Chrome draws each of the 722 frames from <code>scene.js</code>; the audio is the first 30.09s with a fade out from 23.09 to 30.09; ffmpeg joins them.</p>
 <h2>3. Check it</h2>
 <p>The build is deterministic for one Chrome and ffmpeg version. Other versions can differ by a few pixels. Compare by eye with the delivered video, especially the D'Verse ending (from 23.3s).</p>
 <h2>4. Post it as a WhatsApp Status</h2>
 <ol><li>Move the MP4 to your phone.</li><li>WhatsApp, Updates tab, add a status, pick the video from the gallery.</li><li>Send it to your contacts. The video has no sound effects, only the soundtrack.</li></ol>
 <h2>Change something</h2>
-<ul><li>Copy: the <code>SC</code> list in <code>scene.js</code> (kicker, headline lines, subtitle per scene); intro and card text are in <code>introPass</code>, <code>cardPass</code> and <code>boot</code>.</li>
-<li>Timing and motion: the timeline section of <code>scene.js</code> (scene starts <code>t0</code>, lengths <code>sd</code>, entrance style <code>enter</code>).</li>
+<ul><li>Copy: the <code>SC</code> list in <code>scene.js</code> (headline lines and subtitle per scene); intro and card text are in <code>intro</code>, <code>card</code> and <code>boot</code>.</li>
+<li>Timing and motion: scene starts in <code>SCN</code>; each object's spot, size and arc in <code>OBJS</code>.</li>
 <li>Look at one moment: <code>python3 build.py --at 25.9</code>, or serve the folder and open <code>scene.html?t=25.9</code> in Chrome.</li>
 <li>Ending: <code>endPass</code> in <code>scene.js</code>, a port of the D'Verse page's light engine and text effect.</li></ul>
-<div class=note>Vibe Mix and offline are tagged "Windows &amp; web" in the video because they are not confirmed on Android. Change that only after the Android build is checked.</div>
+<div class=note>Vibe Mix and offline are marked "Windows &amp; web" in their subtitles because they are not confirmed on Android. Change that only after the Android build is checked.</div>
