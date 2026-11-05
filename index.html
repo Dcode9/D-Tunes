@@ -198,8 +198,8 @@
             <h3 class="text-xl font-medium text-white mb-4 flex-shrink-0">Edit Profile</h3>
             <input type="text" id="edit-username-input" placeholder="Your Name" class="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white mb-6 focus:outline-none focus:border-[var(--accent-color)] transition flex-shrink-0" autocomplete="off" maxlength="20">
             <div class="flex justify-end gap-3 pt-2">
-                <button onclick="ui.toggleProfileModal(false)" class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition font-medium">Cancel</button>
-                <button onclick="ui.saveProfile()" class="px-6 py-2 rounded-lg bg-[var(--accent-color)] text-black font-bold hover:scale-105 transition shadow-lg shadow-cyan-500/30">Save</button>
+                <button onclick="ui.toggleProfileModal(false)" class="px-4 py-2 rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition font-medium">Cancel</button>
+                <button onclick="ui.saveProfile()" class="px-6 py-2 rounded-full bg-[var(--accent-color)] text-black font-bold hover:scale-105 transition shadow-lg shadow-cyan-500/30">Save</button>
             </div>
         </div>
     </div>
@@ -254,8 +254,8 @@
             </div>
 
             <div class="flex justify-end gap-3 border-t border-white/5 pt-4 flex-shrink-0">
-                <button onclick="ui.toggleModal(false)" class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition font-medium">Cancel</button>
-                <button onclick="ui.createPlaylist()" class="px-6 py-2 rounded-lg bg-[var(--accent-color)] text-black font-bold hover:scale-105 transition shadow-lg shadow-cyan-500/30">Create</button>
+                <button onclick="ui.toggleModal(false)" class="px-4 py-2 rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition font-medium">Cancel</button>
+                <button onclick="ui.createPlaylist()" class="px-6 py-2 rounded-full bg-[var(--accent-color)] text-black font-bold hover:scale-105 transition shadow-lg shadow-cyan-500/30">Create</button>
             </div>
         </div>
     </div>
@@ -329,8 +329,8 @@
                     </button>
                 </div>
                 <div class="flex items-center gap-2">
-                    <button type="button" onclick="ui.toggleVibeMixModal(false)" class="px-4 py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition">Cancel</button>
-                    <button type="button" id="btn-create-vibe-mix" onclick="ui.submitVibeMix()" class="px-6 py-2.5 rounded-xl bg-[var(--accent-color)] text-black text-xs font-black hover:scale-105 transition shadow-lg shadow-cyan-500/25 flex items-center gap-2 cursor-pointer">
+                    <button type="button" onclick="ui.toggleVibeMixModal(false)" class="px-4 py-2.5 rounded-full bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition">Cancel</button>
+                    <button type="button" id="btn-create-vibe-mix" onclick="ui.submitVibeMix()" class="px-6 py-2.5 rounded-full bg-[var(--accent-color)] text-black text-xs font-black hover:scale-105 transition shadow-lg shadow-cyan-500/25 flex items-center gap-2 cursor-pointer">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                         <span>Curate Vibe</span>
                     </button>
@@ -344,7 +344,7 @@
         <div class="glass-panel p-6 rounded-2xl w-full max-w-sm shadow-2xl border border-white/10">
             <h3 class="text-xl font-medium text-white mb-4" id="pl-sel-title">Add to Playlist</h3>
             <div id="playlist-selector-list" class="flex flex-col gap-2 max-h-60 overflow-y-auto custom-scrollbar mb-4"></div>
-            <button onclick="document.getElementById('playlist-selector-modal').classList.add('hidden')" class="w-full px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition font-medium">Cancel</button>
+            <button onclick="document.getElementById('playlist-selector-modal').classList.add('hidden')" class="w-full px-4 py-2 rounded-full text-gray-400 hover:text-white hover:bg-white/10 transition font-medium">Cancel</button>
         </div>
     </div>
 
@@ -431,11 +431,11 @@
 
             <!-- Bottom Actions -->
             <div id="sp-actions-bar" class="hidden justify-between items-center gap-3 border-t border-white/5 pt-4 mt-3 flex-shrink-0">
-                <button onclick="spotifyImporterWeb.playImported()" class="flex-1 py-2.5 rounded-xl bg-[var(--accent-color)] text-black text-xs font-black hover:scale-105 transition shadow-lg shadow-cyan-500/25 flex items-center justify-center gap-1.5">
+                <button onclick="spotifyImporterWeb.playImported()" class="flex-1 py-2.5 rounded-full bg-[var(--accent-color)] text-black text-xs font-black hover:scale-105 transition shadow-lg shadow-cyan-500/25 flex items-center justify-center gap-1.5">
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                     <span>Play Now</span>
                 </button>
-                <button onclick="spotifyImporterWeb.saveAsPlaylist()" class="flex-1 py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition flex items-center justify-center gap-1.5">
+                <button onclick="spotifyImporterWeb.saveAsPlaylist()" class="flex-1 py-2.5 rounded-full bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition flex items-center justify-center gap-1.5">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                     <span>Save Playlist</span>
                 </button>
@@ -481,7 +481,7 @@
 
             <div class="flex items-center gap-2 pt-2 border-t border-white/10">
                 <input type="number" id="custom-timer-input" min="1" max="300" placeholder="Custom mins" class="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-[var(--accent-color)]">
-                <button onclick="const m = parseInt(document.getElementById('custom-timer-input').value); if(m > 0) sleepTimer.start(m);" class="px-4 py-2 rounded-xl bg-[var(--accent-color)] text-black text-xs font-bold hover:scale-105 transition">Set</button>
+                <button onclick="const m = parseInt(document.getElementById('custom-timer-input').value); if(m > 0) sleepTimer.start(m);" class="px-4 py-2 rounded-full bg-[var(--accent-color)] text-black text-xs font-bold hover:scale-105 transition">Set</button>
             </div>
         </div>
     </div>
@@ -535,8 +535,8 @@
             </div>
 
             <div class="flex justify-end gap-3 border-t border-white/10 pt-4 mt-3 flex-shrink-0">
-                <button onclick="ui.togglePlaylistEditorModal(false)" class="px-4 py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition">Cancel</button>
-                <button onclick="ui.savePlaylistEditorChanges()" class="px-6 py-2.5 rounded-xl bg-[var(--accent-color)] text-black text-xs font-black hover:scale-105 transition shadow-lg shadow-cyan-500/25">Save Changes</button>
+                <button onclick="ui.togglePlaylistEditorModal(false)" class="px-4 py-2.5 rounded-full bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition">Cancel</button>
+                <button onclick="ui.savePlaylistEditorChanges()" class="px-6 py-2.5 rounded-full bg-[var(--accent-color)] text-black text-xs font-black hover:scale-105 transition shadow-lg shadow-cyan-500/25">Save Changes</button>
             </div>
         </div>
     </div>
@@ -703,7 +703,7 @@
             </div>
 
             <div class="flex justify-end gap-3 border-t border-white/5 pt-4 mt-3 flex-shrink-0">
-                <button onclick="ui.toggleChangelogModal(false)" class="w-full py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition">Got it</button>
+                <button onclick="ui.toggleChangelogModal(false)" class="w-full py-2.5 rounded-full bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition">Got it</button>
             </div>
         </div>
     </div>
@@ -809,7 +809,7 @@
                 <div class="px-3 py-2 border-b border-white/10">
                     <p id="dverse-account-label" class="text-xs font-bold text-white truncate">D'Verse Cloud</p>
                     <p id="dverse-account-status" class="text-[11px] text-gray-400 leading-4 mt-0.5">Not signed in</p>
-                    <button id="dverse-auth-button" class="w-full mt-2 rounded-lg bg-[var(--accent-color)] text-black text-xs font-black py-2 hover:bg-[var(--accent-color-2)] transition" onclick="cloudLibrary.toggleAuth()">Sign in</button>
+                    <button id="dverse-auth-button" class="w-full mt-2 rounded-full bg-[var(--accent-color)] text-black text-xs font-black py-2 hover:bg-[var(--accent-color-2)] transition" onclick="cloudLibrary.toggleAuth()">Sign in</button>
                 </div>
                 <button class="w-full text-left px-3 py-2 mt-1 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-lg transition flex items-center gap-2" onclick="ui.toggleSleepTimerModal(true); document.getElementById('profile-dropdown').classList.add('hidden')">
                     <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
@@ -1120,11 +1120,11 @@
                                     </button>
                                 </div>
                                 <div class="flex items-center gap-2">
-                                    <button id="playlist-play-next" class="flex-1 py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition flex items-center justify-center gap-1.5" title="Play playlist next">
+                                    <button id="playlist-play-next" class="flex-1 py-2.5 rounded-full bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition flex items-center justify-center gap-1.5" title="Play playlist next">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
                                         <span>Play Next</span>
                                     </button>
-                                    <button id="playlist-add-queue" class="flex-1 py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition flex items-center justify-center gap-1.5" title="Add playlist to queue">
+                                    <button id="playlist-add-queue" class="flex-1 py-2.5 rounded-full bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition flex items-center justify-center gap-1.5" title="Add playlist to queue">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
                                         <span>Add Queue</span>
                                     </button>
@@ -1174,11 +1174,11 @@
                                     <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play Album
                                 </button>
                                 <div class="flex items-center gap-2">
-                                    <button id="album-play-next" class="flex-1 py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition flex items-center justify-center gap-1.5">
+                                    <button id="album-play-next" class="flex-1 py-2.5 rounded-full bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition flex items-center justify-center gap-1.5">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
                                         <span>Play Next</span>
                                     </button>
-                                    <button id="album-add-queue" class="flex-1 py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition flex items-center justify-center gap-1.5">
+                                    <button id="album-add-queue" class="flex-1 py-2.5 rounded-full bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition flex items-center justify-center gap-1.5">
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
                                         <span>Add Queue</span>
                                     </button>
@@ -1646,7 +1646,7 @@
             <div class="flex items-center justify-between border-t border-white/10 pt-4 mt-3 flex-shrink-0">
                 <span class="text-[10px] text-gray-400">Reports are reviewed promptly by safety engineers.</span>
                 <div class="flex items-center gap-2">
-                    <button type="button" onclick="aiReportManager.closeReportModal()" class="px-4 py-2 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition cursor-pointer">Cancel</button>
+                    <button type="button" onclick="aiReportManager.closeReportModal()" class="px-4 py-2 rounded-full bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition cursor-pointer">Cancel</button>
                     <button type="button" id="btn-submit-ai-report" onclick="aiReportManager.submitReport()" class="px-5 py-2 rounded-xl bg-amber-500 text-black text-xs font-black hover:scale-105 active:scale-95 transition shadow-lg shadow-amber-500/25 flex items-center gap-1.5 cursor-pointer">
                         <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-2h-2v2zm0-4h2V7h-2v6z"/></svg>
                         <span>Submit Safety Report</span>
@@ -1740,8 +1740,8 @@
             <div class="flex items-center justify-between border-t border-white/10 pt-4 mt-3 flex-shrink-0">
                 <span class="text-[10px] text-gray-400">Published to the verified community stream.</span>
                 <div class="flex items-center gap-2">
-                    <button type="button" onclick="reviewsManager.closeSubmitModal()" class="px-4 py-2 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition cursor-pointer">Cancel</button>
-                    <button type="button" id="btn-submit-review" onclick="reviewsManager.submitReview()" class="px-5 py-2 rounded-xl bg-[var(--accent-color)] text-black text-xs font-black hover:scale-105 active:scale-95 transition shadow-lg shadow-cyan-500/25 flex items-center gap-1.5 cursor-pointer">
+                    <button type="button" onclick="reviewsManager.closeSubmitModal()" class="px-4 py-2 rounded-full bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition cursor-pointer">Cancel</button>
+                    <button type="button" id="btn-submit-review" onclick="reviewsManager.submitReview()" class="px-5 py-2 rounded-full bg-[var(--accent-color)] text-black text-xs font-black hover:scale-105 active:scale-95 transition shadow-lg shadow-cyan-500/25 flex items-center gap-1.5 cursor-pointer">
                         <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
                         <span>Publish Review</span>
                     </button>

@@ -1805,3 +1805,44 @@ button, input[type="range"], a, .scroll-card, .song-pill {
 .reveal-text.revealed {
     opacity: 1;
 }
+
+        /* --- Brand cohesion: display headings, hero kicker, sub-md header --- */
+        #main-container h2 {
+            font-weight: 600;
+            letter-spacing: -0.02em;
+        }
+
+        .hero-kicker {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 12px;
+            border-radius: 999px;
+            background: rgba(120, 180, 255, 0.10);
+            border: 1px solid rgba(120, 180, 255, 0.28);
+            color: var(--accent-color);
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+        }
+
+        .hero-title {
+            background: linear-gradient(100deg, #5d6068 0%, #8a8d94 30%, #fff 78%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent !important;
+        }
+
+        /* Desktop-mode below md: park the floating search under the header row
+           instead of overlapping the brand. */
+        @media (max-width: 767px) {
+            html:not([data-ui-mode="mobile"]) #search-positioner {
+                top: 54px;
+                padding: 4px 12px;
+            }
+            html:not([data-ui-mode="mobile"]) #main-container {
+                padding-top: 118px;
+            }
+        }
