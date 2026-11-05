@@ -22,7 +22,7 @@ test('Beta 1.4 Contract: Version bumps across files', (t) => {
     const uiContent = fs.readFileSync(uiPath, 'utf8');
 
     // 1. index.html title and beta badge
-    assert.match(indexContent, /<title>D'Tunes \(Beta 1\.4\)<\/title>/, 'index.html title must be Beta 1.4');
+    assert.match(indexContent, /<title>D'Tunes<\/title>/, 'index.html title must be D\'Tunes only');
     assert.match(indexContent, /class="beta-label[^"]*"[^>]*>Beta 1\.4<\/button>/, 'Header beta badge must show Beta 1.4');
 
     // 2. Changelog contains Beta 1.4 (0.1.4)

@@ -13,7 +13,7 @@ test('Beta 1.3.1: Version bump and compact Changelog modal formatting', (t) => {
     const indexContent = fs.readFileSync(indexPath, 'utf8');
 
     // 1. Title and header badge
-    assert.match(indexContent, /<title>D'Tunes \(Beta 1\.[34](\.1)?\)<\/title>/, 'Page title must show Beta version');
+    assert.match(indexContent, /<title>D'Tunes<\/title>/, 'Page title must be D\'Tunes only');
     assert.match(indexContent, /class="beta-label[^"]*"[^>]*>Beta 1\.[34](\.1)?<\/button>/, 'Header beta badge must show Beta version');
 
     // 2. Changelog modal has Beta 1.3.1 patch section
