@@ -23,9 +23,9 @@ html[data-os="ios"] {
 /* Ambient colour wash so the glass has light to bend */
 html[data-os="ios"] body {
     background:
-        radial-gradient(130% 55% at 50% -12%, color-mix(in srgb, var(--accent-color, #22d3ee) 16%, transparent), transparent 62%),
+        radial-gradient(130% 55% at 50% -12%, color-mix(in srgb, var(--accent-color, #7cc0ff) 16%, transparent), transparent 62%),
         radial-gradient(90% 45% at 88% 112%, rgba(45, 212, 191, 0.09), transparent 58%),
-        radial-gradient(70% 40% at 8% 108%, rgba(34, 211, 238, 0.06), transparent 55%),
+        radial-gradient(70% 40% at 8% 108%, rgba(120, 180, 255, 0.06), transparent 55%),
         #050505;
 }
 
@@ -145,7 +145,7 @@ html[data-os="ios"] #btn-play {
 
 /* ---- Fullscreen mobile player ---- */
 html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open #player-footer {
-    background: radial-gradient(circle at 50% 8%, color-mix(in srgb, var(--accent-color, #22d3ee) 30%, #18181f), #08080b 74%) !important;
+    background: radial-gradient(circle at 50% 8%, color-mix(in srgb, var(--accent-color, #7cc0ff) 30%, #18181f), #08080b 74%) !important;
     backdrop-filter: blur(30px) saturate(1.6) !important;
     -webkit-backdrop-filter: blur(30px) saturate(1.6) !important;
 }

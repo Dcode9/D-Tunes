@@ -751,13 +751,13 @@
 
     overlay.innerHTML = `
       <div style="background:rgba(24,24,30,0.96);border:1px solid rgba(255,255,255,0.14);border-radius:1.5rem;padding:2.5rem 2.25rem;max-width:440px;width:100%;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.7);cursor:default;">
-        <div style="width:60px;height:60px;border-radius:50%;background:rgba(34,211,238,0.15);color:#22d3ee;display:inline-flex;align-items:center;justify-content:center;font-size:30px;margin-bottom:1.25rem;border:1px solid rgba(34,211,238,0.3);">✓</div>
+        <div style="width:60px;height:60px;border-radius:50%;background:rgba(120,180,255,0.15);color:#7cc0ff;display:inline-flex;align-items:center;justify-content:center;font-size:30px;margin-bottom:1.25rem;border:1px solid rgba(34,211,238,0.3);">✓</div>
         <h2 style="font-size:1.4rem;font-weight:700;margin:0 0 0.5rem;color:#ffffff;">Signed In Successfully</h2>
         <p style="color:#a1a1aa;font-size:0.95rem;margin:0 0 1.75rem;line-height:1.5;">
           Redirecting back to your <strong>D'Tunes app</strong>. Your library, playlists, and history are now syncing...
         </p>
         <div style="display:flex;flex-direction:column;gap:0.75rem;">
-          <a id="dtunes-open-app-btn" href="${primaryUrl}" style="display:block;background:#22d3ee;color:#09090b;font-weight:700;font-size:0.95rem;padding:0.8rem 1.5rem;border-radius:9999px;text-decoration:none;box-shadow:0 4px 20px rgba(34,211,238,0.35);cursor:pointer;">Open D'Tunes App</a>
+          <a id="dtunes-open-app-btn" href="${primaryUrl}" style="display:block;background:#7cc0ff;color:#09090b;font-weight:700;font-size:0.95rem;padding:0.8rem 1.5rem;border-radius:9999px;text-decoration:none;box-shadow:0 4px 20px rgba(34,211,238,0.35);cursor:pointer;">Open D'Tunes App</a>
           <button id="dtunes-dismiss-handoff-btn" style="background:transparent;color:#71717a;border:none;font-size:0.85rem;cursor:pointer;padding:0.5rem;">Continue in Web Player</button>
         </div>
       </div>

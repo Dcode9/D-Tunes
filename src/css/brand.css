@@ -1,0 +1,187 @@
+/* D'Tunes brand design system - shared across site pages.
+   Reference: approved about page (pitch black, icy blue, Plus Jakarta Sans). */
+@font-face {
+  font-family: 'J';
+  src: url('../../assets/jakarta.woff2') format('woff2');
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+:root {
+  --bg: #000;
+  --text: #fff;
+  --muted: #9ca0a8;
+  --soft: #8a92a3;
+  --faint: #6b6f78;
+  --accent: #7cc0ff;
+  --accent-strong: #5aa9f7;
+  --accent-ink: #04121f;
+  --focus: #8fc4ff;
+  --panel: rgba(255, 255, 255, 0.04);
+  --panel-2: rgba(255, 255, 255, 0.02);
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --radius: 20px;
+  --glow: rgba(120, 180, 255, 0.18);
+  --grad-text: linear-gradient(100deg, #5d6068 0%, #8a8d94 30%, #fff 78%);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'J', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  line-height: 1.5;
+}
+
+::selection { background: rgba(120, 180, 255, 0.3); color: #fff; }
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+a { color: inherit; text-decoration: none; }
+
+/* Gradient display text */
+.grad-text {
+  background: var(--grad-text);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  padding-bottom: 0.14em;
+  margin-bottom: -0.14em;
+}
+
+.kicker {
+  font-size: 14px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #8a8d94;
+  font-weight: 500;
+}
+
+/* Pill buttons (about page language) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 12px 22px;
+  border-radius: 999px;
+  background: #fff;
+  color: #000;
+  font-weight: 600;
+  font-size: 15px;
+  font-family: inherit;
+  text-decoration: none;
+  border: 0;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, filter 0.18s ease;
+  white-space: nowrap;
+}
+.btn:hover { filter: brightness(0.92); }
+.btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+.btn.ghost {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+.btn.ghost:hover { background: rgba(255, 255, 255, 0.14); filter: none; }
+
+.btn.accent {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.btn.accent:hover { filter: brightness(1.06); }
+
+.btn.disabled,
+.btn:disabled {
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--faint);
+  cursor: not-allowed;
+  filter: none;
+}
+
+/* Fixed blurred nav (about page language) */
+.brand-nav {
+  position: fixed;
+  z-index: 40;
+  top: 0;
+  left: 0;
+  right: 0;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  background: rgba(0, 0, 0, 0.66);
+  border-bottom: 1px solid var(--border);
+}
+.brand-nav .nav-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px clamp(20px, 5vw, 64px);
+  max-width: 1160px;
+  margin: 0 auto;
+}
+
+.brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-weight: 700;
+  font-size: 20px;
+  color: #fff;
+  text-decoration: none;
+  letter-spacing: -0.02em;
+}
+.brand img {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+  border-radius: 9px;
+}
+
+.nav-links { display: flex; align-items: center; gap: 6px; }
+.nav-link {
+  font-size: 14px;
+  color: var(--muted);
+  padding: 9px 14px;
+  border-radius: 999px;
+  transition: color 0.2s, background 0.2s;
+}
+.nav-link:hover { color: #fff; background: rgba(255, 255, 255, 0.06); }
+
+/* Footer links (about page language) */
+.flinks {
+  display: flex;
+  gap: 6px 22px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+.flinks a { color: var(--soft); text-decoration: none; transition: color 0.2s; }
+.flinks a:hover, .flinks a:focus-visible { color: #fff; }
+
+/* Frosted card */
+.card {
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+@media (max-width: 760px) {
+  .brand { font-size: 17px; gap: 8px; }
+  .brand img { width: 30px; height: 30px; }
+  .brand-nav .nav-inner { padding: 12px 16px; }
+  .btn { padding: 10px 16px; font-size: 13px; }
+}
