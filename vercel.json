@@ -1,6 +1,7 @@
 {
   "version": 2,
   "rewrites": [
+    { "source": "/about", "destination": "/about/index.html" },
     {
       "source": "/auth",
       "destination": "/auth.html"
@@ -45,6 +46,8 @@
     }
   ],
   "redirects": [
+    { "source": "/landing", "destination": "/about", "permanent": true },
+    { "source": "/landing/", "destination": "/about/", "permanent": true },
     {
       "source": "/windows",
       "destination": "https://apps.microsoft.com/detail/9P4W2JHQ03N1",
