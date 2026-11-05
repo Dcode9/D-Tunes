@@ -1,20 +1,13 @@
-@font-face {
-            font-family: 'J';
-            src: url('../../assets/jakarta.woff2') format('woff2');
-            font-weight: 200 800;
-            font-display: swap;
-        }
-
 :root {
-            --accent-color: #7cc0ff;
-            --accent-color-2: #5aa9f7;
+            --accent-color: #22d3ee;
+            --accent-color-2: #2dd4bf;
             --album-art-gradient: conic-gradient(from 0deg, #434343, #000000, #434343);
             --mobile-keyboard-offset: 0px;
             --mobile-keyboard-lift: 0px;
         }
 
         body {
-            font-family: 'J', ui-sans-serif, system-ui, sans-serif;
+            font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
             overflow: hidden; 
             background-color: #050505; 
             color: white;
@@ -25,14 +18,14 @@
         }
 
         h1, h2, h3, .font-display {
-            font-family: 'J', ui-sans-serif, system-ui, sans-serif;
+            font-family: 'Space Grotesk', 'Inter', ui-sans-serif, system-ui, sans-serif;
             letter-spacing: -0.02em;
         }
 
-        ::selection { background: rgba(120, 180, 255, 0.30); color: #fff; }
+        ::selection { background: rgba(34, 211, 238, 0.28); color: #fff; }
 
         :focus-visible {
-            outline: 2px solid rgba(143, 196, 255, 0.55);
+            outline: 2px solid rgba(34, 211, 238, 0.55);
             outline-offset: 2px;
         }
 
@@ -888,7 +881,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background: radial-gradient(circle at 24% 12%, rgba(120, 180, 255, 0.25), transparent 34%);
+    background: radial-gradient(circle at 24% 12%, rgba(34, 211, 238, 0.25), transparent 34%);
     opacity: 0;
     transition: opacity 0.35s ease;
 }
@@ -929,7 +922,7 @@ html[data-ui-mode="mobile"] #player-footer {
     border-radius: 9999px;
     overflow: hidden;
     color: transparent;
-    background: linear-gradient(90deg, rgba(120,180,255,0.25), rgba(120,180,255,0.95), rgba(120,180,255,0.25));
+    background: linear-gradient(90deg, rgba(34,211,238,0.25), rgba(34,211,238,0.95), rgba(34,211,238,0.25));
     background-size: 220% 100%;
     animation: album-loading-bar 1.05s ease-in-out infinite;
 }
@@ -1050,7 +1043,7 @@ html[data-ui-mode="mobile"] body.mobile-search-open #search-positioner {
 }
 .playing-eq-bar {
     width: 3px;
-    background-color: var(--accent-color, #7cc0ff);
+    background-color: var(--accent-color, #22d3ee);
     border-radius: 2px;
     animation: eq-pulse 0.8s ease-in-out infinite alternate;
 }
@@ -1202,7 +1195,7 @@ html[data-ui-mode="mobile"] body.mobile-player-open #player-footer {
     justify-content: flex-start !important;
     gap: 0 !important;
     padding: calc(8px + env(safe-area-inset-top)) 18px calc(14px + env(safe-area-inset-bottom)) !important;
-    background: radial-gradient(circle at 50% 8%, color-mix(in srgb, var(--accent-color, #7cc0ff) 25%, #141418), #060608 72%) !important;
+    background: radial-gradient(circle at 50% 8%, color-mix(in srgb, var(--accent-color, #22d3ee) 25%, #141418), #060608 72%) !important;
     backdrop-filter: blur(28px) !important;
     -webkit-backdrop-filter: blur(28px) !important;
     overflow: hidden !important;
@@ -1805,44 +1798,3 @@ button, input[type="range"], a, .scroll-card, .song-pill {
 .reveal-text.revealed {
     opacity: 1;
 }
-
-        /* --- Brand cohesion: display headings, hero kicker, sub-md header --- */
-        #main-container h2 {
-            font-weight: 600;
-            letter-spacing: -0.02em;
-        }
-
-        .hero-kicker {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 5px 12px;
-            border-radius: 999px;
-            background: rgba(120, 180, 255, 0.10);
-            border: 1px solid rgba(120, 180, 255, 0.28);
-            color: var(--accent-color);
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: 0.1em;
-            text-transform: uppercase;
-            margin-bottom: 12px;
-        }
-
-        .hero-title {
-            background: linear-gradient(100deg, #5d6068 0%, #8a8d94 30%, #fff 78%);
-            -webkit-background-clip: text;
-            background-clip: text;
-            color: transparent !important;
-        }
-
-        /* Desktop-mode below md: park the floating search under the header row
-           instead of overlapping the brand. */
-        @media (max-width: 767px) {
-            html:not([data-ui-mode="mobile"]) #search-positioner {
-                top: 54px;
-                padding: 4px 12px;
-            }
-            html:not([data-ui-mode="mobile"]) #main-container {
-                padding-top: 118px;
-            }
-        }

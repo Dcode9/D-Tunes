@@ -14,7 +14,7 @@
         function applyDynamicTrackTheme(imgEl) {
             if (!imgEl) return;
             try {
-                let color = [124, 192, 255]; // default icy blue
+                let color = [34, 211, 238]; // default cyan
                 if (typeof ColorThief !== 'undefined' && imgEl.complete && imgEl.naturalWidth > 0) {
                     try {
                         const thief = new ColorThief();

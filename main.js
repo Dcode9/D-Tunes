@@ -378,8 +378,8 @@ function startAuthLoopbackServer() {
               width: 56px;
               height: 56px;
               border-radius: 50%;
-              background: rgba(120, 180, 255, 0.15);
-              color: #7cc0ff;
+              background: rgba(34, 211, 238, 0.15);
+              color: #22d3ee;
               display: inline-flex;
               align-items: center;
               justify-content: center;
@@ -390,14 +390,14 @@ function startAuthLoopbackServer() {
             p { color: #a1a1aa; font-size: 0.95rem; margin: 0 0 1.5rem; line-height: 1.4; }
             .btn {
               display: inline-block;
-              background: #7cc0ff;
+              background: #22d3ee;
               color: #000;
               font-weight: 700;
               font-size: 0.9rem;
               padding: 0.65rem 1.4rem;
               border-radius: 9999px;
               text-decoration: none;
-              box-shadow: 0 4px 14px rgba(120, 180, 255, 0.35);
+              box-shadow: 0 4px 14px rgba(34, 211, 238, 0.35);
               transition: transform 0.2s, background 0.2s;
             }
             .btn:hover {
