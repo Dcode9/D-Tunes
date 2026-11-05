@@ -7,6 +7,7 @@
   <meta name="robots" content="noindex">
   <title>Signing in | D'Tunes</title>
   <link rel="icon" type="image/svg+xml" href="DTunes.svg">
+  <link rel="stylesheet" href="src/css/brand.css">
   <style>
     * {
       box-sizing: border-box;
@@ -15,9 +16,9 @@
       -webkit-tap-highlight-color: transparent;
     }
     body {
-      background-color: #050505;
+      background-color: #000;
       color: #f4f4f5;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: 'J', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       min-height: 100vh;
       min-height: 100dvh;
       display: flex;
@@ -57,7 +58,7 @@
       position: absolute;
       inset: -6px;
       border-radius: 50%;
-      border: 2px solid rgba(34, 211, 238, 0.3);
+      border: 2px solid rgba(120, 180, 255, 0.32);
       animation: pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
     }
     @keyframes pulse {
@@ -68,12 +69,12 @@
       width: 100%;
       height: 100%;
       border-radius: 50%;
-      background: rgba(34, 211, 238, 0.12);
-      border: 1px solid rgba(34, 211, 238, 0.3);
+      background: rgba(120, 180, 255, 0.12);
+      border: 1px solid rgba(120, 180, 255, 0.32);
       display: flex;
       align-items: center;
       justify-content: center;
-      color: #22d3ee;
+      color: #7cc0ff;
       font-size: 32px;
     }
     .error .pulse-ring { display: none; }
@@ -99,8 +100,8 @@
       display: block;
       width: 100%;
       padding: 0.9rem 1.5rem;
-      background: #22d3ee;
-      color: #050505;
+      background: #fff;
+      color: #000;
       font-weight: 700;
       font-size: 1rem;
       border-radius: 9999px;
