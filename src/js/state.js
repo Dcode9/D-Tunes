@@ -330,14 +330,33 @@
                     document.getElementById('player-footer')?.classList.remove('translate-y-[150%]', 'opacity-0');
                     ui.enableControls();
                     ui.updateMetadata(state.currentTrack);
-                    if (state.currentTrack.url) {
-                        audio.src = state.currentTrack.url;
+
+                    const streamUrl = (data.track.url && data.track.url.startsWith('http')) ? data.track.url : null;
+                    if (streamUrl) {
+                        audio.src = streamUrl;
                         audio.addEventListener('loadedmetadata', function onMetaLoad() {
                             audio.currentTime = data.time || 0;
                             currentProgress = audio.duration ? audio.currentTime / audio.duration : 0;
                             document.getElementById('seek-bar').value = data.time || 0;
                             audio.removeEventListener('loadedmetadata', onMetaLoad);
                         });
+                    } else if (data.track.id) {
+                        const rawId = String(data.track.id).replace('jiosaavn://', '');
+                        if (window.saavnClient?.getSongDetails) {
+                            window.saavnClient.getSongDetails(rawId).then(details => {
+                                const dl = details?.downloadUrl?.[details.downloadUrl.length - 1]?.url || details?.url;
+                                if (dl) {
+                                    state.currentTrack.url = dl;
+                                    audio.src = dl;
+                                    audio.addEventListener('loadedmetadata', function onMetaLoad() {
+                                        audio.currentTime = data.time || 0;
+                                        currentProgress = audio.duration ? audio.currentTime / audio.duration : 0;
+                                        document.getElementById('seek-bar').value = data.time || 0;
+                                        audio.removeEventListener('loadedmetadata', onMetaLoad);
+                                    });
+                                }
+                            }).catch(() => {});
+                        }
                     }
                 }
                 ui.renderQueue();
