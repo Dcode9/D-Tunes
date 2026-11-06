@@ -301,6 +301,19 @@ Return ONLY raw JSON: {"title": "Song Name", "artist": "Artist Name"}`;
                     { title: "Riptide", artist: "Vance Joy" }
                 ]
             },
+                        {
+                categoryTitle: "Diwali Everyday: Festive Celebration",
+                title: "Joyous Sparkle & Light",
+                description: "Uplifting festive anthems, celebratory beats, and golden energy everyday",
+                styleIndex: 2,
+                songs: [
+                    { title: "Nagada Sang Dhol", artist: "Shreya Ghoshal & Osman Mir" },
+                    { title: "Chogada", artist: "Darshan Raval & Asees Kaur" },
+                    { title: "Gallan Goodiyaan", artist: "Yashita Sharma & Shankar Mahadevan" },
+                    { title: "London Thumakda", artist: "Labh Janjua & Sonu Kakkar" },
+                    { title: "Malhari", artist: "Vishal Dadlani" }
+                ]
+            },
             {
                 categoryTitle: "Peak Energy & Flow",
                 title: "Electric Momentum",

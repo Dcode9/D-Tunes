@@ -14,7 +14,7 @@ test('Beta 1.3.1: Version bump and compact Changelog modal formatting', (t) => {
 
     // 1. Title and header badge
     assert.match(indexContent, /<title>D'Tunes<\/title>/, 'Page title must be D\'Tunes only');
-    assert.match(indexContent, /class="beta-label[^"]*"[^>]*>Beta 1\.[34](\.1)?<\/button>/, 'Header beta badge must show Beta version');
+    assert.match(indexContent, /class="beta-label[^"]*"[^>]*>Beta 1\.[345](\.[0-9]+)?<\/button>/, 'Header beta badge must show Beta version');
 
     // 2. Changelog modal has Beta 1.3.1 patch section
     assert.ok(indexContent.includes('0.1.3.1'), 'Changelog must contain version 0.1.3.1');

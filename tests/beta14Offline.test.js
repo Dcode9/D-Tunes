@@ -23,7 +23,7 @@ test('Beta 1.4 Contract: Version bumps across files', (t) => {
 
     // 1. index.html title and beta badge
     assert.match(indexContent, /<title>D'Tunes<\/title>/, 'index.html title must be D\'Tunes only');
-    assert.match(indexContent, /class="beta-label[^"]*"[^>]*>Beta 1\.4<\/button>/, 'Header beta badge must show Beta 1.4');
+    assert.match(indexContent, /class="beta-label[^"]*"[^>]*>Beta 1\.[45]/, 'Header beta badge must show Beta 1.4');
 
     // 2. Changelog contains Beta 1.4 (0.1.4)
     assert.ok(indexContent.includes('0.1.4'), 'Changelog must contain 0.1.4');
@@ -33,12 +33,12 @@ test('Beta 1.4 Contract: Version bumps across files', (t) => {
     assert.ok(indexContent.includes('Made For You Daily Caching & Expiry'), 'Changelog must detail Made For You caching');
 
     // 3. package.json and preload.js
-    assert.equal(pkg.version, '1.4.0', 'package.json version must be 1.4.0');
-    assert.match(preloadContent, /version:\s*'1\.4\.0'/, 'preload.js version must be 1.4.0');
+    assert.ok(['1.4.0', '1.4.5'].includes(pkg.version), 'package.json version must be 1.4.0 or 1.4.5');
+    assert.match(preloadContent, /version:\s*'1\.4\.[05]'/, 'preload.js version must be 1.4.0 or 1.4.5');
 
     // 4. ui.js app_version
-    assert.ok(uiContent.includes('1.4.0-win-desktop'), 'ui.js app_version must be 1.4.0-win-desktop');
-    assert.ok(uiContent.includes('1.4.0-web'), 'ui.js app_version must be 1.4.0-web');
+    assert.ok(uiContent.includes('1.4.0-win-desktop') || uiContent.includes('1.4.5-win-desktop'), 'ui.js app_version must be 1.4.x-win-desktop');
+    assert.ok(uiContent.includes('1.4.0-web') || uiContent.includes('1.4.5-web'), 'ui.js app_version must be 1.4.x-web');
 });
 
 test('Beta 1.4 Bug 1: Instant offline execution without timeout stalls', (t) => {

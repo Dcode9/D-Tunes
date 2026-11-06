@@ -387,6 +387,35 @@
             `;
         }
 
+        const diwaliBannerHtml = `
+            <div class="px-4 md:px-8 mb-6 animate-fade-in">
+                <div class="relative overflow-hidden rounded-2xl p-5 md:p-6 border border-amber-500/30 bg-gradient-to-r from-amber-500/15 via-orange-500/10 to-yellow-500/15 backdrop-blur-md shadow-lg shadow-amber-500/10">
+                    <div class="absolute -right-6 -bottom-6 w-36 h-36 bg-amber-500/15 rounded-full blur-2xl pointer-events-none"></div>
+                    <div class="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div class="flex items-start gap-4">
+                            <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-2xl shadow-md shadow-orange-500/20 flex-shrink-0">
+                                🪔
+                            </div>
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-[10px] uppercase tracking-widest font-black text-amber-400 bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full">Diwali Everyday</span>
+                                    <span class="text-xs text-amber-200/80 font-medium">Daily Festive Celebration</span>
+                                </div>
+                                <h3 class="text-xl md:text-2xl font-bold font-display text-white mt-1">Light, Joy &amp; Celebration Anthems</h3>
+                                <p class="text-xs md:text-sm text-neutral-300 mt-1 max-w-xl">Every day is a celebration. Enjoy vibrant festive beats, dhol grooves, and joyous celebration hits crafted to brighten your day.</p>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2.5 flex-shrink-0">
+                            <button onclick="window.playDiwaliEverydayMix &amp;&amp; window.playDiwaliEverydayMix()" class="px-4 py-2 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-black text-xs md:text-sm font-bold shadow-lg shadow-orange-500/25 active:scale-95 transition flex items-center gap-2 cursor-pointer">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                <span>Quick Play</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
         const emptyHtml = !sectionsHtml && emptyMessage
             ? `<div class="px-4 md:px-8 mb-10">
                     <div class="glass-panel rounded-xl px-5 py-6 text-sm text-neutral-400 leading-relaxed">${utils.escapeHtml(emptyMessage)}</div>
@@ -395,6 +424,7 @@
 
         container.innerHTML = `
             ${prependHtml}
+            ${diwaliBannerHtml}
             ${(playlists && playlists.length > 0) ? `
             <div class="pt-2 animate-fade-in">
                 <!-- Clean Editorial Header -->
@@ -789,6 +819,42 @@ async function renderOfflineHome(container) {
         }
     }
 
+    async function playDiwaliEverydayMix() {
+        if (window.ui && window.ui.showToast) window.ui.showToast('Starting Diwali Everyday Celebration Mix... 🪔');
+        
+        for (const [key, pl] of aiPlaylistsStore.entries()) {
+            if (/diwali|festive|celebration/i.test(pl.title || pl.categoryTitle || '')) {
+                playEntirePlaylist(key);
+                return;
+            }
+        }
+
+        try {
+            if (window.api && api.searchSongs) {
+                const results = await api.searchSongs('Bollywood Diwali Festive Celebration Party Hits');
+                if (results && results.length > 0) {
+                    const celebrationTracks = results.filter(s => s && s.url && s.img).slice(0, 15);
+                    if (celebrationTracks.length > 0) {
+                        player.playDirect(celebrationTracks[0]);
+                        state.queue = celebrationTracks.slice(1);
+                        state.idx = 0;
+                        state.shuffledOrder = [];
+                        state.shufflePointer = 0;
+                        if (window.ui && ui.renderQueue) ui.renderQueue();
+                        if (window.ui && window.ui.showToast) window.ui.showToast('Playing Diwali Everyday Celebration Mix! 🪔✨');
+                        return;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[Diwali Everyday] Failed to fetch festive tracks', e);
+        }
+
+        const firstKey = aiPlaylistsStore.keys().next().value;
+        if (firstKey) playEntirePlaylist(firstKey);
+    }
+    window.playDiwaliEverydayMix = playDiwaliEverydayMix;
+
     function playEntirePlaylist(playlistId) {
         const item = aiPlaylistsStore.get(playlistId);
         if (!item || !item.songs || item.songs.length === 0) return;
@@ -919,6 +985,7 @@ async function renderOfflineHome(container) {
         readTrendingCache,
         renderOfflineHome,
         playEntirePlaylist,
+        playDiwaliEverydayMix,
         addPlaylistToQueue,
         savePlaylistToLibrary,
         loadTrendingHits,
