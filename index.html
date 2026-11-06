@@ -793,7 +793,7 @@
     <header class="fixed top-0 left-0 right-0 z-40 glass-panel md:rounded-2xl md:top-4 md:left-6 md:right-6 px-4 md:px-6 py-2 md:py-3 flex items-center justify-between gap-4 shadow-xl border-t-0 md:border-t">
         <div id="app-logo" class="flex items-center gap-2.5 text-xl md:text-2xl font-bold text-white cursor-pointer w-auto flex-shrink-0 min-w-max relative z-50 pointer-events-auto" onclick="ui.goHome();">
             <img src="DTunes.svg" alt="D'Tunes logo" class="w-8 h-8 md:w-10 md:h-10 object-contain">
-            <span>D'Tunes</span>
+            <span class="flex items-center gap-1">D'Tunes <span class="text-amber-400 text-sm md:text-base animate-pulse" title="Diwali Everyday">🪔</span></span>
             <button onclick="event.stopPropagation(); ui.toggleChangelogModal(true);" class="beta-label hover:scale-105 active:scale-95 transition cursor-pointer" aria-label="D'Tunes beta version changelog">Beta 1.4.5</button>
         </div>
 
@@ -941,6 +941,29 @@
                     <div class="row-blur-right"></div>
                 </div>
             </section>
+
+                        <!-- Diwali Everyday Hero Celebration Banner -->
+            <div id="diwali-everyday-banner" class="mx-4 md:mx-8 mb-6 p-5 md:p-6 rounded-2xl bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-yellow-500/20 border border-amber-500/40 backdrop-blur-md shadow-xl shadow-amber-500/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-2xl shadow-lg shadow-orange-500/30 flex-shrink-0 animate-pulse">
+                        🪔
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[10px] uppercase tracking-widest font-black text-amber-300 bg-amber-400/20 border border-amber-400/30 px-2 py-0.5 rounded-full">Diwali Everyday</span>
+                            <span class="text-xs text-amber-200/80 font-medium">Daily Festive Celebration</span>
+                        </div>
+                        <h3 class="text-xl md:text-2xl font-bold font-display text-white mt-1">Light, Joy &amp; Celebration Anthems</h3>
+                        <p class="text-xs md:text-sm text-neutral-300 mt-1 max-w-xl">Every day is a celebration. Enjoy vibrant festive beats, dhol grooves, and joyous celebration hits crafted to brighten your day.</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2.5 flex-shrink-0">
+                    <button onclick="window.playDiwaliEverydayMix &amp;&amp; window.playDiwaliEverydayMix()" class="px-5 py-2.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-black text-xs md:text-sm font-bold shadow-lg shadow-orange-500/25 active:scale-95 transition flex items-center gap-2 cursor-pointer">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                        <span>Quick Play</span>
+                    </button>
+                </div>
+            </div>
 
             <!-- AI Recommendation Engine Section -->
             <section id="section-ai-hub" class="mb-10">

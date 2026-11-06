@@ -1,4 +1,18 @@
 (function () {
+    const DIWALI_EVERYDAY_PLAYLIST = {
+        categoryTitle: "Diwali Everyday: Festive Celebration",
+        title: "Joyous Sparkle & Light",
+        description: "Uplifting festive anthems, celebratory beats, and golden energy everyday",
+        styleIndex: 2,
+        songs: [
+            { id: "diwali_1", title: "Nagada Sang Dhol", artist: "Shreya Ghoshal & Osman Mir", url: "https://aac.saavncdn.com/264/3cbe665e7834fc3e421035ce675c9603_320.mp4", img: "https://c.saavncdn.com/264/Goliyon-Ki-Raasleela-Ram-leela-Hindi-2013-20231206123004-500x500.jpg" },
+            { id: "diwali_2", title: "Chogada", artist: "Darshan Raval & Asees Kaur", url: "https://aac.saavncdn.com/152/4998492e8a1d7f644b1c83ec3f7e8a94_320.mp4", img: "https://c.saavncdn.com/152/Loveyatri-A-Journey-Of-Love-Hindi-2018-20181003-500x500.jpg" },
+            { id: "diwali_3", title: "Gallan Goodiyaan", artist: "Yashita Sharma & Shankar Mahadevan", url: "https://aac.saavncdn.com/109/20b084931aeb7c458140db7fdf9a34bc_320.mp4", img: "https://c.saavncdn.com/109/Dil-Dhadakne-Do-Hindi-2015-500x500.jpg" },
+            { id: "diwali_4", title: "London Thumakda", artist: "Labh Janjua & Sonu Kakkar", url: "https://aac.saavncdn.com/112/57c2a7a40b904df97b98292857e4e138_320.mp4", img: "https://c.saavncdn.com/112/Queen-Hindi-2014-500x500.jpg" },
+            { id: "diwali_5", title: "Malhari", artist: "Vishal Dadlani", url: "https://aac.saavncdn.com/282/25a9ff735c345d31191599a0e676d1ef_320.mp4", img: "https://c.saavncdn.com/282/Bajirao-Mastani-Hindi-2015-500x500.jpg" }
+        ]
+    };
+
     const COVER_STYLES = [
         { bg: "from-purple-900 to-black", blend: "mix-blend-overlay", textPos: "justify-end items-start" },
         { bg: "from-emerald-800 to-gray-900", blend: "mix-blend-luminosity", textPos: "justify-center items-center text-center" },
@@ -242,28 +256,37 @@
         `;
     }
 
-    // Render clean prompt when user is not signed in
+    // Render clean prompt when user is not signed in with Diwali Celebration Mix
     function renderSignedOutState(container) {
-        container.innerHTML = `
-            <div class="pt-2 animate-fade-in px-4 md:px-8">
-                <div class="p-6 md:p-8 rounded-2xl glass-panel border border-white/10 flex flex-col md:flex-row items-center justify-between gap-6 bg-white/[0.02]">
-                    <div class="max-w-xl">
-                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white text-xs font-semibold mb-3">
-                            <span>Daily Mixes</span>
+        renderPlaylistView(container, [DIWALI_EVERYDAY_PLAYLIST], {
+            prependHtml: `
+                <div class="pt-2 animate-fade-in px-4 md:px-8 mb-6">
+                    <div class="p-6 md:p-8 rounded-2xl glass-panel border border-white/10 flex flex-col md:flex-row items-center justify-between gap-6 bg-white/[0.02]">
+                        <div class="max-w-xl">
+                            <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-white text-xs font-semibold mb-3">
+                                <span>Daily Mixes</span>
+                            </div>
+                            <h2 class="text-2xl md:text-3xl font-bold font-display text-white tracking-tight">Your Music, Tailored For You</h2>
+                            <p class="text-sm text-neutral-300 mt-2 leading-relaxed">Sign in to unlock personalized daily mixes based on your listening history, favorite tracks, and custom playlists.</p>
                         </div>
-                        <h2 class="text-2xl md:text-3xl font-bold font-display text-white tracking-tight">Your Music, Tailored For You</h2>
-                        <p class="text-sm text-neutral-300 mt-2 leading-relaxed">Sign in to unlock personalized daily mixes based on your listening history, favorite tracks, and custom playlists.</p>
+                        <button onclick="if(window.dverse && dverse.signInWithGoogle) dverse.signInWithGoogle();" class="px-6 py-3 rounded-full bg-[var(--accent-color)] text-black font-bold text-sm hover:brightness-110 active:scale-[0.98] transition flex-shrink-0 cursor-pointer flex items-center gap-2">
+                            <span>Sign In to D-Tunes</span>
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                        </button>
                     </div>
-                    <button onclick="if(window.dverse && dverse.signInWithGoogle) dverse.signInWithGoogle();" class="px-6 py-3 rounded-full bg-[var(--accent-color)] text-black font-bold text-sm hover:brightness-110 active:scale-[0.98] transition flex-shrink-0 cursor-pointer flex items-center gap-2">
-                        <span>Sign In to D-Tunes</span>
-                        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
-                    </button>
                 </div>
-            </div>
-        `;
+            `,
+            description: "Celebrate every day like Diwali with festive celebration anthems. Sign in to unlock your full personal daily mixes."
+        });
     }
 
     function renderPlaylistView(container, playlists, options = {}) {
+        if (Array.isArray(playlists) && !options.offline && (playlists.length > 0 || !options.emptyMessage)) {
+            const hasFestive = playlists.some(p => /diwali|festive|celebration/i.test(p.title || p.categoryTitle || ''));
+            if (!hasFestive) {
+                playlists = [DIWALI_EVERYDAY_PLAYLIST, ...playlists];
+            }
+        }
         const {
             userId = null,
             todayKey = localDateKey(),
@@ -820,7 +843,7 @@ async function renderOfflineHome(container) {
     }
 
     async function playDiwaliEverydayMix() {
-        if (window.ui && window.ui.showToast) window.ui.showToast('Starting Diwali Everyday Celebration Mix... 🪔');
+        if (window.ui && window.ui.showToast) window.ui.showToast('Playing Diwali Everyday Celebration Mix! 🪔✨');
         
         for (const [key, pl] of aiPlaylistsStore.entries()) {
             if (/diwali|festive|celebration/i.test(pl.title || pl.categoryTitle || '')) {
@@ -829,29 +852,19 @@ async function renderOfflineHome(container) {
             }
         }
 
-        try {
-            if (window.api && api.searchSongs) {
-                const results = await api.searchSongs('Bollywood Diwali Festive Celebration Party Hits');
-                if (results && results.length > 0) {
-                    const celebrationTracks = results.filter(s => s && s.url && s.img).slice(0, 15);
-                    if (celebrationTracks.length > 0) {
-                        player.playDirect(celebrationTracks[0]);
-                        state.queue = celebrationTracks.slice(1);
-                        state.idx = 0;
-                        state.shuffledOrder = [];
-                        state.shufflePointer = 0;
-                        if (window.ui && ui.renderQueue) ui.renderQueue();
-                        if (window.ui && window.ui.showToast) window.ui.showToast('Playing Diwali Everyday Celebration Mix! 🪔✨');
-                        return;
-                    }
-                }
-            }
-        } catch (e) {
-            console.error('[Diwali Everyday] Failed to fetch festive tracks', e);
-        }
+        const celebrationTracks = DIWALI_EVERYDAY_PLAYLIST.songs;
+        celebrationTracks.forEach(s => {
+            if (s && window.songStore && window.songStore.add) window.songStore.add(s);
+        });
 
-        const firstKey = aiPlaylistsStore.keys().next().value;
-        if (firstKey) playEntirePlaylist(firstKey);
+        if (window.player && player.playDirect) {
+            player.playDirect(celebrationTracks[0]);
+            state.queue = celebrationTracks.slice(1);
+            state.idx = 0;
+            state.shuffledOrder = [];
+            state.shufflePointer = 0;
+            if (window.ui && ui.renderQueue) ui.renderQueue();
+        }
     }
     window.playDiwaliEverydayMix = playDiwaliEverydayMix;
 
