@@ -1,17 +1,101 @@
 (function () {
-    const DIWALI_EVERYDAY_PLAYLIST = {
-        categoryTitle: "Diwali Everyday: Festive Celebration",
-        title: "Joyous Sparkle & Light",
-        description: "Uplifting festive anthems, celebratory beats, and golden energy everyday",
-        styleIndex: 2,
-        songs: [
-            { id: "diwali_1", title: "Nagada Sang Dhol", artist: "Shreya Ghoshal & Osman Mir", url: "https://aac.saavncdn.com/264/3cbe665e7834fc3e421035ce675c9603_320.mp4", img: "https://c.saavncdn.com/264/Goliyon-Ki-Raasleela-Ram-leela-Hindi-2013-20231206123004-500x500.jpg" },
-            { id: "diwali_2", title: "Chogada", artist: "Darshan Raval & Asees Kaur", url: "https://aac.saavncdn.com/152/4998492e8a1d7f644b1c83ec3f7e8a94_320.mp4", img: "https://c.saavncdn.com/152/Loveyatri-A-Journey-Of-Love-Hindi-2018-20181003-500x500.jpg" },
-            { id: "diwali_3", title: "Gallan Goodiyaan", artist: "Yashita Sharma & Shankar Mahadevan", url: "https://aac.saavncdn.com/109/20b084931aeb7c458140db7fdf9a34bc_320.mp4", img: "https://c.saavncdn.com/109/Dil-Dhadakne-Do-Hindi-2015-500x500.jpg" },
-            { id: "diwali_4", title: "London Thumakda", artist: "Labh Janjua & Sonu Kakkar", url: "https://aac.saavncdn.com/112/57c2a7a40b904df97b98292857e4e138_320.mp4", img: "https://c.saavncdn.com/112/Queen-Hindi-2014-500x500.jpg" },
-            { id: "diwali_5", title: "Malhari", artist: "Vishal Dadlani", url: "https://aac.saavncdn.com/282/25a9ff735c345d31191599a0e676d1ef_320.mp4", img: "https://c.saavncdn.com/282/Bajirao-Mastani-Hindi-2015-500x500.jpg" }
-        ]
+    function isFestiveSeasonActive() {
+        const now = new Date();
+        const year = now.getFullYear();
+        if (year === 2026) {
+            const start = new Date('2026-11-05T00:00:00+05:30');
+            const end = new Date('2026-11-11T23:59:59+05:30');
+            return now >= start && now <= end;
+        }
+        if (typeof window !== "undefined" && window.localStorage && localStorage.getItem('dtunes_force_diwali') === 'true') {
+            return true;
+        }
+        return false;
+    }
+
+    const FESTIVE_PLAYLISTS = {
+        dhanteras: {
+            categoryTitle: "Dhanteras: Auspicious Prosperity & Beats",
+            title: "Golden Blessings & Joy",
+            description: "Divine auspicious start to the festive season with energetic celebration anthems",
+            styleIndex: 2,
+            songs: [
+                { id: "diwali_dhan_1", title: "Shubhaarambh", artist: "Amit Trivedi & Shruti Pathak", url: "https://aac.saavncdn.com/393/8a688fbba8a6b22557169ee38bcae2b0_320.mp4", img: "https://c.saavncdn.com/393/Kai-Po-Che-Hindi-2013-20221124115124-500x500.jpg" },
+                { id: "diwali_dhan_2", title: "Nagada Sang Dhol", artist: "Shreya Ghoshal & Osman Mir", url: "https://aac.saavncdn.com/264/3cbe665e7834fc3e421035ce675c9603_320.mp4", img: "https://c.saavncdn.com/264/Goliyon-Ki-Raasleela-Ram-leela-Hindi-2013-20231206123004-500x500.jpg" },
+                { id: "diwali_dhan_3", title: "Ghoomar", artist: "Shreya Ghoshal & Swaroop Khan", url: "https://aac.saavncdn.com/712/f47a6d80ff368fe0fa1b6cf05dd85df3_320.mp4", img: "https://c.saavncdn.com/712/Padmaavat-Hindi-2018-20200814144342-500x500.jpg" },
+                { id: "diwali_dhan_4", title: "Chogada", artist: "Darshan Raval & Asees Kaur", url: "https://aac.saavncdn.com/152/4998492e8a1d7f644b1c83ec3f7e8a94_320.mp4", img: "https://c.saavncdn.com/152/Loveyatri-A-Journey-Of-Love-Hindi-2018-20181003-500x500.jpg" },
+                { id: "diwali_dhan_5", title: "London Thumakda", artist: "Labh Janjua & Sonu Kakkar", url: "https://aac.saavncdn.com/112/57c2a7a40b904df97b98292857e4e138_320.mp4", img: "https://c.saavncdn.com/112/Queen-Hindi-2014-500x500.jpg" }
+            ]
+        },
+        kali_chaudas: {
+            categoryTitle: "Kali Chaudas: Triumph of Light & Energy",
+            title: "Fierce Beats & Radiant Power",
+            description: "High-octane energetic anthems celebrating the triumph of good over darkness on Choti Diwali",
+            styleIndex: 2,
+            songs: [
+                { id: "diwali_kc_1", title: "Malhari", artist: "Vishal Dadlani", url: "https://aac.saavncdn.com/282/25a9ff735c345d31191599a0e676d1ef_320.mp4", img: "https://c.saavncdn.com/282/Bajirao-Mastani-Hindi-2015-500x500.jpg" },
+                { id: "diwali_kc_2", title: "Aarambh Hai Prachand", artist: "Piyush Mishra", url: "https://aac.saavncdn.com/001/a3e5c9424e69b0faee5c9faad3ea348a_320.mp4", img: "https://c.saavncdn.com/001/Gulaal-Hindi-2009-20190516132714-500x500.jpg" },
+                { id: "diwali_kc_3", title: "Zinda", artist: "Siddharth Mahadevan", url: "https://aac.saavncdn.com/669/7ad4b97ce1c798782a7f058cf2546a16_320.mp4", img: "https://c.saavncdn.com/669/Bhaag-Milkha-Bhaag-Hindi-2013-20221124115124-500x500.jpg" },
+                { id: "diwali_kc_4", title: "Deva Deva", artist: "Arijit Singh & Jonita Gandhi", url: "https://aac.saavncdn.com/390/6938221b6d92634fbda6a7db76cae70c_320.mp4", img: "https://c.saavncdn.com/390/Brahmastra-Hindi-2022-20220909180706-500x500.jpg" },
+                { id: "diwali_kc_5", title: "Sultan", artist: "Sukhwinder Singh & Shadab Faridi", url: "https://aac.saavncdn.com/544/8ffea1d8ae0a8276f578dfad5b3bb935_320.mp4", img: "https://c.saavncdn.com/544/Sultan-Hindi-2016-500x500.jpg" }
+            ]
+        },
+        diwali: {
+            categoryTitle: "Diwali Everyday: Grand Festival of Lights",
+            title: "Joyous Sparkle, Dhol & Light",
+            description: "Magnificent celebration hits, festive dhol grooves, and joy crafted to brighten your celebration",
+            styleIndex: 2,
+            songs: [
+                { id: "diwali_1", title: "Nagada Sang Dhol", artist: "Shreya Ghoshal & Osman Mir", url: "https://aac.saavncdn.com/264/3cbe665e7834fc3e421035ce675c9603_320.mp4", img: "https://c.saavncdn.com/264/Goliyon-Ki-Raasleela-Ram-leela-Hindi-2013-20231206123004-500x500.jpg" },
+                { id: "diwali_2", title: "Chogada", artist: "Darshan Raval & Asees Kaur", url: "https://aac.saavncdn.com/152/4998492e8a1d7f644b1c83ec3f7e8a94_320.mp4", img: "https://c.saavncdn.com/152/Loveyatri-A-Journey-Of-Love-Hindi-2018-20181003-500x500.jpg" },
+                { id: "diwali_3", title: "Gallan Goodiyaan", artist: "Yashita Sharma & Shankar Mahadevan", url: "https://aac.saavncdn.com/109/20b084931aeb7c458140db7fdf9a34bc_320.mp4", img: "https://c.saavncdn.com/109/Dil-Dhadakne-Do-Hindi-2015-500x500.jpg" },
+                { id: "diwali_4", title: "London Thumakda", artist: "Labh Janjua & Sonu Kakkar", url: "https://aac.saavncdn.com/112/57c2a7a40b904df97b98292857e4e138_320.mp4", img: "https://c.saavncdn.com/112/Queen-Hindi-2014-500x500.jpg" },
+                { id: "diwali_5", title: "Dholida", artist: "Jahnvi Shrimankar & Shail Hada", url: "https://aac.saavncdn.com/978/d96e5797f267926941ca6096538421d0_320.mp4", img: "https://c.saavncdn.com/978/Gangubai-Kathiawadi-Hindi-2022-20220210161005-500x500.jpg" }
+            ]
+        },
+        gujarati_new_year: {
+            categoryTitle: "Gujarati New Year: Saal Mubarak & Garba Hits",
+            title: "Bestu Varas Festive Grooves",
+            description: "Nutun Varshabhinandan! High-energy Gujarati folk anthems, vibrant dhol raas, and festive celebration",
+            styleIndex: 2,
+            songs: [
+                { id: "diwali_gny_1", title: "Khalasi", artist: "Aditya Gadhvi & Achint", url: "https://aac.saavncdn.com/786/ebca28b030e62d47da2f1d93ebff18f1_320.mp4", img: "https://c.saavncdn.com/786/Coke-Studio-Bharat-Season-1-Hindi-2023-20231010151128-500x500.jpg" },
+                { id: "diwali_gny_2", title: "Mor Bani Thanghat Kare", artist: "Osman Mir & Aditi Paul", url: "https://aac.saavncdn.com/264/3cbe665e7834fc3e421035ce675c9603_320.mp4", img: "https://c.saavncdn.com/264/Goliyon-Ki-Raasleela-Ram-leela-Hindi-2013-20231206123004-500x500.jpg" },
+                { id: "diwali_gny_3", title: "Kamariya", artist: "Darshan Raval", url: "https://aac.saavncdn.com/624/60ba10bca0db2f7bc19a3b2b41983ee2_320.mp4", img: "https://c.saavncdn.com/624/Mitron-Hindi-2018-20180907-500x500.jpg" },
+                { id: "diwali_gny_4", title: "Chogada", artist: "Darshan Raval & Asees Kaur", url: "https://aac.saavncdn.com/152/4998492e8a1d7f644b1c83ec3f7e8a94_320.mp4", img: "https://c.saavncdn.com/152/Loveyatri-A-Journey-Of-Love-Hindi-2018-20181003-500x500.jpg" },
+                { id: "diwali_gny_5", title: "Udi Udi Jaye", artist: "Sukhwinder Singh & Bhoomi Trivedi", url: "https://aac.saavncdn.com/832/779c13b2e53faea5bc920f35be96f156_320.mp4", img: "https://c.saavncdn.com/832/Raees-Hindi-2017-500x500.jpg" }
+            ]
+        },
+        bhai_dooj: {
+            categoryTitle: "Bhai Dooj: Celebration of Love & Bonds",
+            title: "Sweet Melodies & Family Joy",
+            description: "Heartwarming celebration melodies and joyous family festive dance tracks for Bhai Beej",
+            styleIndex: 2,
+            songs: [
+                { id: "diwali_bd_1", title: "Nachde Ne Saare", artist: "Jasleen Royal & Harshdeep Kaur", url: "https://aac.saavncdn.com/393/d12c1e793910c74fb91dfcb1a3a41efb_320.mp4", img: "https://c.saavncdn.com/393/Baar-Baar-Dekho-Hindi-2016-500x500.jpg" },
+                { id: "diwali_bd_2", title: "Gallan Goodiyaan", artist: "Yashita Sharma & Shankar Mahadevan", url: "https://aac.saavncdn.com/109/20b084931aeb7c458140db7fdf9a34bc_320.mp4", img: "https://c.saavncdn.com/109/Dil-Dhadakne-Do-Hindi-2015-500x500.jpg" },
+                { id: "diwali_bd_3", title: "Sweetie Tera Drama", artist: "Dev Negi & Pawni Pandey", url: "https://aac.saavncdn.com/182/b9b9423c92dfecdfaebe38531bf58448_320.mp4", img: "https://c.saavncdn.com/182/Bareilly-Ki-Barfi-Hindi-2017-500x500.jpg" },
+                { id: "diwali_bd_4", title: "London Thumakda", artist: "Labh Janjua & Sonu Kakkar", url: "https://aac.saavncdn.com/112/57c2a7a40b904df97b98292857e4e138_320.mp4", img: "https://c.saavncdn.com/112/Queen-Hindi-2014-500x500.jpg" },
+                { id: "diwali_bd_5", title: "Malhari", artist: "Vishal Dadlani", url: "https://aac.saavncdn.com/282/25a9ff735c345d31191599a0e676d1ef_320.mp4", img: "https://c.saavncdn.com/282/Bajirao-Mastani-Hindi-2015-500x500.jpg" }
+            ]
+        }
     };
+
+    function getTodayFestivePlaylist() {
+        const now = new Date();
+        const month = now.getMonth();
+        const date = now.getDate();
+        if (month === 10) {
+            if (date <= 6) return FESTIVE_PLAYLISTS.dhanteras;
+            if (date === 7) return FESTIVE_PLAYLISTS.kali_chaudas;
+            if (date === 8 || date === 9) return FESTIVE_PLAYLISTS.diwali;
+            if (date === 10) return FESTIVE_PLAYLISTS.gujarati_new_year;
+            if (date >= 11) return FESTIVE_PLAYLISTS.bhai_dooj;
+        }
+        return FESTIVE_PLAYLISTS.diwali;
+    }
+
+    const DIWALI_EVERYDAY_PLAYLIST = FESTIVE_PLAYLISTS.diwali;
 
     const COVER_STYLES = [
         { bg: "from-purple-900 to-black", blend: "mix-blend-overlay", textPos: "justify-end items-start" },
@@ -258,7 +342,8 @@
 
     // Render clean prompt when user is not signed in with Diwali Celebration Mix
     function renderSignedOutState(container) {
-        renderPlaylistView(container, [DIWALI_EVERYDAY_PLAYLIST], {
+        const initialMixes = isFestiveSeasonActive() ? [getTodayFestivePlaylist()] : [];
+        renderPlaylistView(container, initialMixes, {
             prependHtml: `
                 <div class="pt-2 animate-fade-in px-4 md:px-8 mb-6">
                     <div class="p-6 md:p-8 rounded-2xl glass-panel border border-white/10 flex flex-col md:flex-row items-center justify-between gap-6 bg-white/[0.02]">
@@ -282,9 +367,12 @@
 
     function renderPlaylistView(container, playlists, options = {}) {
         if (Array.isArray(playlists) && !options.offline && (playlists.length > 0 || !options.emptyMessage)) {
-            const hasFestive = playlists.some(p => /diwali|festive|celebration/i.test(p.title || p.categoryTitle || ''));
-            if (!hasFestive) {
-                playlists = [DIWALI_EVERYDAY_PLAYLIST, ...playlists];
+            if (isFestiveSeasonActive()) {
+                const todayFestive = getTodayFestivePlaylist();
+                const hasFestive = playlists.some(p => /diwali|festive|celebration|chaudas|dhanteras|new year|bhai dooj|bestu varas/i.test(p.title || p.categoryTitle || ''));
+                if (!hasFestive) {
+                    playlists = [todayFestive, ...playlists];
+                }
             }
         }
         const {
@@ -824,7 +912,8 @@ async function renderOfflineHome(container) {
             }
         }
 
-        const celebrationTracks = DIWALI_EVERYDAY_PLAYLIST.songs;
+        const todayFestive = getTodayFestivePlaylist();
+        const celebrationTracks = todayFestive.songs;
         celebrationTracks.forEach(s => {
             if (s && window.songStore && window.songStore.add) window.songStore.add(s);
         });

@@ -6,7 +6,7 @@
  * which loads the same origin). Downloaded songs are handled separately by
  * src/js/offline.js. Bump VERSION to publish a new shell.
  */
-const VERSION = 'dtunes-shell-v1.1.3';
+const VERSION = 'dtunes-shell-v1.4.5';
 const NETWORK_TIMEOUT_MS = 3000;
 
 // Same-origin shell assets (no query strings; lookups ignore the ?v= cache-buster).
@@ -15,6 +15,9 @@ const SHELL = [
   '/index.html',
   '/manifest.json',
   '/DTunes.svg',
+  '/DTunes_diwali.svg',
+  '/assets/DTunes_diwali.jpg',
+  '/assets/diya.svg',
   '/haptics.js',
   '/favicon.ico',
   '/assets/favicon.png',

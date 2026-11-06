@@ -792,8 +792,8 @@
     <!-- TOP HEADER -->
     <header class="fixed top-0 left-0 right-0 z-40 glass-panel md:rounded-2xl md:top-4 md:left-6 md:right-6 px-4 md:px-6 py-2 md:py-3 flex items-center justify-between gap-4 shadow-xl border-t-0 md:border-t">
         <div id="app-logo" class="flex items-center gap-2.5 text-xl md:text-2xl font-bold text-white cursor-pointer w-auto flex-shrink-0 min-w-max relative z-50 pointer-events-auto" onclick="ui.goHome();">
-            <img src="DTunes.svg" alt="D'Tunes logo" class="w-8 h-8 md:w-10 md:h-10 object-contain">
-            <span class="flex items-center gap-1">D'Tunes <span class="text-amber-400 text-sm md:text-base animate-pulse" title="Diwali Everyday">🪔</span></span>
+            <img id="app-logo-img" src="DTunes_diwali.svg" alt="D'Tunes logo" class="w-8 h-8 md:w-10 md:h-10 object-contain rounded-xl shadow-lg shadow-amber-500/20">
+            <span class="flex items-center gap-1 font-display tracking-tight text-white">D'Tunes</span>
             <button onclick="event.stopPropagation(); ui.toggleChangelogModal(true);" class="beta-label hover:scale-105 active:scale-95 transition cursor-pointer" aria-label="D'Tunes beta version changelog">Beta 1.4.5</button>
         </div>
 
@@ -945,25 +945,93 @@
                         <!-- Diwali Everyday Hero Celebration Banner -->
             <div id="diwali-everyday-banner" class="mx-4 md:mx-8 mb-6 p-5 md:p-6 rounded-2xl bg-gradient-to-r from-amber-500/20 via-orange-500/15 to-yellow-500/20 border border-amber-500/40 backdrop-blur-md shadow-xl shadow-amber-500/10 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div class="flex items-start gap-4">
-                    <div class="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-2xl shadow-lg shadow-orange-500/30 flex-shrink-0 animate-pulse">
-                        🪔
+                    <div class="w-14 h-14 md:w-16 md:h-16 rounded-2xl bg-gradient-to-br from-amber-500/25 via-orange-500/20 to-yellow-500/25 border border-amber-400/40 flex items-center justify-center p-1.5 shadow-xl shadow-amber-500/20 flex-shrink-0 relative overflow-hidden group">
+                        <div class="absolute inset-0 bg-amber-400/15 rounded-2xl blur-md pointer-events-none animate-pulse"></div>
+                        <img src="assets/diya.svg" alt="Detailed Festive Diya" class="w-full h-full object-contain filter drop-shadow(0 2px 6px rgba(251,191,36,0.65)) animate-pulse">
                     </div>
                     <div>
                         <div class="flex items-center gap-2">
-                            <span class="text-[10px] uppercase tracking-widest font-black text-amber-300 bg-amber-400/20 border border-amber-400/30 px-2 py-0.5 rounded-full">Diwali Everyday</span>
-                            <span class="text-xs text-amber-200/80 font-medium">Daily Festive Celebration</span>
+                            <span id="diwali-badge-text" class="text-[10px] uppercase tracking-widest font-black text-amber-300 bg-amber-400/20 border border-amber-400/30 px-2 py-0.5 rounded-full">Diwali Everyday</span>
+                            <span id="diwali-sub-text" class="text-xs text-amber-200/80 font-medium">Daily Festive Celebration</span>
                         </div>
-                        <h3 class="text-xl md:text-2xl font-bold font-display text-white mt-1">Light, Joy &amp; Celebration Anthems</h3>
-                        <p class="text-xs md:text-sm text-neutral-300 mt-1 max-w-xl">Every day is a celebration. Enjoy vibrant festive beats, dhol grooves, and joyous celebration hits crafted to brighten your day.</p>
+                        <h3 id="diwali-title-text" class="text-xl md:text-2xl font-bold font-display text-white mt-1">Light, Joy &amp; Celebration Anthems</h3>
+                        <p id="diwali-desc-text" class="text-xs md:text-sm text-neutral-300 mt-1 max-w-xl">Every day is a celebration. Enjoy vibrant festive beats, dhol grooves, and joyous celebration hits crafted to brighten your day.</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-2.5 flex-shrink-0">
-                    <button onclick="window.playDiwaliEverydayMix &amp;&amp; window.playDiwaliEverydayMix()" class="px-5 py-2.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-black text-xs md:text-sm font-bold shadow-lg shadow-orange-500/25 active:scale-95 transition flex items-center gap-2 cursor-pointer">
+                    <button onclick="window.playDiwaliEverydayMix && window.playDiwaliEverydayMix()" class="px-5 py-2.5 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 hover:from-amber-300 hover:to-orange-400 text-black text-xs md:text-sm font-bold shadow-lg shadow-orange-500/25 active:scale-95 transition flex items-center gap-2 cursor-pointer">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
                         <span>Quick Play</span>
                     </button>
                 </div>
             </div>
+
+            <!-- Diwali Season Auto-Vanishing & Deduplication Controller -->
+            <script>
+              (function() {
+                function updateFestiveState() {
+                  var now = new Date();
+                  var year = now.getFullYear();
+                  // Active until Nov 11, 2026 23:59:59 IST (Bhai Dooj). After that, vanishes automatically.
+                  var isFestive = (year === 2026 && now >= new Date('2026-11-05T00:00:00+05:30') && now <= new Date('2026-11-11T23:59:59+05:30')) || (window.localStorage && localStorage.getItem('dtunes_force_diwali') === 'true');
+                  
+                  var banner = document.getElementById('diwali-everyday-banner');
+                  var logoImg = document.getElementById('app-logo-img');
+                  
+                  if (!isFestive) {
+                    if (banner) banner.style.display = 'none';
+                    if (logoImg) logoImg.src = 'DTunes.svg';
+                  } else {
+                    if (banner) banner.style.display = '';
+                    if (logoImg) logoImg.src = 'DTunes_diwali.svg';
+                    
+                    var month = now.getMonth();
+                    var date = now.getDate();
+                    var badgeEl = document.getElementById('diwali-badge-text');
+                    var subEl = document.getElementById('diwali-sub-text');
+                    var titleEl = document.getElementById('diwali-title-text');
+                    if (month === 10) {
+                      if (date <= 6 && badgeEl) {
+                        badgeEl.textContent = 'Dhanteras Special';
+                        if (subEl) subEl.textContent = 'Auspicious Prosperity & Beats';
+                        if (titleEl) titleEl.textContent = 'Golden Blessings & Joyous Anthems';
+                      } else if (date === 7 && badgeEl) {
+                        badgeEl.textContent = 'Kali Chaudas Special';
+                        if (subEl) subEl.textContent = 'Triumph of Light & Energy';
+                        if (titleEl) titleEl.textContent = 'Fierce Beats & Radiant Power';
+                      } else if ((date === 8 || date === 9) && badgeEl) {
+                        badgeEl.textContent = 'Diwali Special';
+                        if (subEl) subEl.textContent = 'Grand Festival of Lights & Joy';
+                        if (titleEl) titleEl.textContent = 'Light, Joy & Celebration Anthems';
+                      } else if (date === 10 && badgeEl) {
+                        badgeEl.textContent = 'Gujarati New Year';
+                        if (subEl) subEl.textContent = 'Saal Mubarak & Bestu Varas';
+                        if (titleEl) titleEl.textContent = 'Nutun Varshabhinandan & Garba Beats';
+                      } else if (date >= 11 && badgeEl) {
+                        badgeEl.textContent = 'Bhai Dooj Special';
+                        if (subEl) subEl.textContent = 'Celebration of Love & Bonds';
+                        if (titleEl) titleEl.textContent = 'Sweet Melodies & Family Festive Hits';
+                      }
+                    }
+                  }
+
+                  // Strict Deduplicator: eliminate any duplicate banners injected anywhere in DOM
+                  var allBanners = document.querySelectorAll('#diwali-everyday-banner');
+                  if (allBanners.length > 1) {
+                    for (var i = 1; i < allBanners.length; i++) {
+                      allBanners[i].remove();
+                    }
+                  }
+                }
+
+                if (document.readyState === 'loading') {
+                  document.addEventListener('DOMContentLoaded', updateFestiveState);
+                } else {
+                  updateFestiveState();
+                }
+                setInterval(updateFestiveState, 500);
+              })();
+            </script>
 
             <!-- AI Recommendation Engine Section -->
             <section id="section-ai-hub" class="mb-10">
