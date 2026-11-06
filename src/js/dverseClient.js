@@ -979,15 +979,24 @@
     await bridgeRequest({ type: 'dverse-auth:sign-out' }, 1500);
   }
 
+  // Normalizes a song coming from either client (web player item or Android
+  // `dtunes_tracks` row) before it is written to the shared D'Verse tables.
   function normalizeTrack(song) {
-    const id = String(typeof song === 'object' ? (song?.id || '') : (song || ''));
+    const id = String(typeof song === 'object' ? (song?.id ?? song?.track_id ?? song?.trackId ?? '') : (song || ''));
+    const durationMsRaw = Number(song?.duration_ms ?? song?.durationMs);
+    const durationRaw = Number(song?.duration ?? song?.durationSec);
+    const durationMs = Number.isFinite(durationMsRaw) && durationMsRaw > 0
+      ? durationMsRaw
+      : (Number.isFinite(durationRaw) && durationRaw > 0
+        ? (durationRaw > 100000 ? durationRaw : durationRaw * 1000)
+        : null);
     return {
       id,
-      title: song?.name || song?.title || 'Unknown Track',
-      artist: song?.artist || null,
-      album: song?.album || null,
-      duration_ms: song?.duration ? Number(song.duration) * 1000 : null,
-      artwork_url: song?.img || song?.artwork_url || null,
+      title: song?.title || song?.name || song?.track_name || 'Unknown Track',
+      artist: song?.artist || song?.artists || song?.artist_name || null,
+      album: song?.album || song?.album_name || null,
+      duration_ms: durationMs,
+      artwork_url: song?.img || song?.artwork_url || song?.artworkUrl || song?.image || null,
       source: song?.source || 'jiosaavn',
       metadata: typeof song === 'object' ? song : {}
     };
@@ -1010,12 +1019,12 @@
     }
     return {
       id: effectiveId,
-      name: t.metadata?.name || t.metadata?.title || t.title || 'Unknown Track',
-      title: t.metadata?.title || t.title || 'Unknown Track',
-      artist: t.metadata?.artist || t.artist || '',
+      name: t.metadata?.name || t.metadata?.title || t.title || t.name || 'Unknown Track',
+      title: t.metadata?.title || t.title || t.name || 'Unknown Track',
+      artist: t.metadata?.artist || t.artist || t.artists || '',
       album: t.metadata?.album || t.album || '',
-      duration: t.metadata?.duration || (t.duration_ms ? Math.round(t.duration_ms / 1000) : undefined),
-      img: t.metadata?.img || t.artwork_url || 'DTunes.svg',
+      duration: t.metadata?.duration || (t.duration_ms ? Math.round(t.duration_ms / 1000) : (t.duration || undefined)),
+      img: t.metadata?.img || t.artwork_url || t.img || 'DTunes.svg',
       source: t.source || t.metadata?.source || 'jiosaavn',
       ...(t.metadata || {})
     };

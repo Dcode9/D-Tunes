@@ -305,43 +305,113 @@
             get: (id) => songStore.songs.get(id)
         };
 
+        // Cross-client song shape. The web player and the Android app share the
+        // `dtunes_playback_state` / `dtunes_history` rows but name their fields
+        // differently (`name` vs `title`, `img` vs `artwork_url`, `duration` in
+        // seconds vs `duration_ms`). Normalize to the web player's shape on the way
+        // in, and write both spellings on the way out so either client can resume
+        // what the other saved.
+        const normalizeSongShape = (song) => {
+            if (!song || typeof song !== 'object') return song;
+            const id = String(song.id ?? song.track_id ?? song.trackId ?? '');
+            const title = song.title || song.name || song.track_name || 'Unknown Track';
+            const artist = song.artist || song.artists || song.artist_name || '';
+            const album = song.album || song.album_name || song.albumTitle || '';
+            const artwork = song.img || song.artwork_url || song.artworkUrl || song.image || song.cover || 'DTunes.svg';
+            const durationMsRaw = Number(song.duration_ms ?? song.durationMs);
+            const durationRaw = Number(song.duration ?? song.durationSec);
+            const durationSec = Number.isFinite(durationMsRaw) && durationMsRaw > 0
+                ? Math.round(durationMsRaw / 1000)
+                : (Number.isFinite(durationRaw) && durationRaw > 0
+                    ? (durationRaw > 100000 ? Math.round(durationRaw / 1000) : durationRaw)
+                    : undefined);
+            const url = typeof song.url === 'string' && song.url.startsWith('http') ? song.url : undefined;
+            return {
+                ...song,
+                id,
+                name: title,
+                title,
+                artist,
+                album,
+                img: artwork,
+                artwork_url: artwork,
+                ...(durationSec ? { duration: durationSec, duration_ms: Math.round(durationSec * 1000) } : {}),
+                ...(url ? { url } : {}),
+                source: song.source || 'jiosaavn'
+            };
+        };
+
+        const firstArray = (...candidates) => candidates.find((value) => Array.isArray(value)) || null;
+
+        // Playback position in seconds. `time` is seconds, `positionMs` is
+        // milliseconds and bare `position` is disambiguated by magnitude.
+        const playbackTimeSeconds = (data) => {
+            const explicitMs = Number(data?.positionMs ?? data?.position_ms ?? data?.position_millis);
+            if (Number.isFinite(explicitMs)) return explicitMs / 1000;
+            const explicitSec = Number(data?.time ?? data?.positionSec ?? data?.position_sec ?? data?.seconds);
+            if (Number.isFinite(explicitSec)) return explicitSec;
+            const ambiguous = Number(data?.position ?? data?.current_position);
+            if (Number.isFinite(ambiguous)) return ambiguous >= 1000 ? ambiguous / 1000 : ambiguous;
+            return 0;
+        };
+
         const persist = {
             snapshot: () => {
+                const timeSec = Number.isFinite(audio?.currentTime) ? audio.currentTime : 0;
+                const durationSec = Number.isFinite(audio?.duration) ? audio.duration : null;
+                const index = Number.isFinite(state.idx) ? state.idx : 0;
+                const updatedAt = new Date().toISOString();
+                const queue = (state.queue || []).map(normalizeSongShape);
                 return {
-                    track: state.currentTrack || null,
-                    q: state.queue || [],
-                    uq: state.userQueue || [],
-                    idx: state.idx,
-                    time: Number.isFinite(audio?.currentTime) ? audio.currentTime : 0,
-                    duration: Number.isFinite(audio?.duration) ? audio.duration : null,
+                    schema: 2,
+                    track: state.currentTrack ? normalizeSongShape(state.currentTrack) : null,
+                    // Legacy keys kept for older clients, plus the aliases the Android
+                    // app reads and writes (`queue`/`index`/`positionMs`/`isPlaying`).
+                    q: queue,
+                    queue,
+                    uq: (state.userQueue || []).map(normalizeSongShape),
+                    idx: index,
+                    index,
+                    time: timeSec,
+                    positionMs: Math.round(timeSec * 1000),
+                    duration: durationSec,
+                    durationMs: durationSec ? Math.round(durationSec * 1000) : null,
                     playing: Boolean(state.playing),
-                    updated_at: new Date().toISOString()
+                    isPlaying: Boolean(state.playing),
+                    updated_at: updatedAt,
+                    savedAt: updatedAt
                 };
             },
             apply: (data) => {
                 if(!data) return false;
-                if (Array.isArray(data.q)) state.queue = data.q;
-                if (Array.isArray(data.uq)) state.userQueue = data.uq;
-                if (typeof data.idx === 'number') state.idx = data.idx;
+                const queue = firstArray(data.q, data.queue, data.items, data.queue_items, data.up_next);
+                const userQueue = firstArray(data.uq, data.userQueue);
+                const rawTrack = data.track || data.current || data.song || data.nowPlaying || null;
+                const timeSec = playbackTimeSeconds(data);
+                if (queue) state.queue = queue.map(normalizeSongShape);
+                if (userQueue) state.userQueue = userQueue.map(normalizeSongShape);
+                const idx = Number(data.idx ?? data.index ?? data.currentIndex);
+                if (Number.isFinite(idx)) state.idx = idx;
 
-                if (data.track && data.track.id) {
-                    state.currentTrack = data.track;
+                if (rawTrack && (rawTrack.id || rawTrack.track_id)) {
+                    const track = normalizeSongShape(rawTrack);
+                    state.currentTrack = track;
                     state.loaded = true;
                     document.getElementById('player-footer')?.classList.remove('translate-y-[150%]', 'opacity-0');
                     ui.enableControls();
                     ui.updateMetadata(state.currentTrack);
 
-                    const streamUrl = (data.track.url && data.track.url.startsWith('http')) ? data.track.url : null;
+                    const streamUrl = (track.url && track.url.startsWith('http')) ? track.url : null;
                     if (streamUrl) {
                         audio.src = streamUrl;
                         audio.addEventListener('loadedmetadata', function onMetaLoad() {
-                            audio.currentTime = data.time || 0;
+                            audio.currentTime = timeSec;
                             currentProgress = audio.duration ? audio.currentTime / audio.duration : 0;
-                            document.getElementById('seek-bar').value = data.time || 0;
+                            document.getElementById('seek-bar').value = timeSec;
                             audio.removeEventListener('loadedmetadata', onMetaLoad);
                         });
-                    } else if (data.track.id) {
-                        const rawId = String(data.track.id).replace('jiosaavn://', '');
+                    } else if (track.id) {
+                        const rawId = String(track.id).replace('jiosaavn://', '');
                         if (window.saavnClient?.getSongDetails) {
                             window.saavnClient.getSongDetails(rawId).then(details => {
                                 const dl = details?.downloadUrl?.[details.downloadUrl.length - 1]?.url || details?.url;
@@ -349,9 +419,9 @@
                                     state.currentTrack.url = dl;
                                     audio.src = dl;
                                     audio.addEventListener('loadedmetadata', function onMetaLoad() {
-                                        audio.currentTime = data.time || 0;
+                                        audio.currentTime = timeSec;
                                         currentProgress = audio.duration ? audio.currentTime / audio.duration : 0;
-                                        document.getElementById('seek-bar').value = data.time || 0;
+                                        document.getElementById('seek-bar').value = timeSec;
                                         audio.removeEventListener('loadedmetadata', onMetaLoad);
                                     });
                                 }
@@ -501,10 +571,21 @@
                     || (snapshot.playbackState?.track?.id === id ? snapshot.playbackState.track : null);
             },
             choosePlaybackState: (localPlayback, cloudPlayback) => {
-                if (!localPlayback?.track?.id) return cloudPlayback?.track?.id ? cloudPlayback : null;
-                if (!cloudPlayback?.track?.id) return localPlayback;
-                const localTime = new Date(localPlayback.updated_at || 0).getTime();
-                const cloudTime = new Date(cloudPlayback.updated_at || 0).getTime();
+                // `updated_at`/`savedAt` may be ISO-8601 (both clients) or epoch
+                // seconds/milliseconds (older Android payloads).
+                const timestamp = (value) => {
+                    if (!value) return 0;
+                    const numeric = Number(value);
+                    if (Number.isFinite(numeric)) return numeric > 1e11 ? numeric : numeric * 1000;
+                    const parsed = Date.parse(value);
+                    return Number.isFinite(parsed) ? parsed : 0;
+                };
+                const localTrack = localPlayback?.track?.id || localPlayback?.track?.track_id;
+                const cloudTrack = cloudPlayback?.track?.id || cloudPlayback?.track?.track_id;
+                if (!localTrack) return cloudTrack ? cloudPlayback : null;
+                if (!cloudTrack) return localPlayback;
+                const localTime = timestamp(localPlayback.updated_at || localPlayback.savedAt);
+                const cloudTime = timestamp(cloudPlayback.updated_at || cloudPlayback.savedAt);
                 return cloudTime > localTime ? cloudPlayback : localPlayback;
             },
             setStatus: (message) => {
