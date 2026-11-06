@@ -161,6 +161,10 @@
                 localStorage.setItem('searchHistory', JSON.stringify(list));
                 localStorage.setItem('recentSearches', JSON.stringify(list));
 
+                if (window.dverse?.dtunes?.recordSearchHistory) {
+                    window.dverse.dtunes.recordSearchHistory(normalized).catch(() => {});
+                }
+
                 if (ui.getCurrentView() === 'search') {
                     searchManager.renderSearchHistory();
                 }
@@ -178,6 +182,9 @@
                 state.searchHistory = [];
                 localStorage.setItem('searchHistory', JSON.stringify([]));
                 localStorage.setItem('recentSearches', JSON.stringify([]));
+                if (window.dverse?.dtunes?.clearSearchHistoryRemote) {
+                    window.dverse.dtunes.clearSearchHistoryRemote().catch(() => {});
+                }
                 searchManager.renderSearchHistory();
             },
 

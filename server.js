@@ -137,6 +137,57 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { songs: deduplicateSongs(songs) });
   }
 
+  if ((req.method === 'POST' || req.method === 'GET') && url.pathname === '/api/music/autoplay') {
+    const body = req.method === 'POST' ? await parseBody(req) : {};
+    const seedSongId = body.seedSongId || body.songId || url.searchParams.get('seedSongId') || url.searchParams.get('songId');
+    const limit = Number(body.limit || url.searchParams.get('limit') || 10);
+    const currentQueueIds = new Set((body.currentQueueIds || []).map(String));
+    const excludedSongIds = new Set((body.excludedSongIds || []).map(String));
+    const language = body.language || url.searchParams.get('language');
+    const userId = body.userId || url.searchParams.get('userId') || 'anonymous';
+
+    if (!seedSongId) {
+      return sendJson(res, 400, { error: 'seedSongId is required' });
+    }
+
+    const deps = await recommendationDeps({ seedSongId, language });
+    const rawCandidates = await getRecommendations(userId, {
+      limit: Math.max(limit * 3, 30),
+      playlistType: PLAYLIST_TYPES.SIMILAR,
+      seedSongId,
+      language
+    }, deps).catch(() => []);
+
+    const suggestions = await saavn.getSongSuggestions(seedSongId, limit * 2).catch(() => []);
+    const allCandidates = deduplicateSongs([...rawCandidates, ...suggestions]);
+
+    const norm = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+    const seed = await saavn.getSong(seedSongId).catch(() => null);
+    const seedKey = seed ? (norm(seed.title) + ':' + norm(seed.primary_artists || seed.artist)) : '';
+
+    const seenKeys = new Set();
+    if (seedKey) {
+      seenKeys.add(seedKey);
+    }
+
+    const filtered = allCandidates.filter((song) => {
+      if (!song) return false;
+      const sid = String(song.id || song.saavn_id || '');
+      if (!sid || sid === String(seedSongId)) return false;
+      if (currentQueueIds.has(sid) || excludedSongIds.has(sid)) return false;
+
+      const key = norm(song.title) + ':' + norm(song.primary_artists || song.artist);
+      if (key && seenKeys.has(key)) return false;
+      if (key) seenKeys.add(key);
+      return true;
+    });
+
+    return sendJson(res, 200, {
+      seedSongId,
+      songs: filtered.slice(0, limit)
+    });
+  }
+
   if (req.method === 'GET' && url.pathname === '/api/music/similar') {
     const seedSongId = url.searchParams.get('songId');
     const limit = Number(url.searchParams.get('limit') || 25);

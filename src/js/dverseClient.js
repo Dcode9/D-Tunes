@@ -1160,6 +1160,67 @@
     }
   }
 
+  async function recordSearchHistory(song, query = '') {
+    if (!client || !song) return;
+    const session = currentSession || await getSession();
+    if (!session?.user?.id) return;
+    try {
+      const track = await upsertTrack(song);
+      const trackId = track?.id || String(song.id || song);
+      const { error } = await client.from('dtunes_search_history').insert({
+        user_id: session.user.id,
+        track_id: trackId,
+        query: query || song.title || '',
+        searched_at: new Date().toISOString()
+      });
+      if (error) console.warn('[DVerse] recordSearchHistory error:', error.message);
+    } catch (err) {
+      console.warn('[DVerse] recordSearchHistory exception:', err);
+    }
+  }
+
+  async function listSearchHistory(limit = 20) {
+    if (!client) return [];
+    const session = currentSession || await getSession();
+    if (!session?.user?.id) return [];
+    try {
+      const { data, error } = await client
+        .from('dtunes_search_history')
+        .select('id, query, searched_at, track_id, dtunes_tracks(*)')
+        .eq('user_id', session.user.id)
+        .order('searched_at', { ascending: false })
+        .limit(limit);
+      if (error) {
+        console.warn('[DVerse] listSearchHistory error:', error.message);
+        return [];
+      }
+      return (data || []).map((row) => {
+        const song = songFromTrack(row.dtunes_tracks, row.track_id);
+        if (!song) return null;
+        if (row.query) song.searchQuery = row.query;
+        return song;
+      }).filter(Boolean);
+    } catch (err) {
+      console.warn('[DVerse] listSearchHistory exception:', err);
+      return [];
+    }
+  }
+
+  async function clearSearchHistoryRemote() {
+    if (!client) return;
+    const session = currentSession || await getSession();
+    if (!session?.user?.id) return;
+    try {
+      const { error } = await client
+        .from('dtunes_search_history')
+        .delete()
+        .eq('user_id', session.user.id);
+      if (error) console.warn('[DVerse] clearSearchHistory error:', error.message);
+    } catch (err) {
+      console.warn('[DVerse] clearSearchHistory exception:', err);
+    }
+  }
+
   async function listPlaylists() {
     if (!client) return [];
     const session = currentSession || await getSession();
@@ -1404,6 +1465,9 @@
     dtunes: {
       recordPlay,
       listHistory,
+      recordSearchHistory,
+      listSearchHistory,
+      clearSearchHistoryRemote,
       setLiked,
       listLikes,
       setLibrary,
