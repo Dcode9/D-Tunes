@@ -8,7 +8,7 @@ const saavn = require('./lib/saavnClient');
 const lyricsService = require('./lib/lyricsService');
 
 const PORT = Number(process.env.PORT || 3000);
-const PUBLIC_ROOT = process.cwd();
+const PUBLIC_ROOT = __dirname;
 
 function sendJson(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
