@@ -511,18 +511,18 @@
             ${prependHtml}
             ${(playlists && playlists.length > 0) ? `
             <div class="pt-2 animate-fade-in">
-                <!-- Clean Editorial Header -->
-                <div class="flex items-center justify-between px-4 md:px-8 mb-6 pb-2 border-b border-white/10">
-                    <div>
+                <!-- Keep recommendation controls on their own row on small screens. -->
+                <div class="flex flex-col items-start gap-3 md:flex-row md:items-center md:justify-between md:gap-4 px-4 md:px-8 mb-6 pb-2 border-b border-white/10">
+                    <div class="min-w-0">
                         <h2 class="text-2xl md:text-3xl font-bold font-display text-white tracking-tight">Made For You</h2>
                         <p class="text-xs md:text-sm text-neutral-400 mt-1">${utils.escapeHtml(description)}${expiresAt ? ` <span class="text-xs text-brand-primary font-medium ml-2 bg-brand-primary/10 border border-brand-primary/20 px-2 py-0.5 rounded-full">Expires at ${formatDailyExpiry(expiresAt)}</span>` : ""}</p>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <button onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Made For You (Daily Recommendations)' })" class="text-xs text-amber-400/90 hover:text-amber-300 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 transition hover:bg-amber-500/20 cursor-pointer" title="Report issue with AI-generated recommendations (Policy 11.16)">
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Made For You (Daily Recommendations)' })" class="text-xs text-amber-400/90 hover:text-amber-300 flex items-center gap-1.5 whitespace-nowrap min-h-[44px] md:min-h-0 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 transition hover:bg-amber-500/20 cursor-pointer" title="Report issue with AI-generated recommendations (Policy 11.16)">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
                             <span>Report AI Content</span>
                         </button>
-                        ${offline ? '' : `<button onclick="window.aiHome.renderAIHome(true)" title="Refresh Daily Mixes" class="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition hover:rotate-180 duration-500 shadow-md">
+                        ${offline ? '' : `<button onclick="window.aiHome.renderAIHome(true)" title="Refresh Daily Mixes" class="p-2 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition hover:rotate-180 duration-500 shadow-md">
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                         </button>`}
                     </div>
