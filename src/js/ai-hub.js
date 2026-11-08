@@ -1,16 +1,18 @@
 (function () {
+    function festiveDateParts(now) {
+        const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Kolkata', month: 'numeric', day: 'numeric' }).formatToParts(now);
+        return { month: Number(parts.find(part => part.type === 'month').value) - 1, date: Number(parts.find(part => part.type === 'day').value) };
+    }
+
+    function forceFestivePreview() {
+        try { return typeof localStorage !== 'undefined' && localStorage.getItem('dtunes_force_diwali') === 'true'; }
+        catch (_) { return false; }
+    }
+
     function isFestiveSeasonActive() {
+        if (forceFestivePreview()) return true;
         const now = new Date();
-        const year = now.getFullYear();
-        if (year === 2026) {
-            const start = new Date('2026-11-05T00:00:00+05:30');
-            const end = new Date('2026-11-11T23:59:59+05:30');
-            return now >= start && now <= end;
-        }
-        if (typeof window !== "undefined" && window.localStorage && localStorage.getItem('dtunes_force_diwali') === 'true') {
-            return true;
-        }
-        return false;
+        return now >= new Date('2026-11-05T00:00:00+05:30') && now < new Date('2026-11-12T00:00:00+05:30');
     }
 
     const FESTIVE_PLAYLISTS = {
@@ -83,8 +85,7 @@
 
     function getTodayFestivePlaylist() {
         const now = new Date();
-        const month = now.getMonth();
-        const date = now.getDate();
+        const { month, date } = festiveDateParts(now);
         if (month === 10) {
             if (date <= 6) return FESTIVE_PLAYLISTS.dhanteras;
             if (date === 7) return FESTIVE_PLAYLISTS.kali_chaudas;
