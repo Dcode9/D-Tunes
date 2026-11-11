@@ -160,7 +160,7 @@
             quickPicks: [],
             discoverMixes: {},
             searchDebounce: null, hoverProgress: -1, lastHoverProgress: 0.5, isDragging: false, 
-            upNextTriggered: false, queueExpanded: false, activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false, nextTrackPreloadId: null,
+            upNextTriggered: false, queueExpanded: false, songDetailsExpanded: false, queueMode: null, sidebarMode: 'queue', fullscreenMode: false, fullscreenTab: 'split', activeQueueTab: 'upnext', mobileSearchOriginView: null, mobileQueueAutoOpened: false, nextTrackPreloadId: null,
             wasPlayingBeforeHidden: false, userPaused: false
         };
         window.state = state;
@@ -790,6 +790,17 @@
                 state.quickPicks = [];
                 state.discoverMixes = {};
                 state.queueExpanded = false;
+                state.songDetailsExpanded = false;
+                state.queueMode = null;
+                const sWrap = document.getElementById('queue-wrapper');
+                if (sWrap) {
+                    sWrap.classList.remove('queue-expanded', 'has-song-details', 'preview-expanded', 'track-swap-out');
+                    sWrap.style.height = '';
+                }
+                const sExpand = document.getElementById('queue-expandable-area');
+                if (sExpand) sExpand.style.maxHeight = '0px';
+                document.getElementById('info-island')?.classList.remove('details-expanded');
+                document.body.classList.remove('queue-sidebar-active');
 
                 if (typeof songStore !== 'undefined' && songStore.clear) songStore.clear();
 

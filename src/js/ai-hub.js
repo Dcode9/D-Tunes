@@ -465,8 +465,8 @@
                         <div class="row-blur-left"></div>
                         <div class="horizontal-scroll px-4 md:px-8 gap-4">
                             <!-- 2x2 Collage Playlist Cover -->
-                            <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group/cover relative flex flex-col w-40 flex-shrink-0 cursor-pointer border border-white/10 hover:border-white/20 shadow-xl overflow-hidden" onclick="window.aiHome.playEntirePlaylist('${playlistId}')">
-                                <div class="relative aspect-square rounded-lg overflow-hidden mb-3 bg-black/60 shadow-md">
+                            <div class="scroll-card glass-panel p-3 rounded-2xl transition hover-pause group/cover relative flex flex-col w-40 flex-shrink-0 cursor-pointer border border-white/10 hover:border-white/20 shadow-xl overflow-hidden" onclick="window.aiHome.playEntirePlaylist('${playlistId}')">
+                                <div class="relative aspect-square rounded-xl overflow-hidden mb-2.5 bg-black/60 shadow-md">
                                     <div class="absolute inset-0 grid grid-cols-2 grid-rows-2">
                                         <img src="${collageArts[0]}" class="w-full h-full object-cover reveal-blur-img" onload="this.classList.add('revealed')" />
                                         <img src="${collageArts[1]}" class="w-full h-full object-cover reveal-blur-img" onload="this.classList.add('revealed')" />
@@ -479,7 +479,7 @@
                                         <h4 class="text-white font-bold text-xs sm:text-sm uppercase leading-tight drop-shadow-md mt-auto">${utils.escapeHtml(playlist.title || 'Mix')}</h4>
                                     </div>
                                     <div class="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover/cover:opacity-100 transition z-20">
-                                        <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-2xl transform scale-75 group-hover/cover:scale-100 transition">
+                                        <span class="bg-white text-black p-3 rounded-full shadow-2xl transform scale-75 group-hover/cover:scale-100 transition">
                                             <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
                                         </span>
                                     </div>
