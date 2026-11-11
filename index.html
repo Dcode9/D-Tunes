@@ -1,10 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <base href="/d-tunes/">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, interactive-widget=resizes-content">
     <title>D'Tunes</title>
+<meta name="description" content="Ad-free music with high-quality audio and custom recommendations. Vibe Mix on Windows and web; downloaded songs on Windows, coming to Android.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="D'Tunes - ad-free music player">
+<meta property="og:description" content="Ad-free music with high-quality audio and custom recommendations. Vibe Mix on Windows and web; downloaded songs on Windows, coming to Android.">
+<link rel="canonical" href="https://tunes.d-verse.in/">
+<meta property="og:site_name" content="D'Tunes">
+<meta property="og:url" content="https://tunes.d-verse.in/">
+<meta property="og:image" content="https://tunes.d-verse.in/assets/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="D'Tunes. Music, ad-free.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="D'Tunes - ad-free music player">
+<meta name="twitter:description" content="Ad-free music with high-quality audio and custom recommendations. Vibe Mix on Windows and web; downloaded songs on Windows, coming to Android.">
+<meta name="twitter:image" content="https://tunes.d-verse.in/assets/og-image.png">
+<script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareApplication", "name": "D'Tunes", "applicationCategory": "MusicApplication", "operatingSystem": "Android, Windows, Web", "url": "https://tunes.d-verse.in/", "description": "Ad-free music with high-quality audio and custom recommendations. Vibe Mix on Windows and web; downloaded songs on Windows, coming to Android.", "image": "https://tunes.d-verse.in/assets/og-image.png"}</script>
     <link rel="icon" type="image/svg+xml" href="DTunes.svg">
     <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon.png">
     <link rel="shortcut icon" href="favicon.ico">
@@ -139,9 +154,21 @@
     <script defer src="src/js/preload.js?v=1.6.5"></script>
 
     <link rel="stylesheet" href="src/css/styles.css?v=1.6.6">
+    <script>
+      (function () {
+        try {
+          var ua = navigator.userAgent || '';
+          var isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+          var preview = /[?&#]ios-glass/.test((location.search || '') + (location.hash || ''));
+          if (isIOS || preview) document.documentElement.setAttribute('data-os', 'ios');
+        } catch (_) {}
+      })();
+    </script>
+    <link rel="stylesheet" href="src/css/glass-ios.css?v=1.0.0">
 
 </head>
 <body>
+<noscript><h1>D'Tunes</h1><p>Ad-free music with high-quality audio and custom recommendations. Vibe Mix on Windows and web; downloaded songs on Windows, coming to Android. D'Tunes needs JavaScript. <a href="/about/">About D'Tunes</a> | <a href="/download">Download</a></p></noscript>
 
     <!-- D'Tunes Optical Engine: Master Mezzotint Material Definitions -->
     <svg id="dtunes-mezzotint-defs" class="absolute w-0 h-0 pointer-events-none" aria-hidden="true" style="position: absolute; width: 0; height: 0; overflow: hidden;">
