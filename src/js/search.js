@@ -58,6 +58,37 @@
         }
         
         const searchManager = {
+            activeFilter: 'all',
+            setFilter: (filter) => {
+                searchManager.activeFilter = filter || 'all';
+                document.querySelectorAll('.search-filter-pill').forEach(btn => {
+                    btn.classList.toggle('is-active', btn.getAttribute('data-filter') === searchManager.activeFilter);
+                });
+                const topSection = document.getElementById('search-top-result')?.closest('.grid');
+                const songsSection = document.getElementById('search-songs-list')?.parentElement;
+                const albumsSection = document.getElementById('search-albums-grid')?.closest('.mb-12');
+                const artistsSection = document.getElementById('search-artists-grid')?.closest('.mb-12');
+
+                if (searchManager.activeFilter === 'all') {
+                    if (topSection) topSection.classList.remove('hidden');
+                    if (songsSection) songsSection.classList.remove('hidden');
+                    if (albumsSection) albumsSection.classList.remove('hidden');
+                    if (artistsSection) artistsSection.classList.remove('hidden');
+                } else if (searchManager.activeFilter === 'songs') {
+                    if (topSection) topSection.classList.remove('hidden');
+                    if (songsSection) songsSection.classList.remove('hidden');
+                    if (albumsSection) albumsSection.classList.add('hidden');
+                    if (artistsSection) artistsSection.classList.add('hidden');
+                } else if (searchManager.activeFilter === 'albums') {
+                    if (topSection) topSection.classList.add('hidden');
+                    if (albumsSection) albumsSection.classList.remove('hidden');
+                    if (artistsSection) artistsSection.classList.add('hidden');
+                } else if (searchManager.activeFilter === 'artists') {
+                    if (topSection) topSection.classList.add('hidden');
+                    if (albumsSection) albumsSection.classList.add('hidden');
+                    if (artistsSection) artistsSection.classList.remove('hidden');
+                }
+            },
             init: () => {
                 const input = document.getElementById('search-input'); 
                 const dropWrapper = document.getElementById('search-dropdown');
@@ -68,12 +99,25 @@
                     if (q.length >= 2 && results.innerHTML !== '') dropWrapper.classList.add('active'); 
                 });
                 
-                input.addEventListener('blur', () => {
-                    setTimeout(() => {
-                        if (!dropWrapper.contains(document.activeElement)) {
-                            dropWrapper.classList.remove('active');
+                // Outside click dismiss that never breaks when interacting with search result actions (e.g. like, swipe)
+                document.addEventListener('pointerdown', (e) => {
+                    const shell = document.getElementById('search-shell') || document.getElementById('search-positioner');
+                    const drop = document.getElementById('search-dropdown');
+                    if (drop && drop.classList.contains('active')) {
+                        const hitInside = (shell && shell.contains(e.target)) || drop.contains(e.target);
+                        if (!hitInside) {
+                            drop.classList.remove('active');
                         }
-                    }, 250);
+                    }
+                });
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') {
+                        const drop = document.getElementById('search-dropdown');
+                        if (drop && drop.classList.contains('active')) {
+                            drop.classList.remove('active');
+                            document.getElementById('search-input')?.blur();
+                        }
+                    }
                 });
                 
                 input.addEventListener('input', (e) => {
@@ -104,16 +148,16 @@
                     results.classList.add('is-updating');
                     const requestedQuery = query;
                     state.searchDebounce = setTimeout(async () => {
-                        const songs = await jiosaavnAPI.searchSongs(requestedQuery, 6);
+                        const songs = await jiosaavnAPI.searchSongs(requestedQuery, 5);
                         if (input.value.trim() !== requestedQuery) return;
                         results.classList.remove('is-updating');
                         if(songs.length === 0) {
-                            results.innerHTML = '<div class="p-4 text-center text-gray-400 text-sm">No songs found</div>';
+                            results.innerHTML = '<div class="p-4 text-center text-zinc-400 text-sm font-medium">No songs found</div>';
                             return;
                         }
-                        results.innerHTML = '<div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1 pl-2 drop-shadow-md">Songs</div>' + songs.map(song => {
+                        results.innerHTML = songs.map(song => {
                             const storeId = songStore.add(song);
-                            return ui.createSongPill(song, `ui.playFromQuickSearch('${storeId}')`, 'quicksearch');
+                            return ui.createPlayerListPill(song, `ui.playFromQuickSearch('${storeId}')`, 'quicksearch');
                         }).join('');
                         stripTouchHoverClasses();
                         updateMarquees();
@@ -161,10 +205,6 @@
                 localStorage.setItem('searchHistory', JSON.stringify(list));
                 localStorage.setItem('recentSearches', JSON.stringify(list));
 
-                if (window.dverse?.dtunes?.recordSearchHistory) {
-                    window.dverse.dtunes.recordSearchHistory(normalized).catch(() => {});
-                }
-
                 if (ui.getCurrentView() === 'search') {
                     searchManager.renderSearchHistory();
                 }
@@ -182,9 +222,6 @@
                 state.searchHistory = [];
                 localStorage.setItem('searchHistory', JSON.stringify([]));
                 localStorage.setItem('recentSearches', JSON.stringify([]));
-                if (window.dverse?.dtunes?.clearSearchHistoryRemote) {
-                    window.dverse.dtunes.clearSearchHistoryRemote().catch(() => {});
-                }
                 searchManager.renderSearchHistory();
             },
 
@@ -227,7 +264,7 @@
                                 <span class="swipe-reveal-text font-bold text-xs tracking-wide">Play Next</span>
                             </div>
                         </div>
-                        <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-[var(--accent-color)] text-black font-bold text-xs" style="width:0px;">
+                        <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-white/20 text-white font-bold text-xs" style="width:0px;">
                             <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
                                 <span class="swipe-reveal-text font-bold text-xs tracking-wide">Add to Queue</span>
                                 <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
@@ -269,39 +306,38 @@
                 const topBlocked = ui.isOfflineUnavailable(data.top);
                 const topLikeAttr = topBlocked ? '' : `ondblclick="player.likeSong('${utils.escapeJs(data.top.id)}')"`;
                 document.getElementById('search-top-result').innerHTML = `
-                    <div class="absolute inset-0 z-0" ${topLikeAttr}>
-                        <img src="${data.top.img}" class="w-full h-full object-cover opacity-30 blur-md">
-                        <div class="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-transparent"></div>
+                    <div class="scroll-card-ambient" aria-hidden="true" ${topLikeAttr}>
+                        <img src="${data.top.img}" class="scroll-card-ambient-img" alt="">
                     </div>
                     <div class="relative z-10 flex flex-col gap-4 ${topBlocked ? 'opacity-45 grayscale' : ''}" ${topBlocked ? 'aria-disabled="true"' : ''}>
-                        <img src="${data.top.img}" class="w-28 h-28 md:w-36 md:h-36 rounded-lg shadow-2xl object-cover" ${topLikeAttr}>
+                        <img src="${data.top.img}" class="w-28 h-28 md:w-36 md:h-36 rounded-2xl shadow-2xl object-cover border border-white/10" ${topLikeAttr}>
                         
                         <div class="flex flex-col gap-1">
-                            <h2 class="text-3xl font-bold text-white line-clamp-2 leading-tight" title="${utils.escapeHtml(data.top.name)}">${utils.escapeHtml(data.top.name)}</h2>
-                            <div class="flex items-center gap-2 text-gray-300 text-sm mt-1">
-                                <span class="bg-white/10 px-2 py-0.5 rounded text-xs font-semibold tracking-wider">${(data.top.type || 'SONG').toUpperCase()}</span>
-                                <span class="font-medium line-clamp-1">${utils.escapeHtml(data.top.artist || '')}</span>
+                            <h2 class="text-2xl md:text-3xl font-bold text-white line-clamp-2 leading-tight" title="${utils.escapeHtml(data.top.name)}">${utils.escapeHtml(data.top.name)}</h2>
+                            <div class="flex items-center gap-2 text-zinc-300 text-sm mt-1">
+                                <span class="bg-white/10 border border-white/10 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider text-white">${(data.top.type || 'SONG').toUpperCase()}</span>
+                                <span class="font-medium text-zinc-400 line-clamp-1">${utils.escapeHtml(data.top.artist || '')}</span>
                             </div>
                         </div>
                         
                         ${topBlocked
                             ? `<div class="mt-2">${ui.notDownloadedBadge('px-3 py-1.5 text-[10px]')}</div>`
-                            : `<div class="mt-2 flex items-center gap-3">
-                            <button class="bg-[var(--accent-color)] text-black px-6 py-2.5 rounded-full font-bold hover:brightness-110 transition flex items-center gap-2" onclick="event.stopPropagation(); ui.playFromQuickSearch('${topStoreId}')">
-                                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play
+                            : `<div class="mt-2 flex items-center gap-2.5">
+                            <button class="bg-white text-black px-6 py-2.5 rounded-full font-bold hover:scale-105 active:scale-95 transition flex items-center gap-2 shadow-lg" onclick="event.stopPropagation(); ui.playFromQuickSearch('${topStoreId}')">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Play
                             </button>
-                            <button class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition" title="Play next" onclick="event.stopPropagation(); player.addNext(songStore.get('${topStoreId}'))">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+                            <button class="w-9 h-9 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-white hover:bg-white/10 active:scale-90 transition" title="Play next" onclick="event.stopPropagation(); player.addNext(songStore.get('${topStoreId}'))">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
                             </button>
-                            <button class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition" title="Add to queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${topStoreId}'))">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
+                            <button class="w-9 h-9 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-white hover:bg-white/10 active:scale-90 transition" title="Add to queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${topStoreId}'))">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
                             </button>
-                            <button class="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition" title="Like" onclick="event.stopPropagation(); player.likeSong('${utils.escapeJs(data.top.id)}')">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+                            <button class="w-9 h-9 rounded-full bg-black/60 border border-white/10 flex items-center justify-center text-white hover:bg-white/10 active:scale-90 transition" title="Like" onclick="event.stopPropagation(); player.likeSong('${utils.escapeJs(data.top.id)}')">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
                             </button>
                         </div>`}
                     </div>`;
-                document.getElementById('search-songs-list').innerHTML = data.songs.map(song => ui.createListRow(song)).join('');
+                document.getElementById('search-songs-list').innerHTML = data.songs.map(song => ui.createPlayerListPill(song, `ui.playFromQuickSearch('${songStore.add(song)}')`, 'search')).join('');
                 document.getElementById('search-albums-grid').innerHTML = data.albums.map(item => ui.createCard(item)).join('');
                 document.getElementById('search-artists-grid').innerHTML = data.artists.map(item => ui.createCard(item)).join('');
                 updateMarquees();

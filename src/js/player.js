@@ -355,6 +355,47 @@
         };
 
         const player = {
+            removeFromQueue: (section, index) => {
+                index = Number(index);
+                if (section === 'manual') {
+                    if (state.userQueue && index >= 0 && index < state.userQueue.length) {
+                        state.userQueue.splice(index, 1);
+                    }
+                } else if (section === 'auto') {
+                    if (state.shuffle && state.shuffledOrder) {
+                        const targetPointer = state.shufflePointer + 1 + index;
+                        if (targetPointer < state.shuffledOrder.length) {
+                            const origIdx = state.shuffledOrder[targetPointer];
+                            state.shuffledOrder.splice(targetPointer, 1);
+                            if (origIdx >= 0 && origIdx < state.queue.length) {
+                                state.queue.splice(origIdx, 1);
+                                for (let i = 0; i < state.shuffledOrder.length; i++) {
+                                    if (state.shuffledOrder[i] > origIdx) {
+                                        state.shuffledOrder[i]--;
+                                    }
+                                }
+                            }
+                        }
+                    } else if (state.queue) {
+                        const targetIdx = state.idx + 1 + index;
+                        if (targetIdx < state.queue.length) {
+                            state.queue.splice(targetIdx, 1);
+                        }
+                    }
+                }
+                ui.renderQueue();
+                persist.save();
+                if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
+            },
+            triggerUpNextHandoff: () => {
+                const previewSlot = document.getElementById('queue-preview-slot');
+                if (!previewSlot || !state.nextTrack) return;
+                player.next(true);
+            },
+            smoothGlideToStart: () => {
+                audio.currentTime = 0;
+            },
+
             playDirect: async (track) => {
                 if (!track) return;
                 if (isOfflineBlockedTrack(track)) {

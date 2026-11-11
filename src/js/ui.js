@@ -111,6 +111,7 @@
                 document.getElementById('main-container')?.scrollTo({ top: 0, behavior: 'smooth' });
 
                 if (view === 'stats') statsView.render();
+                if (view === 'library') ui.renderLibrary();
                 if (view === 'reviews' && window.reviewsManager) reviewsManager.render();
                 if (view === 'search') {
                     const input = document.getElementById('search-input');
@@ -158,6 +159,8 @@
                     document.body.classList.add('mobile-player-open');
                     ui.switchMobilePlayerTab('track');
                     if (ui.updateAlbumCarouselPeeks) ui.updateAlbumCarouselPeeks();
+                if (ui.initQueuePointerReorder) ui.initQueuePointerReorder();
+                if (state.fullscreenMode && ui.updateFullscreenQueue) ui.updateFullscreenQueue();
                     requestAnimationFrame(resizeCanvas);
                     setTimeout(resizeCanvas, 120);
                     setTimeout(resizeCanvas, 320);
@@ -250,10 +253,32 @@
                     searchManager.addToRecentSearches(song);
                 }
                 playSongById(storeId);
-                document.getElementById('search-dropdown').classList.remove('active');
+                document.getElementById('search-dropdown')?.classList.remove('active');
+                document.getElementById('search-input')?.blur();
                 if (deviceMode.isMobileUI() && document.body.classList.contains('mobile-search-open')) {
                     ui.closeMobileSearch({ clearQuickState: true, restoreOrigin: false });
                 }
+            },
+
+            toggleProfileDropdown: (e) => {
+                if (e) {
+                    try { e.stopPropagation(); } catch (_) {}
+                }
+                const dd = document.getElementById('profile-dropdown');
+                if (!dd) return;
+                const isClosed = dd.classList.contains('hidden');
+                dd.classList.toggle('hidden', !isClosed);
+            },
+
+            closeProfileDropdown: () => {
+                document.getElementById('profile-dropdown')?.classList.add('hidden');
+            },
+
+            toggleChangelogAccordion: (id) => {
+                const item = document.getElementById(`changelog-item-${id}`);
+                if (!item) return;
+                const wasOpen = item.classList.contains('is-open');
+                item.classList.toggle('is-open', !wasOpen);
             },
 
             toggleModal: (show) => {
@@ -313,9 +338,9 @@
                 chipBtns.forEach(btn => {
                     const label = text.split(':')[0].trim().substring(0, 8);
                     if (btn.textContent.includes(label)) {
-                        btn.classList.add('border-[var(--accent-color)]/50', 'bg-[var(--accent-color)]/10', 'text-[var(--accent-color)]');
+                        btn.classList.add('border-[var(--accent-color)]/50', 'bg-white/10', 'text-white');
                     } else {
-                        btn.classList.remove('border-[var(--accent-color)]/50', 'bg-[var(--accent-color)]/10', 'text-[var(--accent-color)]');
+                        btn.classList.remove('border-[var(--accent-color)]/50', 'bg-white/10', 'text-white');
                     }
                 });
             },
@@ -436,10 +461,10 @@
                     <button type="button" data-color="${color}" class="w-8 h-8 rounded-full border-2 ${playlistCoverDraft.color === color ? 'border-white scale-110' : 'border-transparent'} transition" style="background:${color}"></button>
                 `).join('');
                 iconEl.innerHTML = Object.keys(PLAYLIST_COVER_ICONS).map((name) => `
-                    <button type="button" data-icon="${name}" class="w-10 h-10 rounded-xl flex items-center justify-center ${playlistCoverDraft.icon === name ? 'bg-[var(--accent-color)] text-black' : 'bg-white/10 text-white'} transition">${PLAYLIST_COVER_ICONS[name]}</button>
+                    <button type="button" data-icon="${name}" class="w-10 h-10 rounded-xl flex items-center justify-center ${playlistCoverDraft.icon === name ? 'bg-white text-black font-bold' : 'bg-white/10 text-white'} transition">${PLAYLIST_COVER_ICONS[name]}</button>
                 `).join('');
                 shapeEl.innerHTML = PLAYLIST_COVER_SHAPES.map((shape) => `
-                    <button type="button" data-shape="${shape}" class="px-3 py-1.5 rounded-full text-xs font-bold ${playlistCoverDraft.shape === shape ? 'bg-[var(--accent-color)] text-black' : 'bg-white/10 text-gray-200'} transition">${shape}</button>
+                    <button type="button" data-shape="${shape}" class="px-3 py-1.5 rounded-full text-xs font-bold ${playlistCoverDraft.shape === shape ? 'bg-white text-black font-bold' : 'bg-white/10 text-gray-200'} transition">${shape}</button>
                 `).join('');
 
                 colorEl.querySelectorAll('button').forEach((btn) => {
@@ -613,9 +638,12 @@
                             bandsContainer.innerHTML = EQ_BANDS.map((band) => `
                                 <div class="eq-band">
                                     <span id="${prefix}-${band.key}-value" class="eq-value">0 dB</span>
-                                    <div class="eq-slider-container">
+                                    <div class="eq-slider-container custom-slider-container group" id="${prefix}-${band.key}-container">
+                                        <div class="eq-track-bg"></div>
                                         <div class="eq-zero-line"></div>
-                                        <input id="${prefix}-${band.key}" type="range" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="${band.label}" oninput="ui.updateEqualizer('${band.key}', this.value)" class="eq-slider">
+                                        <div id="${prefix}-${band.key}-fill" class="eq-fill" style="top: 50%; height: 0;"></div>
+                                        <div id="${prefix}-${band.key}-marker" class="eq-rounded-edge" style="top: 50%;"></div>
+                                        <input id="${prefix}-${band.key}" type="range" min="-12" max="12" step="1" value="0" orient="vertical" aria-label="${band.label}" oninput="ui.updateEqualizer('${band.key}', this.value)" class="eq-custom-input">
                                     </div>
                                     <div class="flex flex-col items-center leading-none">
                                         <span class="eq-label">${band.label}</span>
@@ -630,8 +658,23 @@
                             const val = Number(state.equalizer[band.key] || 0);
                             const input = document.getElementById(`${prefix}-${band.key}`);
                             const label = document.getElementById(`${prefix}-${band.key}-value`);
+                            const fill = document.getElementById(`${prefix}-${band.key}-fill`);
+                            const marker = document.getElementById(`${prefix}-${band.key}-marker`);
                             if (input) input.value = val;
                             if (label) label.textContent = `${val > 0 ? '+' : ''}${val} dB`;
+
+                            const pct = (val - (-12)) / 24;
+                            const topPercent = (1 - pct) * 100;
+                            if (marker) marker.style.top = `${topPercent}%`;
+                            if (fill) {
+                                if (val >= 0) {
+                                    fill.style.top = `${topPercent}%`;
+                                    fill.style.height = `${(pct - 0.5) * 100}%`;
+                                } else {
+                                    fill.style.top = '50%';
+                                    fill.style.height = `${(0.5 - pct) * 100}%`;
+                                }
+                            }
                         });
                     }
                 });
@@ -706,7 +749,16 @@
                 state.equalizer = { ...FLAT_EQUALIZER };
                 state.forYouSongs = [];
                 state.queueExpanded = false;
-                document.getElementById('queue-wrapper').classList.remove('queue-expanded', 'preview-expanded', 'track-swap-out');
+                state.songDetailsExpanded = false;
+                const rWrap = document.getElementById('queue-wrapper');
+                if (rWrap) {
+                    rWrap.classList.remove('queue-expanded', 'has-song-details', 'preview-expanded', 'track-swap-out');
+                    rWrap.style.height = '';
+                }
+                const rExpand = document.getElementById('queue-expandable-area');
+                if (rExpand) rExpand.style.maxHeight = '0px';
+                document.getElementById('info-island')?.classList.remove('details-expanded');
+                document.body.classList.remove('queue-sidebar-active');
                 document.getElementById('player-footer').classList.add('translate-y-[150%]', 'opacity-0');
                 document.body.classList.remove('mobile-player-open');
                 document.getElementById('p-title').textContent = 'Not Playing';
@@ -1158,7 +1210,7 @@
 
                 const isFollowing = state.likedArtists.some(a => (a.id || a.name) === artistId || a.name === fallbackName);
                 if (followText) followText.textContent = isFollowing ? 'Following' : 'Follow';
-                if (followBtn) followBtn.className = isFollowing ? 'px-5 py-2.5 rounded-full bg-[var(--accent-color)] text-black text-xs font-bold transition flex items-center gap-1.5' : 'px-5 py-2.5 rounded-full border border-white/20 bg-white/5 text-white text-xs font-bold hover:bg-white/15 transition flex items-center gap-1.5';
+                if (followBtn) followBtn.className = isFollowing ? 'px-5 py-2.5 rounded-full bg-white text-black font-bold text-xs font-bold transition flex items-center gap-1.5' : 'px-5 py-2.5 rounded-full border border-white/20 bg-white/5 text-white text-xs font-bold hover:bg-white/15 transition flex items-center gap-1.5';
 
                 try {
                     let artistData = null;
@@ -1189,7 +1241,7 @@
                             ui.toggleArtistLike({ id: artistId || name, name, img, type: 'artist' });
                             const nowFollowing = state.likedArtists.some(a => (a.id || a.name) === (artistId || name));
                             if (followText) followText.textContent = nowFollowing ? 'Following' : 'Follow';
-                            followBtn.className = nowFollowing ? 'px-5 py-2.5 rounded-full bg-[var(--accent-color)] text-black text-xs font-bold transition flex items-center gap-1.5' : 'px-5 py-2.5 rounded-full border border-white/20 bg-white/5 text-white text-xs font-bold hover:bg-white/15 transition flex items-center gap-1.5';
+                            followBtn.className = nowFollowing ? 'px-5 py-2.5 rounded-full bg-white text-black font-bold text-xs font-bold transition flex items-center gap-1.5' : 'px-5 py-2.5 rounded-full border border-white/20 bg-white/5 text-white text-xs font-bold hover:bg-white/15 transition flex items-center gap-1.5';
                         };
                     }
 
@@ -1237,7 +1289,7 @@
                                     <div class="relative aspect-square rounded-lg overflow-hidden mb-3 bg-gray-800 shadow-md">
                                         <img src="${albImg}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" loading="lazy">
                                         <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                                            <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+                                            <span class="bg-white text-black font-bold p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
                                         </div>
                                     </div>
                                     <div class="w-full min-w-0 flex-1">
@@ -1254,76 +1306,89 @@
                     if (subtitleEl) subtitleEl.textContent = 'Error loading artist details.';
                 }
             },
+            activeLibraryTab: 'all',
+            switchLibraryTab: (tab) => {
+                ui.activeLibraryTab = tab || 'all';
+                document.querySelectorAll('.library-filter-tab').forEach(btn => {
+                    btn.classList.toggle('is-active', btn.getAttribute('data-tab') === ui.activeLibraryTab);
+                });
+                document.querySelectorAll('.library-tab-panel').forEach(panel => {
+                    panel.classList.add('hidden');
+                });
+                const activePanel = document.getElementById(`library-tab-content-${ui.activeLibraryTab}`);
+                if (activePanel) {
+                    activePanel.classList.remove('hidden');
+                }
+                ui.renderLibrary();
+            },
+            filterLibraryContent: (query) => {
+                const q = (query || '').trim().toLowerCase();
+                const activePanel = document.getElementById(`library-tab-content-${ui.activeLibraryTab || 'all'}`);
+                if (!activePanel) return;
+                const items = activePanel.querySelectorAll('.scroll-card, .np-row, .swipe-song');
+                items.forEach(el => {
+                    if (!q) {
+                        el.style.display = '';
+                    } else {
+                        const txt = el.textContent.toLowerCase();
+                        el.style.display = txt.includes(q) ? '' : 'none';
+                    }
+                });
+            },
             renderPlaylists: () => {
                 const grid = document.getElementById('playlists-grid');
-                if (!grid) return;
-                const likedStyle = ui.getPlaylistStyle('Liked Songs');
-                let html = `
-                <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer" onclick="ui.openPlaylist('Liked Songs')">
-                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center text-4xl ${likedStyle.bg}">
-                        ${(likedStyle.customHtml || likedStyle.icon).replace('w-20 h-20', 'w-12 h-12')}
-                        <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                            <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
-                        </div>
-                    </div>
-                    <button class="absolute top-4 right-4 p-1.5 bg-black/60 backdrop-blur-md rounded-full text-white opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shadow-lg hover:bg-white/20 z-10" onclick="event.stopPropagation(); ctxMenu.showPlaylist(event, 'Liked Songs')">
-                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>
-                    </button>
-                    <div class="w-full min-w-0 flex-1">
-                        <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">Liked Songs</h3></div>
-                        <p class="text-xs text-gray-400 mt-1">${state.likedIds.length} tracks</p>
-                    </div>
-                </div>`;
+                const fullGrid = document.getElementById('full-playlists-grid');
+                if (!grid && !fullGrid) return;
+                let html = '';
 
+                // Create Playlist Action Card
                 html += `
-                <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer create-playlist-card" onclick="ui.toggleModal(true)">
-                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center liked-songs-art bg-gradient-to-br from-zinc-800/80 to-zinc-950 border border-white/10 transition">
-                        <div class="absolute inset-0" style="background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.08), transparent 34%);"></div>
-                        <span class="relative w-14 h-14 rounded-full bg-[var(--accent-color)]/15 border border-[var(--accent-color)]/30 text-[var(--accent-color)] flex items-center justify-center group-hover:scale-105 transition">
-                            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+                <div class="scroll-card glass-panel p-3 rounded-2xl transition hover-pause group relative flex flex-col w-full cursor-pointer border border-dashed border-white/20 hover:border-white/40 bg-white/[0.02]" onclick="ui.toggleModal(true)">
+                    <div class="relative aspect-square rounded-xl overflow-hidden mb-3 shadow-md flex items-center justify-center bg-white/5 border border-white/10 group-hover:bg-white/10 transition">
+                        <span class="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center group-hover:scale-110 transition shadow-lg">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
                         </span>
                     </div>
                     <div class="w-full min-w-0 flex-1">
                         <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">Create Playlist</h3></div>
-                        <p class="text-xs text-gray-400 mt-1">New mix</p>
+                        <p class="text-xs text-zinc-400 mt-0.5">New mix</p>
                     </div>
                 </div>`;
 
                 // Vibe Mix Card
                 html += `
-                <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer border border-white/10 hover:border-white/20 bg-white/[0.02]" onclick="ui.toggleVibeMixModal(true)">
-                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center bg-gradient-to-br from-zinc-800/80 to-zinc-950 border border-white/10 group-hover:border-white/20 transition">
-                        <div class="absolute inset-0" style="background: radial-gradient(circle at 70% 30%, rgba(255, 255, 255, 0.06), transparent 60%);"></div>
-                        <span class="relative w-14 h-14 rounded-full bg-[var(--accent-color)]/15 border border-[var(--accent-color)]/30 text-[var(--accent-color)] flex items-center justify-center group-hover:scale-105 transition">
-                            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <div class="scroll-card glass-panel p-3 rounded-2xl transition hover-pause group relative flex flex-col w-full cursor-pointer border border-white/10 hover:border-white/20 bg-white/[0.02]" onclick="ui.toggleVibeMixModal(true)">
+                    <div class="relative aspect-square rounded-xl overflow-hidden mb-3 shadow-md flex items-center justify-center bg-gradient-to-br from-zinc-800/80 to-zinc-950 border border-white/10 group-hover:border-white/20 transition">
+                        <span class="relative w-12 h-12 rounded-full bg-white/15 border border-white/20 text-white flex items-center justify-center group-hover:scale-110 transition">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                         </span>
                     </div>
                     <div class="w-full min-w-0 flex-1">
                         <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">Vibe Mix</h3></div>
-                        <p class="text-xs text-gray-400 mt-1">Curate any mood</p>
+                        <p class="text-xs text-zinc-400 mt-0.5">Curate any mood</p>
                     </div>
                 </div>`;
-                
+
                 // Spotify Import Card
                 html += `
-                <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer" onclick="ui.toggleSpotifyModal(true)">
-                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center bg-[#181818] border border-[#1DB954]/20 group-hover:border-[#1DB954]/50 transition">
-                        <svg viewBox="0 0 24 24" width="48" height="48" fill="#1DB954" class="opacity-80 group-hover:opacity-100 group-hover:scale-110 transition"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.24 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.6.18-1.2.72-1.38 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.239.54-.959.72-1.56.3z"/></svg>
+                <div class="scroll-card glass-panel p-3 rounded-2xl transition hover-pause group relative flex flex-col w-full cursor-pointer border border-white/10 hover:border-white/20" onclick="ui.toggleSpotifyModal(true)">
+                    <div class="relative aspect-square rounded-xl overflow-hidden mb-3 shadow-md flex items-center justify-center bg-[#181818] border border-[#1DB954]/20 group-hover:border-[#1DB954]/50 transition">
+                        <svg viewBox="0 0 24 24" width="44" height="44" fill="#1DB954" class="opacity-80 group-hover:opacity-100 group-hover:scale-110 transition"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.24 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.6.18-1.2.72-1.38 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.239.54-.959.72-1.56.3z"/></svg>
                     </div>
                     <div class="w-full min-w-0 flex-1">
                         <div class="marquee-container w-full"><h3 class="font-bold text-[#1DB954] text-sm marquee-text">Import Spotify</h3></div>
-                        <p class="text-xs text-gray-400 mt-1">Connect Account</p>
+                        <p class="text-xs text-zinc-400 mt-0.5">Connect Account</p>
                     </div>
                 </div>`;
 
                 Object.keys(state.playlists).forEach(name => {
                     const style = ui.getPlaylistStyle(name);
                     html += `
-                    <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40 cursor-pointer" onclick="ui.openPlaylist('${utils.escapeJs(name)}')">
-                        <div class="relative aspect-square rounded-lg overflow-hidden mb-3 shadow-md flex items-center justify-center text-4xl font-bold ${style.bg}">
+                    <div class="scroll-card glass-panel p-3 rounded-2xl transition hover-pause group relative flex flex-col w-full cursor-pointer border border-white/10 hover:border-white/20" onclick="ui.openPlaylist('${utils.escapeJs(name)}')">
+                        <div class="relative aspect-square rounded-xl overflow-hidden mb-3 shadow-md flex items-center justify-center text-4xl font-bold ${style.bg}">
                             ${style.customHtml || style.icon}
                             <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                                <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+                                <span class="bg-white text-black font-bold p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
                             </div>
                         </div>
                         <button class="absolute top-4 right-4 p-1.5 bg-black/60 backdrop-blur-md rounded-full text-white opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shadow-lg hover:bg-white/20 z-10" onclick="event.stopPropagation(); ctxMenu.showPlaylist(event, '${utils.escapeJs(name)}')">
@@ -1331,11 +1396,12 @@
                         </button>
                         <div class="w-full min-w-0 flex-1">
                             <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">${utils.escapeHtml(name)}</h3></div>
-                            <p class="text-xs text-gray-400 mt-1">${state.playlists[name].length} tracks</p>
+                            <p class="text-xs text-zinc-400 mt-0.5">${state.playlists[name].length} tracks</p>
                         </div>
                     </div>`;
                 });
-                grid.innerHTML = html;
+                if (grid) grid.innerHTML = html;
+                if (fullGrid) fullGrid.innerHTML = html;
                 ui.renderLibraryLists();
                 updateMarquees();
             },
@@ -1356,14 +1422,24 @@
             },
             renderLibraryLists: () => {
                 const librarySongs = document.getElementById('library-songs');
+                const fullLikedList = document.getElementById('full-liked-list');
                 const likedArtists = document.getElementById('library-liked-artists');
+                const fullArtistsGrid = document.getElementById('full-artists-grid');
                 const history = document.getElementById('library-history');
                 const goSearch = "ui.switchView('search'); setTimeout(() => document.getElementById('search-input')?.focus(), 60)";
                 if (librarySongs) {
                     const songs = state.libraryIds.map(item => typeof item === 'object' ? item : state.playHistory.find(song => song.id === item) || state.likedIds.find(item2 => (typeof item2 === 'object' ? item2.id : item2) === item)).filter(Boolean);
-                    librarySongs.innerHTML = songs.length
+                    const songsHtml = songs.length
                         ? songs.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`, 'library')).join('')
-                        : ui.libraryEmptyState({
+                        : null;
+                    if (fullLikedList) fullLikedList.innerHTML = songsHtml || ui.libraryEmptyState({
+                        icon: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>',
+                        title: 'No liked songs yet',
+                        message: 'Double-click any song or click the heart icon to save favorites.',
+                        actionLabel: 'Discover songs',
+                        action: goSearch
+                    });
+                    librarySongs.innerHTML = songsHtml || ui.libraryEmptyState({
                             icon: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 19V6l12-2v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"/></svg>',
                             title: 'Your library is empty',
                             message: 'Use “Add to Library” on any song to keep it handy here.',
@@ -1372,9 +1448,17 @@
                         });
                 }
                 if (likedArtists) {
-                    likedArtists.innerHTML = state.likedArtists.length
+                    const artistsHtml = state.likedArtists.length
                         ? state.likedArtists.map(artist => ui.createArtistCard(artist)).join('')
-                        : ui.libraryEmptyState({
+                        : null;
+                    if (fullArtistsGrid) fullArtistsGrid.innerHTML = artistsHtml || ui.libraryEmptyState({
+                        icon: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>',
+                        title: 'No liked artists yet',
+                        message: 'Like artists from search or album pages and they will appear here.',
+                        actionLabel: 'Search artists',
+                        action: goSearch
+                    });
+                    likedArtists.innerHTML = artistsHtml || ui.libraryEmptyState({
                             icon: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>',
                             title: 'No liked artists yet',
                             message: 'Like artists from search and they’ll gather here.',
@@ -1487,20 +1571,58 @@
             },
             updateLibraryStats: () => {
                 const statEl = document.getElementById('library-stats-text');
-                if (!statEl) return;
                 const playlistCount = Object.keys(state.playlists).length;
                 const likedCount = state.likedIds.length;
                 const artistCount = state.likedArtists.length;
-                if (playlistCount + likedCount + artistCount === 0) {
-                    statEl.textContent = 'Playlists, liked songs and artists all live here once you start collecting.';
-                    return;
+                let downloadCount = 0;
+                let downloadBytes = 0;
+                if (typeof offlineStore !== 'undefined' && offlineStore.usage) {
+                    const u = offlineStore.usage();
+                    downloadCount = u.count || 0;
+                    downloadBytes = u.bytes || 0;
                 }
-                const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
-                statEl.textContent = [
-                    plural(playlistCount, 'playlist'),
-                    plural(likedCount, 'liked song'),
-                    plural(artistCount, 'artist')
-                ].join('  •  ');
+
+                // Update tab badges
+                const bP = document.getElementById('lib-count-playlists');
+                const bL = document.getElementById('lib-count-liked');
+                const bA = document.getElementById('lib-count-artists');
+                const bD = document.getElementById('lib-count-downloads');
+                if (bP) bP.textContent = playlistCount;
+                if (bL) bL.textContent = likedCount;
+                if (bA) bA.textContent = artistCount;
+                if (bD) bD.textContent = downloadCount;
+
+                // Update featured cards
+                const cardLiked = document.getElementById('card-liked-count');
+                const cardDown = document.getElementById('card-downloads-count');
+                const cardDownStorage = document.getElementById('card-downloads-storage');
+                if (cardLiked) cardLiked.textContent = `${likedCount} track${likedCount === 1 ? '' : 's'}`;
+                if (cardDown) cardDown.textContent = `${downloadCount} offline track${downloadCount === 1 ? '' : 's'}`;
+                if (cardDownStorage && typeof offlineStore !== 'undefined' && offlineStore.formatBytes) {
+                    cardDownStorage.textContent = offlineStore.formatBytes(downloadBytes);
+                }
+
+                // Update section badges
+                const sP = document.getElementById('section-playlists-count');
+                const sL = document.getElementById('section-liked-count');
+                const sA = document.getElementById('section-artists-count');
+                if (sP) sP.textContent = `${playlistCount} playlists`;
+                if (sL) sL.textContent = `${likedCount} songs`;
+                if (sA) sA.textContent = `${artistCount} artists`;
+
+                if (statEl) {
+                    if (playlistCount + likedCount + artistCount + downloadCount === 0) {
+                        statEl.textContent = 'Playlists, liked songs and artists all live here once you start collecting.';
+                    } else {
+                        const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+                        statEl.textContent = [
+                            plural(playlistCount, 'playlist'),
+                            plural(likedCount, 'liked song'),
+                            plural(artistCount, 'artist'),
+                            plural(downloadCount, 'offline track')
+                        ].join('  •  ');
+                    }
+                }
             },
             createArtistCard: (artist) => {
                 const id = utils.escapeJs(artist.id || artist.name);
@@ -1547,46 +1669,126 @@
                 const storeId = songStore.add(item);
                 const isContext = item.type === 'album' || item.type === 'artist';
                 const offlineBlocked = !isContext && ui.isOfflineUnavailable(item);
+                const fallbackArt = typeof FALLBACK_ART !== 'undefined' ? FALLBACK_ART : 'DTunes.svg';
+                const rawImg = item.img || fallbackArt;
+                const safeImg = typeof sanitizeImageUrl === 'function' ? sanitizeImageUrl(rawImg) : (typeof utils !== 'undefined' && typeof utils.sanitizeImageUrl === 'function' ? utils.sanitizeImageUrl(rawImg) : rawImg);
                 if (offlineBlocked) {
                     const blockedArtist = utils.escapeHtml(item.artist);
                     return `
-                    <div class="scroll-card glass-panel p-3 rounded-xl flex flex-col w-40 opacity-45 grayscale cursor-not-allowed select-none" aria-disabled="true" title="Not downloaded — unavailable offline">
-                        <div class="relative aspect-square rounded-lg overflow-hidden mb-3 bg-gray-800 shadow-md">
-                            <img src="${item.img}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover" decoding="async">
+                    <div class="scroll-card glass-panel p-3 rounded-2xl flex flex-col w-40 opacity-45 grayscale cursor-not-allowed select-none relative overflow-hidden" aria-disabled="true" title="Not downloaded — unavailable offline">
+                        <div class="scroll-card-ambient" aria-hidden="true"><img src="${safeImg}" class="scroll-card-ambient-img" alt="" onerror="this.src='${FALLBACK_ART}'"></div>
+                        <div class="relative aspect-square rounded-xl overflow-hidden mb-2.5 bg-zinc-900 shadow-md z-10">
+                            <img src="${safeImg}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover" decoding="async">
                             <div class="absolute inset-0 bg-black/55 flex flex-col items-center justify-center gap-1.5">
                                 <svg class="w-5 h-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
                                 <span class="text-[9px] font-bold text-white/85 uppercase tracking-wide">Not downloaded</span>
                             </div>
                         </div>
-                        <div class="w-full min-w-0 flex-1">
+                        <div class="w-full min-w-0 flex-1 z-10 relative">
                             <div class="marquee-container w-full"><h3 class="font-bold text-gray-400 text-sm marquee-text">${utils.escapeHtml(item.name)}</h3></div>
-                            <div class="marquee-container w-full mt-1"><p class="text-xs text-gray-500 marquee-text">${blockedArtist}</p></div>
+                            <div class="marquee-container w-full mt-0.5"><p class="text-xs text-gray-500 marquee-text">${blockedArtist}</p></div>
                         </div>
                     </div>`;
                 }
                 const clickHandler = item.type === 'album' ? `ui.openAlbum('${utils.escapeJs(item.id)}')` : (isContext ? `playContext('${item.type}', '${utils.escapeJs(item.id)}')` : `playSongById('${storeId}')`);
                 const dblClickHandler = isContext ? "" : `ondblclick="player.likeSong('${utils.escapeJs(item.id)}')"`;
                 const artistLiked = item.type === 'artist' && state.likedArtists.some(artist => (artist.id || artist.name) === item.id);
-                const menuBtn = item.type === 'artist' ? `
-                    <button class="absolute top-4 right-4 p-1.5 ${artistLiked ? 'bg-red-500 text-white' : 'bg-black/60 text-white'} backdrop-blur-md rounded-full opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shadow-lg hover:bg-red-500 z-10" onclick="event.stopPropagation(); ui.toggleArtistLike({ id: '${utils.escapeJs(item.id)}', name: '${utils.escapeJs(item.name)}', artist: '${utils.escapeJs(item.artist || 'Artist')}', img: '${utils.escapeJs(item.img || FALLBACK_ART)}', type: 'artist' })" title="${artistLiked ? 'Unlike artist' : 'Like artist'}">
-                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
-                    </button>` : (isContext ? "" : `
-                    <button class="absolute top-4 right-4 p-1.5 bg-black/60 backdrop-blur-md rounded-full text-white opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shadow-lg hover:bg-white/20 z-10" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${storeId}')">
-                        <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>
-                    </button>`);
+                
+                // Three-dot menu button at bottom-right corner beside song name, ONLY appears on hover
+                const bottomMenuBtn = isContext && item.type === 'artist' ? `
+                    <button class="scroll-card-menu-btn opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1.5 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white flex-shrink-0" onclick="event.stopPropagation(); ui.toggleArtistLike({ id: '${utils.escapeJs(item.id)}', name: '${utils.escapeJs(item.name)}', artist: '${utils.escapeJs(item.artist || 'Artist')}', img: '${utils.escapeJs(item.img || FALLBACK_ART)}', type: 'artist' })" title="${artistLiked ? 'Unlike artist' : 'Like artist'}" aria-label="Like artist">
+                        <svg class="w-4 h-4 ${artistLiked ? 'text-red-500 fill-current' : ''}" viewBox="0 0 24 24" fill="${artistLiked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54z"/></svg>
+                    </button>` : `
+                    <button type="button" class="scroll-card-menu-btn opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1.5 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white flex-shrink-0" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${storeId}')" title="More Options" aria-label="More Options">
+                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+                    </button>`;
 
                 return `
-                <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-40" ${dblClickHandler}>
-                    <div class="relative aspect-square rounded-lg overflow-hidden mb-3 bg-gray-800 shadow-md cursor-pointer" onclick="${clickHandler}">
-                        <img src="${item.img}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" decoding="async">
+                <div class="scroll-card glass-panel p-3 rounded-2xl transition hover-pause group relative flex flex-col w-40 overflow-hidden" ${dblClickHandler}>
+                    <div class="scroll-card-ambient" aria-hidden="true"><img src="${safeImg}" class="scroll-card-ambient-img" alt="" onerror="this.src='${FALLBACK_ART}'"></div>
+                    <div class="relative aspect-square rounded-xl overflow-hidden mb-2.5 bg-zinc-900 shadow-md cursor-pointer z-10" onclick="${clickHandler}">
+                        <img src="${safeImg}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" decoding="async">
                         <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                            <span class="bg-[var(--accent-color)] text-black p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+                            <span class="bg-white text-black font-bold p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
                         </div>
                     </div>
-                    ${menuBtn}
-                    <div class="w-full min-w-0 flex-1">
-                        <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">${utils.escapeHtml(item.name)}</h3></div>
-                        <div class="marquee-container w-full mt-1"><p class="text-xs text-gray-400 marquee-text">${utils.escapeHtml(item.artist)}</p></div>
+                    <div class="w-full min-w-0 flex items-center justify-between gap-1.5 z-10 relative mt-0.5">
+                        <div class="min-w-0 flex-1">
+                            <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">${utils.escapeHtml(item.name)}</h3></div>
+                            <div class="marquee-container w-full mt-0.5"><p class="text-xs text-zinc-400 marquee-text">${utils.escapeHtml(item.artist)}</p></div>
+                        </div>
+                        ${bottomMenuBtn}
+                    </div>
+                </div>`;
+            },
+            heartMarkup: () => `<svg class="heart-glyph" width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>`,
+            createNowPlayingInner: (song, artistSuffix = '', storeId = null, context = 'island') => {
+                const title = utils.escapeHtml(song.name || song.title || 'Unknown');
+                const artist = utils.escapeHtml(song.artist || 'Unknown');
+                const img = song.img || FALLBACK_ART;
+                const liked = typeof player !== 'undefined' && player.isLiked && player.isLiked(song.id);
+                const safeId = utils.escapeJs(song.id);
+
+                let rightControls = '';
+                if (context === 'island') {
+                    rightControls = `<button type="button" class="np-heart ${liked ? 'is-liked text-red-500' : ''}" aria-label="${liked ? 'Unlike' : 'Like'}" onclick="event.stopPropagation(); player.likeSong('${safeId}')">${ui.heartMarkup()}</button>`;
+                } else {
+                    const sid = storeId || songStore.add(song);
+                    rightControls = `
+                        <div class="np-actions flex items-center gap-0.5 ml-2 mr-0.5 flex-shrink-0" onclick="event.stopPropagation()">
+                            <button type="button" class="np-action-btn" title="Play Next" aria-label="Play Next" onclick="event.stopPropagation(); player.addNext(songStore.get('${sid}'))">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+                            </button>
+                            <button type="button" class="np-action-btn" title="Add to Queue" aria-label="Add to Queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${sid}'))">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/><path d="M18 15v6m-3-3h6"/></svg>
+                            </button>
+                            <button type="button" class="np-action-btn" title="More Options" aria-label="More Options" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${sid}')">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+                            </button>
+                        </div>
+                    `;
+                }
+                return `
+                    <div class="np-art">
+                        <img src="${img}" onerror="this.src='${FALLBACK_ART}'" alt="" class="np-art-img" decoding="async">
+                    </div>
+                    <div class="np-copy">
+                        <div class="marquee-container w-full"><div class="np-title marquee-text">${title}</div></div>
+                        <div class="marquee-container w-full"><div class="np-artist marquee-text">${artist}${artistSuffix}</div></div>
+                    </div>
+                    ${rightControls}
+                `;
+            },
+            createPlayerListPill: (song, clickHandlerStr, context = 'queue', reorder = null) => {
+                const storeId = songStore.add(song);
+                const click = clickHandlerStr || `playSongById('${storeId}')`;
+                const suffix = (context === 'history' && song.playedAt) ? ` · ${utils.escapeHtml(ui.formatRelativeTime(song.playedAt))}` : '';
+                const inner = ui.createNowPlayingInner(song, suffix, storeId, context);
+                if (ui.isOfflineUnavailable(song)) {
+                    return `<div class="np-row" data-store-id="${storeId}"><div class="np-pill is-disabled" aria-disabled="true" title="Not downloaded — unavailable offline">${inner}${ui.notDownloadedBadge('ml-2')}</div></div>`;
+                }
+                const reorderAttrs = reorder
+                    ? `draggable="true" data-queue-section="${utils.escapeHtml(reorder.section)}" data-queue-index="${reorder.index}"`
+                    : '';
+                const drag = reorder ? `<button class="queue-drag-handle np-drag" title="Drag to rearrange" aria-label="Rearrange ${utils.escapeHtml(song.name || '')}" onclick="event.stopPropagation()" type="button"><svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M9 5a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM9 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM9 19a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z"/></svg></button>` : '';
+                const rowClass = reorder ? 'queue-reorder-row swipe-song np-row relative overflow-hidden group select-none flex-shrink-0 w-full' : 'swipe-song np-row relative overflow-hidden group select-none flex-shrink-0 w-full';
+                return `
+                <div class="${rowClass}" ${reorderAttrs} data-store-id="${storeId}">
+                    <div class="swipe-reveal-left absolute inset-y-0 left-0 flex items-center overflow-hidden pointer-events-none rounded-full z-0 bg-emerald-600 text-white font-bold text-xs" style="width:0px;">
+                        <div class="swipe-reveal-content flex items-center gap-2 px-4 whitespace-nowrap min-w-max h-full">
+                            <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+                            <span class="swipe-reveal-text font-bold text-xs tracking-wide">Play Next</span>
+                        </div>
+                    </div>
+                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-full z-0 bg-white/20 text-white font-bold text-xs" style="width:0px;">
+                        <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
+                            <span class="swipe-reveal-text font-bold text-xs tracking-wide">Add to Queue</span>
+                            <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
+                        </div>
+                    </div>
+                    <div class="swipe-song-card np-pill cursor-pointer relative z-10" onclick="${click}" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                        ${inner}
+                        ${drag}
                     </div>
                 </div>`;
             },
@@ -1622,39 +1824,46 @@
             },
             createQueuePill: (song, section, index) => {
                 const storeId = songStore.add(song);
-                if (ui.isOfflineUnavailable(song)) {
-                    return `
-                    <div class="relative overflow-hidden rounded-2xl mb-2 flex-shrink-0 w-full" data-store-id="${storeId}">
-                        <div class="glass-panel rounded-2xl p-2 pr-2 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/95 opacity-45 grayscale cursor-not-allowed select-none" aria-disabled="true" title="Not downloaded — unavailable offline">
-                            ${ui.createSongPillInner(song)}
-                            ${ui.notDownloadedBadge('ml-2')}
-                        </div>
-                    </div>`;
-                }
-                const safeSection = utils.escapeHtml(section);
+                const title = utils.escapeHtml(song.name || song.title || 'Unknown');
+                const artist = utils.escapeHtml(song.artist || 'Unknown');
+                const img = song.img || FALLBACK_ART;
+                const safeSection = utils.escapeJs(section);
+                const safeIndex = Number(index);
+
                 return `
-                <div class="queue-reorder-row swipe-song relative overflow-hidden rounded-2xl mb-2 group select-none flex-shrink-0 w-full" draggable="true" data-queue-section="${safeSection}" data-queue-index="${index}" data-store-id="${storeId}">
-                    <div class="swipe-reveal-left absolute inset-y-0 left-0 flex items-center overflow-hidden pointer-events-none rounded-2xl z-0 bg-emerald-600 text-white font-bold text-xs" style="width:0px;">
-                        <div class="swipe-reveal-content flex items-center gap-2 px-4 whitespace-nowrap min-w-max h-full">
-                            <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
-                            <span class="swipe-reveal-text font-bold text-xs tracking-wide">Play Next</span>
+                <div class="queue-reorder-row swipe-song np-row relative overflow-hidden group select-none flex-shrink-0 w-full" draggable="true" data-queue-section="${safeSection}" data-queue-index="${safeIndex}" data-store-id="${storeId}">
+                    <div class="swipe-song-card np-pill cursor-pointer relative z-10 flex items-center w-full" onclick="playSongById('${storeId}')" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
+                        <!-- Drag Handle -->
+                        <button class="queue-drag-handle np-drag text-zinc-500 hover:text-white transition p-1 flex-shrink-0 cursor-grab active:cursor-grabbing ml-0.5 mr-1" title="Drag to rearrange" aria-label="Rearrange track" onclick="event.stopPropagation()" type="button">
+                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M9 5a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM9 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM9 19a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z"/>
+                            </svg>
+                        </button>
+
+                        <!-- Album Art -->
+                        <div class="np-art flex-shrink-0">
+                            <img src="${img}" onerror="this.src='${FALLBACK_ART}'" alt="" class="np-art-img" decoding="async">
                         </div>
-                    </div>
-                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-[var(--accent-color)] text-black font-bold text-xs" style="width:0px;">
-                        <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
-                            <span class="swipe-reveal-text font-bold text-xs tracking-wide">Add to Queue</span>
-                            <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
+
+                        <!-- Track Info -->
+                        <div class="np-copy flex-1 min-w-0 ml-2.5">
+                            <div class="marquee-container w-full"><div class="np-title marquee-text">${title}</div></div>
+                            <div class="marquee-container w-full"><div class="np-artist marquee-text">${artist}</div></div>
                         </div>
-                    </div>
-                    <div class="swipe-song-card glass-panel rounded-2xl p-2 pr-2 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/95 cursor-pointer relative z-10" onclick="playSongById('${storeId}')" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
-                        ${ui.createSongPillInner(song)}
-                        <button class="queue-drag-handle" title="Drag to rearrange" aria-label="Rearrange ${utils.escapeHtml(song.name)}" onclick="event.stopPropagation()" type="button">
-                            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor"><path d="M9 5a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM9 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM9 19a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm10 0a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z"/></svg>
+
+                        <!-- Cross button to remove from queue -->
+                        <button type="button" class="np-action-btn w-7 h-7 rounded-full flex items-center justify-center text-zinc-400 hover:text-white hover:bg-white/10 transition active:scale-90 flex-shrink-0 ml-auto mr-1" title="Remove from queue" aria-label="Remove from queue" onclick="event.stopPropagation(); player.removeFromQueue('${safeSection}', ${safeIndex})">
+                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M18 6L6 18M6 6l12 12"/>
+                            </svg>
                         </button>
                     </div>
                 </div>`;
             },
             createSongPill: (song, clickHandlerStr, context = 'queue') => {
+                if (context === 'queue' || context === 'history') {
+                    return ui.createPlayerListPill(song, clickHandlerStr, context);
+                }
                 const storeId = songStore.add(song);
                 if (ui.isOfflineUnavailable(song)) {
                     return `
@@ -1676,7 +1885,7 @@
                             <span class="swipe-reveal-text font-bold text-xs tracking-wide">Play Next</span>
                         </div>
                     </div>
-                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-[var(--accent-color)] text-black font-bold text-xs" style="width:0px;">
+                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-white/20 text-white font-bold text-xs" style="width:0px;">
                         <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
                             <span class="swipe-reveal-text font-bold text-xs tracking-wide">Add to Queue</span>
                             <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
@@ -1685,9 +1894,16 @@
                     <div class="swipe-song-card glass-panel rounded-2xl p-2 pr-4 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/95 cursor-pointer relative z-10" onclick="${clickHandlerStr}" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')">
                         ${ui.createSongPillInner(song)}
                         ${timeBadge}
-                        <div class="flex items-center ${hoverBtnVis} transition-opacity duration-200 mr-1">
-                            <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition hidden md:flex" title="Play Next" onclick="event.stopPropagation(); player.addNext(songStore.get('${storeId}'))"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg></button>
-                            <button class="p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition hidden md:flex" title="Add to Queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${storeId}'))"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg></button>
+                        <div class="flex items-center gap-0.5 ml-auto mr-1 flex-shrink-0" onclick="event.stopPropagation()">
+                            <button type="button" class="np-action-btn" title="Play Next" aria-label="Play Next" onclick="event.stopPropagation(); player.addNext(songStore.get('${storeId}'))">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
+                            </button>
+                            <button type="button" class="np-action-btn" title="Add to Queue" aria-label="Add to Queue" onclick="event.stopPropagation(); player.addToQueue(songStore.get('${storeId}'))">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/><path d="M18 15v6m-3-3h6"/></svg>
+                            </button>
+                            <button type="button" class="np-action-btn" title="More Options" aria-label="More Options" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${storeId}')">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+                            </button>
                         </div>
                     </div>
                 </div>`;
@@ -1722,7 +1938,7 @@
                             <span class="swipe-reveal-text font-bold text-xs tracking-wide">Play Next</span>
                         </div>
                     </div>
-                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-[var(--accent-color)] text-black font-bold text-xs" style="width:0px;">
+                    <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-white/20 text-white font-bold text-xs" style="width:0px;">
                         <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
                             <span class="swipe-reveal-text font-bold text-xs tracking-wide">Add to Queue</span>
                             <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
@@ -1766,11 +1982,11 @@
                 <div class="for-you-card glass-panel rounded-3xl overflow-hidden relative flex-shrink-0 w-64 h-80 group cursor-pointer hover-pause" onclick="playSongById('${storeId}')">
                     <img src="${song.img}" class="absolute inset-0 w-full h-full object-cover transition duration-700 group-hover:scale-110" decoding="async">
                     <div class="absolute inset-0 bg-gradient-to-t from-black via-black/45 to-transparent"></div>
-                    <button class="absolute top-4 right-4 w-10 h-10 rounded-full bg-[var(--accent-color)] text-black flex items-center justify-center shadow-xl opacity-95 group-hover:scale-110 transition" onclick="event.stopPropagation(); playSongById('${storeId}')">
+                    <button class="absolute top-4 right-4 w-10 h-10 rounded-full bg-white text-black font-bold flex items-center justify-center shadow-xl opacity-95 group-hover:scale-110 transition" onclick="event.stopPropagation(); playSongById('${storeId}')">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                     </button>
                     <div class="absolute bottom-0 left-0 right-0 p-5">
-                        <div class="inline-flex px-2 py-1 rounded-full bg-white/10 text-[10px] uppercase tracking-wider text-[var(--accent-color)] mb-3">For You</div>
+                        <div class="inline-flex px-2 py-1 rounded-full bg-white/10 text-[10px] uppercase tracking-wider text-white mb-3">For You</div>
                         <div class="marquee-container"><h3 class="text-xl font-bold text-white marquee-text">${utils.escapeHtml(song.name)}</h3></div>
                         <div class="marquee-container mt-1"><p class="text-sm text-gray-300 marquee-text">${utils.escapeHtml(song.artist)}</p></div>
                     </div>
@@ -1807,13 +2023,13 @@
                     
                     ${collageHtml}
                     
-                    <button class="absolute bottom-5 right-5 w-12 h-12 rounded-full bg-[var(--accent-color)] text-black flex items-center justify-center shadow-2xl opacity-90 group-hover:scale-110 transition z-30" onclick="event.stopPropagation(); homeView.playDiscoverMix('${mix.key}')">
+                    <button class="absolute bottom-5 right-5 w-12 h-12 rounded-full bg-white text-black font-bold flex items-center justify-center shadow-2xl opacity-90 group-hover:scale-110 transition z-30" onclick="event.stopPropagation(); homeView.playDiscoverMix('${mix.key}')">
                         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
                     </button>
                     
                     <div class="absolute bottom-0 left-0 right-16 p-5 z-20 pointer-events-none">
-                        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-[10px] font-extrabold tracking-wider uppercase text-[var(--accent-color)] mb-2 shadow-lg">
-                            <span class="w-1.5 h-1.5 rounded-full bg-[var(--accent-color)] animate-pulse"></span>
+                        <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/40 backdrop-blur-md border border-white/10 text-[10px] font-extrabold tracking-wider uppercase text-white mb-2 shadow-lg">
+                            <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
                             ${utils.escapeHtml(mix.badgeText || 'MADE FOR YOU')}
                         </div>
                         <div class="marquee-container"><h3 class="text-xl font-bold text-white marquee-text tracking-tight drop-shadow-md">${utils.escapeHtml(mix.title)}</h3></div>
@@ -1840,7 +2056,7 @@
                     <div class="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.25),transparent_75%)] pointer-events-none"></div>
                     <div class="absolute inset-0 bg-black/30 backdrop-blur-[2px]"></div>
                     <div class="relative z-10 w-full h-full p-4 flex flex-col justify-between">
-                        <div class="text-[10px] font-extrabold uppercase tracking-widest text-[var(--accent-color)] bg-black/50 backdrop-blur-md px-2.5 py-1 rounded-full w-max border border-white/10 shadow-lg">${utils.escapeHtml(mix.badgeText || 'D\'TUNES MIX')}</div>
+                        <div class="text-[10px] font-extrabold uppercase tracking-widest text-white bg-black/50 backdrop-blur-md px-2.5 py-1 rounded-full w-max border border-white/10 shadow-lg">${utils.escapeHtml(mix.badgeText || 'D\'TUNES MIX')}</div>
                         <div class="w-28 h-28 mx-auto rounded-2xl overflow-hidden shadow-2xl border border-white/20">${inner}</div>
                         <div class="text-center font-bold text-white text-base tracking-tight truncate drop-shadow-md">${utils.escapeHtml(mix.title)}</div>
                     </div>
@@ -1899,8 +2115,12 @@
                 island?.classList.toggle('is-loading', activeLoading);
                 document.getElementById('album-art-wrapper')?.classList.toggle('is-loading', activeLoading);
                 if (state.currentTrack) {
-                    title.textContent = state.currentTrack.name || 'Loading track';
-                    artist.textContent = activeLoading ? `Loading • ${state.currentTrack.artist || 'Preparing audio'}` : (state.currentTrack.artist || 'Unknown Artist');
+                    if (state.currentTrack.name && (!title.textContent || title.textContent === 'Not Playing')) {
+                        title.textContent = state.currentTrack.name;
+                    }
+                    if (state.currentTrack.artist) {
+                        artist.textContent = state.currentTrack.artist;
+                    }
                 }
                 if ('mediaSession' in navigator) {
                     navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused';
@@ -1937,8 +2157,9 @@
                 }
             },
             updateMetadata: (track, options = {}) => {
-                document.getElementById('p-title').textContent = track.name; 
-                document.getElementById('p-artist').textContent = options.loading ? `Loading • ${track.artist || 'Preparing audio'}` : track.artist;
+                if (!track) return;
+                document.getElementById('p-title').textContent = track.name || track.title || 'Unknown Track'; 
+                document.getElementById('p-artist').textContent = (options.loading && !track.artist) ? 'Loading...' : (track.artist || 'Unknown Artist');
                 const safeArt = sanitizeImageUrl(track.img);
                 const artImg = document.getElementById('curr-art-img');
                 if (artImg) {
@@ -1956,13 +2177,16 @@
                         this.src = FALLBACK_ART;
                     };
                     artImg.onload = () => applyDynamicTrackTheme(artImg);
-                    artImg.src = safeArt;
+                    if (artImg.src !== safeArt) {
+                        artImg.src = safeArt;
+                    }
                     if (artImg.complete && artImg.naturalWidth > 0) applyDynamicTrackTheme(artImg);
                 }
                 ui.setPlayerLoading(!!options.loading);
+                if (ui.updateFullscreenPlayer) ui.updateFullscreenPlayer();
                 const likeBtn = document.getElementById('p-like-btn');
                 const isLiked = state.likedIds.some(item => (typeof item === 'string' ? item === track.id : item.id === track.id));
-                likeBtn.className = isLiked ? 'text-red-500 transition flex-shrink-0 ml-2' : 'text-gray-400 hover:text-red-500 transition flex-shrink-0 ml-2';
+                likeBtn.className = isLiked ? 'np-like is-liked text-red-500' : 'np-like text-gray-400 hover:text-white';
 
                 if ('mediaSession' in navigator && typeof MediaMetadata !== 'undefined') {
                     try {
@@ -1991,46 +2215,8 @@
                     } catch (e) {
                         console.warn('[MediaSession] Metadata update error:', e);
                     }
-
-                    const safeSetHandler = (action, handler) => {
-                        try { navigator.mediaSession.setActionHandler(action, handler); } catch (e) {}
-                    };
-                    safeSetHandler('play', () => {
-                        if (window.requestPlay) window.requestPlay();
-                        else if (window.player && window.player.togglePlay) window.player.togglePlay();
-                        else document.getElementById('audio-el')?.play();
-                    });
-                    safeSetHandler('pause', () => {
-                        if (window.requestPause) window.requestPause();
-                        else if (window.player && window.player.togglePlay) window.player.togglePlay();
-                        else document.getElementById('audio-el')?.pause();
-                    });
-                    safeSetHandler('previoustrack', () => window.player?.prev?.());
-                    safeSetHandler('nexttrack', () => window.player?.next?.(true));
-                    safeSetHandler('seekbackward', (details) => {
-                        const a = document.getElementById('audio-el');
-                        if (a) {
-                            a.currentTime = Math.max(a.currentTime - (details?.seekOffset || 10), 0);
-                            if (window.player?.updateMediaPosition) window.player.updateMediaPosition();
-                        }
-                    });
-                    safeSetHandler('seekforward', (details) => {
-                        const a = document.getElementById('audio-el');
-                        if (a) {
-                            a.currentTime = Math.min(a.currentTime + (details?.seekOffset || 10), a.duration || 0);
-                            if (window.player?.updateMediaPosition) window.player.updateMediaPosition();
-                        }
-                    });
-                    safeSetHandler('seekto', (details) => {
-                        const a = document.getElementById('audio-el');
-                        if (a && details && Number.isFinite(details.seekTime)) {
-                            a.currentTime = Math.max(0, Math.min(details.seekTime, a.duration || details.seekTime));
-                            if (window.player?.updateMediaPosition) window.player.updateMediaPosition();
-                        }
-                    });
-                }
-                
-                const mPlayBtn = document.getElementById('m-icon-play');
+                    }
+const mPlayBtn = document.getElementById('m-icon-play');
                 const mPauseBtn = document.getElementById('m-icon-pause');
                 if(mPlayBtn && mPauseBtn) {
                     mPlayBtn.className = state.playing ? 'hidden' : 'flex';
@@ -2038,6 +2224,8 @@
                 }
                 updateMarquees();
                 if (ui.updateAlbumCarouselPeeks) ui.updateAlbumCarouselPeeks();
+                if (ui.initQueuePointerReorder) ui.initQueuePointerReorder();
+                if (state.fullscreenMode && ui.updateFullscreenQueue) ui.updateFullscreenQueue();
             },
             toggleLyricsModal: (expand) => {
                 const modal = document.getElementById('lyrics-modal');
@@ -2057,12 +2245,15 @@
                 }
             },
             switchMobilePlayerTab: (tab) => {
+                const mobileTabs = ['track', 'queue', 'history', 'lyrics'];
+                const tabIndex = Math.max(0, mobileTabs.indexOf(tab));
                 document.body.dataset.mobileTab = tab;
+                const tabSwitch = document.querySelector('.mobile-player-tabs');
+                if (tabSwitch) tabSwitch.style.setProperty('--seg-index', String(tabIndex));
                 document.querySelectorAll('.mobile-tab-btn').forEach(btn => {
                     const isCurrent = btn.id === `m-tab-${tab}`;
-                    btn.classList.toggle('active', isCurrent);
-                    btn.classList.toggle('text-white', isCurrent);
-                    btn.classList.toggle('text-gray-400', !isCurrent);
+                    btn.classList.toggle('is-active', isCurrent);
+                    btn.setAttribute('aria-selected', String(isCurrent));
                 });
                 if (tab === 'queue') {
                     ui.switchQueueTab('upnext');
@@ -2078,6 +2269,140 @@
                 }
                 updateMarquees();
             },
+            morphPlayIcon: (playing) => {
+                const buttons = [
+                    document.getElementById('btn-play'),
+                    document.getElementById('fs-btn-play')
+                ].filter(Boolean);
+                const paths = buttons.map(b => b.querySelector('.pp-poly')).filter(Boolean);
+                if (paths.length === 0) return;
+
+                buttons.forEach(b => {
+                    b.classList.toggle('is-playing', playing);
+                    b.classList.toggle('is-paused', !playing);
+                    b.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+                });
+
+                if (ui._ppPlaying === playing) return;
+                const first = ui._ppPlaying === undefined;
+                ui._ppPlaying = playing;
+
+                // 36 coordinate values per shape (18 points for 6 cubic bezier segments each)
+                // In Pause: two rounded vertical pill capsules
+                const PAUSE = [
+                    // Subpath 1: Left pill
+                    5.8, 6.6,
+                    5.8, 5.5, 6.7, 4.6, 7.8, 4.6,
+                    8.9, 4.6, 9.8, 5.5, 9.8, 6.6,
+                    9.8, 10.0, 9.8, 14.0, 9.8, 17.4,
+                    9.8, 18.5, 8.9, 19.4, 7.8, 19.4,
+                    6.7, 19.4, 5.8, 18.5, 5.8, 17.4,
+                    5.8, 14.0, 5.8, 10.0,
+                    // Subpath 2: Right pill
+                    14.2, 6.6,
+                    14.2, 5.5, 15.1, 4.6, 16.2, 4.6,
+                    17.3, 4.6, 18.2, 5.5, 18.2, 6.6,
+                    18.2, 10.0, 18.2, 14.0, 18.2, 17.4,
+                    18.2, 18.5, 17.3, 19.4, 16.2, 19.4,
+                    15.1, 19.4, 14.2, 18.5, 14.2, 17.4,
+                    14.2, 14.0, 14.2, 10.0
+                ];
+
+                // In Play: the two shapes melt together to form the rounded play triangle
+                const PLAY = [
+                    // Subpath 1: Left base & shoulders of play triangle
+                    7.0, 7.4,
+                    7.0, 6.2, 7.8, 5.3, 8.9, 6.0,
+                    10.2, 6.8, 11.5, 7.6, 12.0, 8.0,
+                    12.0, 10.5, 12.0, 13.5, 12.0, 16.0,
+                    11.5, 16.4, 10.2, 17.2, 8.9, 18.0,
+                    7.8, 18.7, 7.0, 17.8, 7.0, 16.6,
+                    7.0, 13.5, 7.0, 10.5,
+                    // Subpath 2: Right apex tip of play triangle
+                    12.0, 8.0,
+                    13.2, 8.8, 15.6, 10.2, 17.5, 11.2,
+                    18.8, 11.8, 18.8, 12.2, 17.5, 12.8,
+                    15.6, 13.8, 13.2, 15.2, 12.0, 16.0,
+                    12.0, 16.0, 12.0, 16.0, 12.0, 16.0,
+                    12.0, 12.0, 12.0, 12.0, 12.0, 8.0,
+                    12.0, 8.0, 12.0, 8.0
+                ];
+
+                const target = playing ? PAUSE : PLAY;
+                if (!ui._ppFrom) ui._ppFrom = (first ? (playing ? PAUSE : PLAY) : target).slice();
+
+                if (first) {
+                    ui._ppFrom = target.slice();
+                    const d = ui._ppPath(ui._ppFrom);
+                    paths.forEach(p => p.setAttribute('d', d));
+                    return;
+                }
+
+                const start = ui._ppFrom.slice();
+                const t0 = performance.now();
+                if (ui._ppFrame) cancelAnimationFrame(ui._ppFrame);
+
+                // Smooth organic spring easing
+                const ease = (t) => 1 - Math.pow(1 - t, 3.2);
+
+                const step = (now) => {
+                    const p = Math.min(1, (now - t0) / 280);
+                    const e = ease(p);
+                    for (let i = 0; i < start.length; i++) {
+                        ui._ppFrom[i] = start[i] + (target[i] - start[i]) * e;
+                    }
+                    const d = ui._ppPath(ui._ppFrom);
+                    paths.forEach(pathEl => pathEl.setAttribute('d', d));
+                    if (p < 1) ui._ppFrame = requestAnimationFrame(step);
+                };
+                ui._ppFrame = requestAnimationFrame(step);
+            },
+            _ppPath: (pts) => {
+                const sub = (offset) => {
+                    const p = (i) => pts[offset + i].toFixed(2);
+                    return `M ${p(0)} ${p(1)} ` +
+                           `C ${p(2)} ${p(3)}, ${p(4)} ${p(5)}, ${p(6)} ${p(7)} ` +
+                           `C ${p(8)} ${p(9)}, ${p(10)} ${p(11)}, ${p(12)} ${p(13)} ` +
+                           `C ${p(14)} ${p(15)}, ${p(16)} ${p(17)}, ${p(18)} ${p(19)} ` +
+                           `C ${p(20)} ${p(21)}, ${p(22)} ${p(23)}, ${p(24)} ${p(25)} ` +
+                           `C ${p(26)} ${p(27)}, ${p(28)} ${p(29)}, ${p(30)} ${p(31)} ` +
+                           `C ${p(32)} ${p(33)}, ${p(34)} ${p(35)}, ${p(0)} ${p(1)} Z`;
+                };
+                return `${sub(0)} ${sub(36)}`;
+            },
+            adjustQueueMaxHeight: () => {
+                if (typeof window === 'undefined') return;
+                const header = document.querySelector('header');
+                const playerCard = document.getElementById('player-card');
+                const infoIsland = document.getElementById('info-island');
+                const queueWrap = document.getElementById('queue-wrapper');
+                const queueExpand = document.getElementById('queue-expandable-area');
+                if (!queueWrap || !queueExpand) return;
+
+                const vh = window.innerHeight;
+                const headerBottom = (header && header.offsetHeight > 0) ? header.getBoundingClientRect().bottom : 82;
+                let playerCardTop = (playerCard && playerCard.offsetHeight > 0) ? playerCard.getBoundingClientRect().top : (vh - 82);
+                if (playerCardTop > vh - 40 || playerCardTop < 200) {
+                    playerCardTop = vh - 82;
+                }
+                const infoIslandHeight = (infoIsland && infoIsland.offsetHeight > 0) ? infoIsland.offsetHeight : 58;
+
+                // Full sidebar height from 16px below top header down to 8px above player card:
+                const wrapFullH = Math.max(260, Math.floor((playerCardTop - 8) - (headerBottom + 12)));
+                const maxQueueH = Math.max(140, Math.floor(wrapFullH - infoIslandHeight - 8));
+
+                queueWrap.style.setProperty('--queue-full-height', wrapFullH + 'px');
+                queueWrap.style.setProperty('--queue-max-height', maxQueueH + 'px');
+                queueExpand.style.setProperty('--queue-max-height', maxQueueH + 'px');
+
+                if (queueWrap.classList.contains('queue-expanded')) {
+                    queueWrap.style.height = wrapFullH + 'px';
+                    queueExpand.style.maxHeight = maxQueueH + 'px';
+                } else {
+                    queueWrap.style.height = '';
+                    queueExpand.style.maxHeight = '0px';
+                }
+            },
             updatePlayBtn: () => {
                 // Audio element is the source of truth: if not paused and not ended, it IS playing.
                 if (state.loaded && !isPlaybackPending) {
@@ -2089,56 +2414,277 @@
                     }
                 }
                 const playing = state.playing;
-                const playIcon = document.getElementById('icon-play');
-                const pauseIcon = document.getElementById('icon-pause');
-                if (playIcon) playIcon.className = playing ? 'hidden' : 'flex ml-1';
-                if (pauseIcon) pauseIcon.className = playing ? 'flex' : 'hidden';
+                ui.morphPlayIcon(playing);
                 const mPlayBtn = document.getElementById('m-icon-play');
                 const mPauseBtn = document.getElementById('m-icon-pause');
                 if (mPlayBtn && mPauseBtn) {
                     mPlayBtn.className = playing ? 'hidden' : 'flex';
                     mPauseBtn.className = playing ? 'flex' : 'hidden';
                 }
-            },
-            toggleQueue: () => {
-                state.queueExpanded = !state.queueExpanded;
-                const wrap = document.getElementById('queue-wrapper');
-                if (state.queueExpanded) {
-                    wrap.classList.add('queue-expanded');
-                    ui.switchQueueTab(state.activeQueueTab);
-                } else {
-                    wrap.classList.remove('queue-expanded');
+                const fsPlayIcon = document.getElementById('fs-icon-play');
+                const fsPauseIcon = document.getElementById('fs-icon-pause');
+                if (fsPlayIcon && fsPauseIcon) {
+                    fsPlayIcon.classList.toggle('hidden', playing);
+                    fsPauseIcon.classList.toggle('hidden', !playing);
                 }
-                document.querySelector('.mobile-queue-btn')?.classList.toggle('queue-open', state.queueExpanded);
+            },
+            toggleQueue: (forceState) => {
+                const wrap = document.getElementById('queue-wrapper');
+                if (!wrap) return;
+
+                const isCurrentlyQueue = state.queueExpanded && state.sidebarMode !== 'lyrics';
+                const willExpand = (typeof forceState === 'boolean') ? forceState : !isCurrentlyQueue;
+
+                if (!willExpand) {
+                    state.queueExpanded = false;
+                    state.sidebarMode = null;
+                    wrap.classList.remove('queue-expanded', 'sidebar-show-lyrics');
+                    wrap.style.height = '';
+                    const queueExpand = document.getElementById('queue-expandable-area');
+                    if (queueExpand) queueExpand.style.maxHeight = '0px';
+                    document.getElementById('btn-queue-desktop')?.classList.remove('active-state', 'is-active');
+                    document.getElementById('btn-lyrics')?.classList.remove('is-active');
+                    if (!state.songDetailsExpanded) {
+                        document.body.classList.remove('queue-sidebar-active');
+                    }
+                    document.querySelector('.mobile-queue-btn')?.classList.remove('queue-open');
+                    return;
+                }
+
+                // Expand or switch to Queue mode inside exact container
+                state.sidebarMode = 'queue';
+                state.queueExpanded = true;
+                wrap.classList.remove('sidebar-show-lyrics');
+                wrap.classList.add('queue-expanded');
+                ui.adjustQueueMaxHeight();
+                setTimeout(() => {
+                    document.querySelectorAll('.horizontal-scroll').forEach(shelf => {
+                        const maxScroll = shelf.scrollWidth - shelf.clientWidth;
+                        if (maxScroll > 10 && shelf.scrollLeft >= maxScroll - 20) {
+                            shelf.scrollBy({ left: -400, behavior: 'smooth' });
+                        }
+                    });
+                }, 60);
+                document.getElementById('btn-queue-desktop')?.classList.add('active-state', 'is-active');
+                document.getElementById('btn-lyrics')?.classList.remove('is-active');
+                document.body.classList.add('queue-sidebar-active');
+                ui.switchQueueTab(state.activeQueueTab || 'upnext');
+                document.querySelector('.mobile-queue-btn')?.classList.add('queue-open');
+            },
+            toggleSidebarLyrics: async (forceState) => {
+                const wrap = document.getElementById('queue-wrapper');
+                if (!wrap) return;
+
+                const isCurrentlyLyrics = state.queueExpanded && state.sidebarMode === 'lyrics';
+                const willOpen = (typeof forceState === 'boolean') ? forceState : !isCurrentlyLyrics;
+
+                if (!willOpen) {
+                    state.sidebarMode = null;
+                    state.queueExpanded = false;
+                    wrap.classList.remove('queue-expanded', 'sidebar-show-lyrics');
+                    wrap.style.height = '';
+                    const queueExpand = document.getElementById('queue-expandable-area');
+                    if (queueExpand) queueExpand.style.maxHeight = '0px';
+                    document.getElementById('btn-lyrics')?.classList.remove('is-active');
+                    document.getElementById('btn-queue-desktop')?.classList.remove('active-state', 'is-active');
+                    if (!state.songDetailsExpanded) {
+                        document.body.classList.remove('queue-sidebar-active');
+                    }
+                    return;
+                }
+
+                // Expand or switch to Lyrics mode inside exact container
+                state.sidebarMode = 'lyrics';
+                state.queueExpanded = true;
+                wrap.classList.add('queue-expanded', 'sidebar-show-lyrics');
+                ui.adjustQueueMaxHeight();
+                setTimeout(() => {
+                    document.querySelectorAll('.horizontal-scroll').forEach(shelf => {
+                        const maxScroll = shelf.scrollWidth - shelf.clientWidth;
+                        if (maxScroll > 10 && shelf.scrollLeft >= maxScroll - 20) {
+                            shelf.scrollBy({ left: -400, behavior: 'smooth' });
+                        }
+                    });
+                }, 60);
+                document.getElementById('btn-lyrics')?.classList.add('is-active');
+                document.getElementById('btn-queue-desktop')?.classList.remove('active-state', 'is-active');
+                document.body.classList.add('queue-sidebar-active');
+
+                if (state.currentTrack && window.lyricsManager) {
+                    await lyricsManager.fetchLyricsForTrack(state.currentTrack);
+                }
+            },
+            toggleQueueBarButton: () => {
+                ui.toggleQueue();
+            },
+            toggleQueueExpandButton: () => {
+                ui.toggleQueue();
+            },
+            toggleSongDetails: async (e) => {
+                if (e) {
+                    try { e.stopPropagation(); } catch (_) {}
+                }
+                const infoIsland = document.getElementById('info-island');
+                const queueWrap = document.getElementById('queue-wrapper');
+                if (!infoIsland) return;
+
+                if (!state.currentTrack) {
+                    ui.showToast('Play a song to view details', 'info');
+                    return;
+                }
+
+                const willOpen = !state.songDetailsExpanded;
+                state.songDetailsExpanded = willOpen;
+
+                if (!willOpen) {
+                    infoIsland.classList.remove('details-expanded');
+                    queueWrap?.classList.remove('has-song-details');
+                    ui.adjustQueueMaxHeight();
+                    if (!state.queueExpanded) {
+                        document.body.classList.remove('queue-sidebar-active');
+                    }
+                    return;
+                }
+
+                infoIsland.classList.add('details-expanded');
+                queueWrap?.classList.add('has-song-details');
+                document.body.classList.add('queue-sidebar-active');
+                await ui.loadSongDetails(state.currentTrack);
+            },
+            loadSongDetails: async (track) => {
+                if (!track) return;
+                const skeleton = document.getElementById('song-details-skeleton');
+                const content = document.getElementById('song-details-content');
+                if (skeleton) skeleton.classList.remove('hidden');
+                if (content) content.classList.add('hidden');
+
+                try {
+                    const details = (window.jiosaavnAPI && window.jiosaavnAPI.getSongDetails)
+                        ? await window.jiosaavnAPI.getSongDetails(track)
+                        : null;
+                    if (state.currentTrack && (state.currentTrack.id === track.id || state.currentTrack.name === track.name)) {
+                        ui.renderSongDetails(details);
+                    }
+                } catch (e) {
+                    console.error('[loadSongDetails] Error:', e);
+                    ui.renderSongDetails(null);
+                }
+            },
+            renderSongDetails: (details) => {
+                const skeleton = document.getElementById('song-details-skeleton');
+                const content = document.getElementById('song-details-content');
+                if (!content) return;
+
+                if (!details) {
+                    if (skeleton) skeleton.classList.add('hidden');
+                    content.classList.remove('hidden');
+                    content.innerHTML = '<div class="text-xs text-zinc-400 py-3 text-center font-sans">No metadata available for this track.</div>';
+                    return;
+                }
+
+                const albumName = utils.escapeHtml(details.album || 'Single');
+                const releaseYear = utils.escapeHtml(details.releaseDate || details.year || 'Unknown');
+                const genreLang = utils.escapeHtml((details.genre || 'Music') + (details.language && details.language !== 'Unknown' && details.language !== 'Original' ? (' · ' + details.language) : ''));
+                const labelName = utils.escapeHtml(details.label || 'Digital Release');
+                const durationFormatted = utils.formatTime(details.duration || 0);
+                const playCountStr = details.playCount ? (details.playCount + ' streams') : null;
+
+                content.innerHTML = `
+                    <div class="grid grid-cols-2 gap-2 text-left font-sans">
+                        <div class="flex items-start gap-2.5 bg-white/[0.03] hover:bg-white/[0.05] rounded-xl p-2.5 border border-white/[0.08] min-w-0 transition-colors">
+                            <svg class="w-3.5 h-3.5 text-zinc-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></svg>
+                            <div class="min-w-0 flex-1">
+                                <div class="text-[9.5px] text-zinc-400 uppercase font-semibold tracking-wider leading-none mb-1">Album</div>
+                                <div class="text-[11.5px] font-medium text-white truncate" title="${albumName}">${albumName}</div>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start gap-2.5 bg-white/[0.03] hover:bg-white/[0.05] rounded-xl p-2.5 border border-white/[0.08] min-w-0 transition-colors">
+                            <svg class="w-3.5 h-3.5 text-zinc-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                            <div class="min-w-0 flex-1">
+                                <div class="text-[9.5px] text-zinc-400 uppercase font-semibold tracking-wider leading-none mb-1">Released</div>
+                                <div class="text-[11.5px] font-medium text-white truncate" title="${releaseYear}">${releaseYear}</div>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start gap-2.5 bg-white/[0.03] hover:bg-white/[0.05] rounded-xl p-2.5 border border-white/[0.08] min-w-0 transition-colors">
+                            <svg class="w-3.5 h-3.5 text-zinc-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg>
+                            <div class="min-w-0 flex-1">
+                                <div class="text-[9.5px] text-zinc-400 uppercase font-semibold tracking-wider leading-none mb-1">Genre & Lang</div>
+                                <div class="text-[11.5px] font-medium text-white truncate" title="${genreLang}">${genreLang}</div>
+                            </div>
+                        </div>
+
+                        <div class="flex items-start gap-2.5 bg-white/[0.03] hover:bg-white/[0.05] rounded-xl p-2.5 border border-white/[0.08] min-w-0 transition-colors">
+                            <svg class="w-3.5 h-3.5 text-zinc-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/></svg>
+                            <div class="min-w-0 flex-1">
+                                <div class="text-[9.5px] text-zinc-400 uppercase font-semibold tracking-wider leading-none mb-1">Label</div>
+                                <div class="text-[11.5px] font-medium text-white truncate" title="${labelName}">${labelName}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center justify-between pt-1.5 px-0.5 text-[11px] font-sans">
+                        <div class="flex items-center gap-2 text-zinc-400 font-medium">
+                            <span class="flex items-center gap-1.5 font-mono">
+                                <svg class="w-3 h-3 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                                ${durationFormatted}
+                            </span>
+                            ${playCountStr ? ('<span class="text-zinc-600">·</span><span class="text-zinc-300 font-mono">' + playCountStr + '</span>') : ''}
+                        </div>
+                        <div class="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-mono tracking-wider uppercase bg-white/[0.06] text-zinc-300 border border-white/10">
+                            320 KBPS HI-FI
+                        </div>
+                    </div>
+                `;
+
+                if (skeleton) skeleton.classList.add('hidden');
+                content.classList.remove('hidden');
             },
             switchQueueTab: (tab) => {
                 state.activeQueueTab = tab;
                 const isUpNext = tab === 'upnext';
                 const tabUpNext = document.getElementById('tab-upnext');
                 const tabHist = document.getElementById('tab-history');
+                const tabSwitch = document.getElementById('queue-tab-switch');
+
+                const activeBtn = isUpNext ? tabUpNext : tabHist;
+                if (tabSwitch && activeBtn) {
+                    const left = activeBtn.offsetLeft;
+                    const width = activeBtn.offsetWidth;
+                    tabSwitch.style.setProperty('--pill-x', `${left}px`);
+                    tabSwitch.style.setProperty('--pill-w', `${width}px`);
+                }
                 const qList = document.getElementById('queue-list');
                 const hList = document.getElementById('history-list');
                 const clearQ = document.getElementById('btn-clear-queue');
-                const autoQ = document.getElementById('btn-queue-autoplay');
                 const clearH = document.getElementById('btn-clear-history');
 
-                if (tabUpNext) tabUpNext.className = isUpNext ? "text-xs font-bold uppercase tracking-wider text-white" : "text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-300";
-                if (tabHist) tabHist.className = isUpNext ? "text-xs font-bold uppercase tracking-wider text-gray-500 hover:text-gray-300" : "text-xs font-bold uppercase tracking-wider text-white";
+                if (tabSwitch) tabSwitch.style.setProperty('--seg-index', isUpNext ? '0' : '1');
+                if (tabUpNext) {
+                    tabUpNext.classList.toggle('is-active', isUpNext);
+                    tabUpNext.setAttribute('aria-selected', String(isUpNext));
+                }
+                if (tabHist) {
+                    tabHist.classList.toggle('is-active', !isUpNext);
+                    tabHist.setAttribute('aria-selected', String(!isUpNext));
+                }
                 if (qList) qList.classList.toggle('hidden', !isUpNext);
                 if (hList) hList.classList.toggle('hidden', isUpNext);
                 if (clearQ) clearQ.classList.toggle('hidden', !isUpNext);
-                if (autoQ) autoQ.classList.toggle('hidden', !isUpNext);
                 if (clearH) clearH.classList.toggle('hidden', isUpNext);
+                ui.adjustQueueMaxHeight();
 
                 if (deviceMode.isMobileUI() && document.body.classList.contains('mobile-player-open')) {
                     const targetMobileTab = isUpNext ? 'queue' : 'history';
                     if (document.body.dataset.mobileTab !== targetMobileTab) {
                         document.body.dataset.mobileTab = targetMobileTab;
+                        const mobileSwitch = document.querySelector('.mobile-player-tabs');
+                        if (mobileSwitch) mobileSwitch.style.setProperty('--seg-index', isUpNext ? '1' : '2');
                         document.querySelectorAll('.mobile-tab-btn').forEach(btn => {
                             const isCurrent = btn.id === `m-tab-${targetMobileTab}`;
-                            btn.classList.toggle('active', isCurrent);
-                            btn.classList.toggle('text-white', isCurrent);
-                            btn.classList.toggle('text-gray-400', !isCurrent);
+                            btn.classList.toggle('is-active', isCurrent);
+                            btn.setAttribute('aria-selected', String(isCurrent));
                         });
                     }
                 }
@@ -2182,36 +2728,37 @@
                     : Math.max(0, state.queue.length - state.idx - 1);
                 if (clearBtn) {
                     clearBtn.disabled = manualCount + autoCount === 0;
-                    clearBtn.textContent = manualCount > 0 ? `Clear Queue (${manualCount})` : 'Clear Queue';
+                    const clearLabel = document.getElementById('btn-clear-queue-label');
+                    if (clearLabel) clearLabel.textContent = 'Clear';
                 }
                 const totalQueueCount = manualCount + autoCount;
                 const badge = document.getElementById('queue-badge-count');
-                if (badge) {
-                    badge.textContent = manualCount > 0 ? String(manualCount) : String(totalQueueCount);
-                    badge.classList.toggle('hidden', totalQueueCount === 0);
-                }
+                if (badge) badge.remove();
+                ui.adjustQueueMaxHeight();
                 let html = '';
                 if (state.userQueue.length > 0) {
-                    html += `<div class="text-[10px] text-white font-bold uppercase tracking-wider mb-1 pl-2 mt-1 drop-shadow-md">Queue</div>`;
+                    html += `<div class="queue-section-label">Queued by you</div>`;
                     html += state.userQueue.map((song, index) => ui.createQueuePill(song, 'manual', index)).join('');
                 }
                 const upcoming = state.shuffle 
                     ? state.shuffledOrder.slice(state.shufflePointer + 1, state.shufflePointer + 11).map(i => state.queue[i]).filter(Boolean)
                     : state.queue.slice(state.idx + 1, state.idx + 11);
                 if (upcoming.length > 0) {
-                    html += `<div class="text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1 pl-2 mt-3 drop-shadow-md">Autoplay</div>`;
+                    html += `<div class="queue-section-label" style="margin-top:12px">Next in line</div>`;
                     html += upcoming.map((song, index) => ui.createQueuePill(song, 'auto', index)).join('');
                 }
-                listEl.innerHTML = html === '' ? '<div class="text-xs text-gray-500 p-3 rounded-xl border border-white/5 bg-white/5">Queue is empty. Add songs and they will appear here instantly.</div>' : html;
+                listEl.innerHTML = html === '' ? '<div class="queue-empty-state">Queue is empty. Add songs and they will appear here instantly.</div>' : html;
                 updateMarquees();
                 if (ui.updateAlbumCarouselPeeks) ui.updateAlbumCarouselPeeks();
+                if (ui.initQueuePointerReorder) ui.initQueuePointerReorder();
+                if (state.fullscreenMode && ui.updateFullscreenQueue) ui.updateFullscreenQueue();
             },
             renderHistory: () => {
                 const histEl = document.getElementById('history-list');
                 if (!histEl) return;
                 const historySongs = state.playHistory || [];
                 if (historySongs.length === 0) {
-                    histEl.innerHTML = '<div class="text-xs text-gray-500 p-3 rounded-xl border border-white/5 bg-white/5">No history yet. Played tracks will appear here.</div>';
+                    histEl.innerHTML = '<div class="queue-empty-state">No history yet. Played tracks will appear here.</div>';
                     return;
                 }
                 
@@ -2225,12 +2772,315 @@
                 
                 let html = '';
                 for (const [label, songs] of Object.entries(groups)) {
-                    html += `<div class="text-[10px] text-[var(--accent-color)] font-extrabold uppercase tracking-wider mt-4 mb-2 pl-2 border-l-2 border-[var(--accent-color)]">${utils.escapeHtml(label)}</div>`;
-                    html += songs.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`)).join('');
+                    html += `<div class="queue-section-label queue-section-date">${utils.escapeHtml(label)}</div>`;
+                    html += songs.map(song => ui.createPlayerListPill(song, `playSongById('${songStore.add(song)}')`, 'history')).join('');
                 }
                 
                 histEl.innerHTML = html;
                 updateMarquees();
+                ui.adjustQueueMaxHeight();
+            },
+            initQueuePointerReorder: () => {
+                const list = document.getElementById('queue-list');
+                if (!list) return;
+
+                let activeDrag = null;
+
+                const onPointerDown = (e) => {
+                    const handle = e.target.closest('.queue-drag-handle');
+                    const row = e.target.closest('.queue-reorder-row');
+                    if (!row || !handle) return;
+                    if (!handle.contains(e.target)) return;
+
+                    const section = row.dataset.queueSection;
+                    const fromIndex = Number(row.dataset.queueIndex);
+                    if (!Number.isInteger(fromIndex)) return;
+
+                    const allRows = Array.from(list.querySelectorAll(`.queue-reorder-row[data-queue-section="${section}"]`));
+                    if (allRows.length <= 1) return;
+
+                    e.preventDefault();
+                    try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+
+                    const rowRect = row.getBoundingClientRect();
+                    const rowHeight = rowRect.height || 54;
+                    const startY = e.clientY;
+                    const itemTops = allRows.map(r => r.getBoundingClientRect().top);
+
+                    row.classList.add('is-pointer-dragging');
+                    row.style.zIndex = '60';
+
+                    activeDrag = {
+                        pointerId: e.pointerId,
+                        handle,
+                        row,
+                        section,
+                        fromIndex,
+                        currentIndex: fromIndex,
+                        rowHeight,
+                        startY,
+                        allRows,
+                        itemTops
+                    };
+
+                    const onPointerMove = (moveEvt) => {
+                        if (!activeDrag || moveEvt.pointerId !== activeDrag.pointerId) return;
+                        const deltaY = moveEvt.clientY - activeDrag.startY;
+                        activeDrag.row.style.transform = `translateY(${deltaY}px)`;
+
+                        const currentCenterY = activeDrag.itemTops[activeDrag.fromIndex] + deltaY + activeDrag.rowHeight / 2;
+                        let targetIndex = activeDrag.fromIndex;
+
+                        for (let i = 0; i < activeDrag.allRows.length; i++) {
+                            const top = activeDrag.itemTops[i];
+                            const bottom = top + activeDrag.rowHeight;
+                            if (currentCenterY >= top && currentCenterY <= bottom) {
+                                targetIndex = i;
+                                break;
+                            } else if (i === 0 && currentCenterY < top) {
+                                targetIndex = 0;
+                                break;
+                            } else if (i === activeDrag.allRows.length - 1 && currentCenterY > bottom) {
+                                targetIndex = activeDrag.allRows.length - 1;
+                                break;
+                            }
+                        }
+
+                        if (targetIndex !== activeDrag.currentIndex) {
+                            activeDrag.currentIndex = targetIndex;
+                            activeDrag.allRows.forEach((r, idx) => {
+                                if (idx === activeDrag.fromIndex) return;
+                                let shift = 0;
+                                if (activeDrag.fromIndex < activeDrag.currentIndex) {
+                                    if (idx > activeDrag.fromIndex && idx <= activeDrag.currentIndex) {
+                                        shift = -activeDrag.rowHeight;
+                                    }
+                                } else if (activeDrag.fromIndex > activeDrag.currentIndex) {
+                                    if (idx >= activeDrag.currentIndex && idx < activeDrag.fromIndex) {
+                                        shift = activeDrag.rowHeight;
+                                    }
+                                }
+                                r.style.transition = 'transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1)';
+                                r.style.transform = shift ? `translateY(${shift}px)` : 'none';
+                            });
+                        }
+                    };
+
+                    const onPointerUp = (upEvt) => {
+                        if (!activeDrag || upEvt.pointerId !== activeDrag.pointerId) return;
+                        window.removeEventListener('pointermove', onPointerMove);
+                        window.removeEventListener('pointerup', onPointerUp);
+                        window.removeEventListener('pointercancel', onPointerUp);
+
+                        try { activeDrag.handle.releasePointerCapture(upEvt.pointerId); } catch (_) {}
+
+                        const { row: draggedRow, fromIndex: fIdx, currentIndex: cIdx, section: s, rowHeight: rh, allRows: rows } = activeDrag;
+                        activeDrag = null;
+
+                        const finalShift = (cIdx - fIdx) * rh;
+                        draggedRow.classList.remove('is-pointer-dragging');
+                        draggedRow.classList.add('is-landing');
+                        draggedRow.style.transition = 'transform 0.24s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s ease';
+                        draggedRow.style.transform = `translateY(${finalShift}px)`;
+                        draggedRow.style.boxShadow = '0 0 0 rgba(0,0,0,0)';
+
+                        setTimeout(() => {
+                            rows.forEach(r => {
+                                r.style.transform = '';
+                                r.style.transition = '';
+                                r.style.boxShadow = '';
+                                r.style.zIndex = '';
+                                r.classList.remove('is-landing', 'is-pointer-dragging');
+                            });
+                            if (fIdx !== cIdx) {
+                                ui.reorderQueueItem(s, fIdx, s, cIdx);
+                            }
+                        }, 250);
+                    };
+
+                    window.addEventListener('pointermove', onPointerMove, { passive: false });
+                    window.addEventListener('pointerup', onPointerUp, { passive: false });
+                    window.addEventListener('pointercancel', onPointerUp, { passive: false });
+                };
+
+                list.removeEventListener('pointerdown', list._pointerDownHandler);
+                list._pointerDownHandler = onPointerDown;
+                list.addEventListener('pointerdown', onPointerDown);
+            },
+            toggleFullscreenPlayer: (forceState) => {
+                const fsEl = document.getElementById('fullscreen-player');
+                const fsContainer = document.getElementById('fullscreen-container');
+                if (!fsEl || !fsContainer) return;
+
+                const willOpen = (typeof forceState === 'boolean') ? forceState : !state.fullscreenMode;
+
+                const sourceEl = document.getElementById('info-island') || document.getElementById('queue-wrapper') || document.body;
+                const rect = sourceEl.getBoundingClientRect();
+                const originX = rect.left + rect.width / 2;
+                const originY = rect.top + rect.height / 2;
+                const scaleX = Math.max(0.15, rect.width / (window.innerWidth || 1));
+                const scaleY = Math.max(0.15, rect.height / (window.innerHeight || 1));
+                const deltaX = originX - window.innerWidth / 2;
+                const deltaY = originY - window.innerHeight / 2;
+
+                if (!willOpen) {
+                    state.fullscreenMode = false;
+                    fsContainer.style.transition = 'transform 0.42s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease, border-radius 0.42s ease';
+                    fsContainer.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`;
+                    fsContainer.style.borderRadius = '1.75rem';
+                    fsContainer.style.opacity = '0';
+                    fsEl.classList.remove('is-active');
+
+                    setTimeout(() => {
+                        if (!state.fullscreenMode) {
+                            fsEl.classList.add('hidden');
+                            fsContainer.style.transform = '';
+                            fsContainer.style.borderRadius = '';
+                            fsContainer.style.opacity = '';
+                        }
+                    }, 420);
+                    return;
+                }
+
+                state.fullscreenMode = true;
+                ui.updateFullscreenPlayer();
+                ui.updateFullscreenQueue();
+                ui.setFullscreenTab(state.fullscreenTab || 'split');
+
+                // Start from exact dock bounds
+                fsContainer.style.transition = 'none';
+                fsContainer.style.transformOrigin = 'center center';
+                fsContainer.style.transform = `translate(${deltaX}px, ${deltaY}px) scale(${scaleX}, ${scaleY})`;
+                fsContainer.style.borderRadius = '1.75rem';
+                fsContainer.style.opacity = '0.35';
+                fsEl.classList.remove('hidden');
+
+                // Force reflow
+                void fsEl.offsetWidth;
+
+                // Animate smoothly to fullscreen
+                fsEl.classList.add('is-active');
+                fsContainer.style.transition = 'transform 0.48s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease, border-radius 0.48s ease';
+                fsContainer.style.transform = 'none';
+                fsContainer.style.borderRadius = '0px';
+                fsContainer.style.opacity = '1';
+
+                if (state.currentTrack && window.lyricsManager && lyricsManager.syncTime) {
+                    lyricsManager.syncTime(audio.currentTime || 0, true);
+                }
+            },
+            setFullscreenTab: (tab = 'split') => {
+                state.fullscreenTab = tab;
+                const body = document.getElementById('fullscreen-body');
+                if (body) body.setAttribute('data-view', tab);
+
+                const tabs = ['lyrics', 'split', 'queue'];
+                tabs.forEach(t => {
+                    const btn = document.getElementById(`fs-tab-${t}`);
+                    if (btn) btn.classList.toggle('is-active', t === tab);
+                });
+
+                if (tab === 'queue') {
+                    ui.updateFullscreenQueue();
+                } else if (tab === 'lyrics' || tab === 'split') {
+                    if (state.currentTrack && window.lyricsManager && lyricsManager.syncTime) {
+                        lyricsManager.syncTime(audio.currentTime || 0, true);
+                    }
+                }
+            },
+            updateFullscreenPlayer: () => {
+                const track = state.currentTrack;
+                if (!track) return;
+
+                const miniArt = document.getElementById('fullscreen-mini-art');
+                const miniTitle = document.getElementById('fullscreen-mini-title');
+                const miniArtist = document.getElementById('fullscreen-mini-artist');
+                const heroImg = document.getElementById('fullscreen-hero-img');
+                const heroTitle = document.getElementById('fullscreen-hero-title');
+                const heroArtist = document.getElementById('fullscreen-hero-artist');
+
+                const title = track.name || track.title || 'Unknown Track';
+                const artist = track.artist || 'Unknown Artist';
+                const art = sanitizeImageUrl(track.img || 'DTunes.svg');
+
+                if (miniTitle) miniTitle.textContent = title;
+                if (miniArtist) miniArtist.textContent = artist;
+                if (miniArt) miniArt.src = art;
+
+                if (heroTitle) heroTitle.textContent = title;
+                if (heroArtist) heroArtist.textContent = artist;
+                if (heroImg) heroImg.src = art;
+
+                const playBtn = document.getElementById('fs-btn-play');
+                const playIcon = document.getElementById('fs-icon-play');
+                const pauseIcon = document.getElementById('fs-icon-pause');
+                if (playBtn && playIcon && pauseIcon) {
+                    playIcon.classList.toggle('hidden', state.playing);
+                    pauseIcon.classList.toggle('hidden', !state.playing);
+                }
+
+                document.getElementById('fs-btn-shuffle')?.classList.toggle('active-state', !!state.shuffle);
+                document.getElementById('fs-btn-repeat')?.classList.toggle('active-state', !!state.repeat);
+            },
+            updateFullscreenQueue: () => {
+                const queueCont = document.getElementById('fullscreen-queue-list');
+                const countCont = document.getElementById('fullscreen-queue-count');
+                if (!queueCont) return;
+
+                const manual = state.userQueue || [];
+                const auto = (state.queue || []).slice(state.idx + 1);
+                const allSongs = [...manual, ...auto];
+
+                if (countCont) countCont.textContent = `${allSongs.length} track${allSongs.length === 1 ? '' : 's'}`;
+
+                if (allSongs.length === 0) {
+                    queueCont.innerHTML = '<div class="text-zinc-500 text-xs py-8 text-center">Queue is empty</div>';
+                    return;
+                }
+
+                queueCont.innerHTML = allSongs.slice(0, 50).map((s, idx) => {
+                    const isLiked = (typeof player !== 'undefined' && player.isLiked) ? player.isLiked(s.id) : (Array.isArray(state.likedIds) ? state.likedIds.includes(String(s.id)) : false);
+                    return `
+                    <div class="swipe-song np-row flex items-center justify-between p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 hover:border-white/10 transition-all cursor-pointer group" onclick="playSongById('${songStore.add(s)}')">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <span class="text-[11px] font-mono text-zinc-500 w-5 text-center group-hover:text-white transition-colors">${idx + 1}</span>
+                            <img src="${sanitizeImageUrl(s.img || 'DTunes.svg')}" class="w-10 h-10 rounded-xl object-cover shadow-md flex-shrink-0" alt="">
+                            <div class="min-w-0">
+                                <div class="text-xs font-semibold text-white truncate group-hover:text-white transition-colors">${utils.escapeHtml(s.name || s.title || '')}</div>
+                                <div class="text-[11px] text-zinc-400 truncate mt-0.5">${utils.escapeHtml(s.artist || '')}</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-3 flex-shrink-0">
+                            <button onclick="player.toggleLike('${s.id}'); event.stopPropagation();" class="text-zinc-500 hover:text-white p-1 rounded-full transition active:scale-90 ${isLiked ? 'text-white' : ''}" title="Like">
+                                <svg class="heart-glyph" width="15" height="15" viewBox="0 0 24 24" fill="${isLiked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+                            </button>
+                            <span class="text-[11px] font-mono text-zinc-500">${utils.formatTime(s.duration || 0)}</span>
+                        </div>
+                    </div>`;
+                }).join('');
+            },
+            handleFullscreenSeek: (e) => {
+                const track = document.getElementById('fs-seek-bar-container') || document.getElementById('fs-seek-track');
+                if (!track || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+                const rect = track.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+                player.seek(ratio * audio.duration);
+            },
+            handleFullscreenSeekHover: (e) => {
+                const track = document.getElementById('fs-seek-bar-container');
+                const tooltip = document.getElementById('fs-seek-tooltip');
+                if (!track || !tooltip || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+                const rect = track.getBoundingClientRect();
+                const offsetX = Math.max(0, Math.min(rect.width, e.clientX - rect.left));
+                const ratio = offsetX / rect.width;
+                tooltip.textContent = utils.formatTime(ratio * audio.duration);
+                tooltip.style.left = `${offsetX}px`;
+                tooltip.classList.add('visible');
+            },
+            handleFullscreenSeekLeave: () => {
+                const tooltip = document.getElementById('fs-seek-tooltip');
+                if (tooltip) tooltip.classList.remove('visible');
             },
             updateAlbumCarouselPeeks: () => {
                 const prevCard = document.getElementById('peek-prev-card');
@@ -2340,7 +3190,7 @@
                         rating: 1,
                         message: `[AI Safety Report - Policy 11.16]\nFeature: ${feature}\nIssue Type: ${issue}\nSummary: ${contentSummary}\nDetails: ${details}\nMeta: ${JSON.stringify(this.currentContext?.context || {})}`,
                         user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Antigravity-Client',
-                        app_version: (typeof window !== 'undefined' && window.electronAPI) ? '1.4.5-win-desktop' : '1.4.5-web'
+                        app_version: (typeof window !== 'undefined' && window.electronAPI) ? '1.4.0-win-desktop' : '1.4.0-web'
                     };
 
                     const endpoint = 'https://gmwieijbrrztukqpfwkg.supabase.co/rest/v1/dtunes_feedback';
@@ -2604,7 +3454,7 @@
                         rating: this.selectedRating || 5,
                         message: message,
                         user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'Antigravity-Client',
-                        app_version: (typeof window !== 'undefined' && window.electronAPI) ? '1.4.5-win-desktop' : '1.4.5-web'
+                        app_version: (typeof window !== 'undefined' && window.electronAPI) ? '1.4.0-win-desktop' : '1.4.0-web'
                     };
 
                     const endpoint = 'https://gmwieijbrrztukqpfwkg.supabase.co/rest/v1/dtunes_feedback';
@@ -2670,3 +3520,14 @@
         if (typeof module !== 'undefined' && module.exports) {
             module.exports = { ui, aiReportManager, reviewsManager };
         }
+
+// Outside click dismiss for profile dropdown
+if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('pointerdown', (e) => {
+        const acc = document.getElementById('header-account');
+        const dd = document.getElementById('profile-dropdown');
+        if (dd && !dd.classList.contains('hidden') && acc && !acc.contains(e.target)) {
+            dd.classList.add('hidden');
+        }
+    });
+}
