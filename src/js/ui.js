@@ -1420,6 +1420,32 @@
                     ${actionHtml}
                 </div>`;
             },
+            resolveStoredSongList: (entries) => {
+                const idOf = item => {
+                    const id = item && typeof item === 'object' ? item.id : item;
+                    return typeof id === 'string' || typeof id === 'number' ? String(id) : '';
+                };
+                const isSong = item => item && typeof item === 'object' && idOf(item) && (item.name || item.title);
+                const knownSongs = new Map();
+                [state.playHistory, state.libraryIds, state.likedIds, state.queue, state.userQueue,
+                    [state.currentTrack], [...songStore.songs.values()]].forEach(list => {
+                    (Array.isArray(list) ? list : []).forEach(song => {
+                        if (isSong(song)) knownSongs.set(idOf(song), song);
+                    });
+                });
+                const songs = [];
+                const seen = new Set();
+                let unresolved = 0;
+                (Array.isArray(entries) ? entries : []).forEach(item => {
+                    const id = idOf(item);
+                    if (!id || seen.has(id)) return;
+                    seen.add(id);
+                    const song = isSong(item) ? item : knownSongs.get(id);
+                    if (song) songs.push(song);
+                    else unresolved++;
+                });
+                return { songs, unresolved };
+            },
             renderLibraryLists: () => {
                 const librarySongs = document.getElementById('library-songs');
                 const fullLikedList = document.getElementById('full-liked-list');
@@ -1427,25 +1453,25 @@
                 const fullArtistsGrid = document.getElementById('full-artists-grid');
                 const history = document.getElementById('library-history');
                 const goSearch = "ui.switchView('search'); setTimeout(() => document.getElementById('search-input')?.focus(), 60)";
-                if (librarySongs) {
-                    const songs = state.libraryIds.map(item => typeof item === 'object' ? item : state.playHistory.find(song => song.id === item) || state.likedIds.find(item2 => (typeof item2 === 'object' ? item2.id : item2) === item)).filter(Boolean);
-                    const songsHtml = songs.length
-                        ? songs.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`, 'library')).join('')
-                        : null;
-                    if (fullLikedList) fullLikedList.innerHTML = songsHtml || ui.libraryEmptyState({
+                if (librarySongs || fullLikedList) {
+                    const liked = ui.resolveStoredSongList(state.likedIds);
+                    let songsHtml = liked.songs.map(song => ui.createSongPill(song, `playSongById('${songStore.add(song)}')`, 'library')).join('');
+                    if (!songsHtml && !liked.unresolved) songsHtml = ui.libraryEmptyState({
                         icon: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>',
                         title: 'No liked songs yet',
                         message: 'Double-click any song or click the heart icon to save favorites.',
                         actionLabel: 'Discover songs',
                         action: goSearch
                     });
-                    librarySongs.innerHTML = songsHtml || ui.libraryEmptyState({
-                            icon: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 19V6l12-2v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"/></svg>',
-                            title: 'Your library is empty',
-                            message: 'Use “Add to Library” on any song to keep it handy here.',
-                            actionLabel: 'Find songs',
-                            action: goSearch
-                        });
+                    if (liked.unresolved) songsHtml += ui.libraryEmptyState({
+                        icon: '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>',
+                        title: 'Some liked songs need details',
+                        message: 'Your likes are saved. Open the Liked Songs playlist to load their details.',
+                        actionLabel: 'Open Liked Songs',
+                        action: "ui.openPlaylist('Liked Songs')"
+                    });
+                    if (librarySongs) librarySongs.innerHTML = songsHtml;
+                    if (fullLikedList) fullLikedList.innerHTML = songsHtml;
                 }
                 if (likedArtists) {
                     const artistsHtml = state.likedArtists.length
@@ -3530,4 +3556,4 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
             dd.classList.add('hidden');
         }
     });
-}
+                        }
