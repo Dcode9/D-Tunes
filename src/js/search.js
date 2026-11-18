@@ -205,6 +205,13 @@
                 localStorage.setItem('searchHistory', JSON.stringify(list));
                 localStorage.setItem('recentSearches', JSON.stringify(list));
 
+                if (window.cloudLibrary?.session && typeof window.dverse?.recordSearch === 'function') {
+                    window.dverse.recordSearch({
+                        ...song,
+                        query: `${song.name || song.title || ''} ${song.artist || ''}`.trim()
+                    }).catch(err => console.warn('[DVerse] Failed to sync recent search:', err));
+                }
+
                 if (ui.getCurrentView() === 'search') {
                     searchManager.renderSearchHistory();
                 }
@@ -212,9 +219,14 @@
 
             removeFromSearchHistory: (songId) => {
                 if (!songId) return;
+                const removed = (state.searchHistory || []).find(item => item && item.id === songId);
                 state.searchHistory = (state.searchHistory || []).filter(item => item && item.id !== songId);
                 localStorage.setItem('searchHistory', JSON.stringify(state.searchHistory));
                 localStorage.setItem('recentSearches', JSON.stringify(state.searchHistory));
+                if (window.cloudLibrary?.session && typeof window.dverse?.deleteRecentSearch === 'function') {
+                    const cloudId = removed?.cloudId || removed?.trackId || songId;
+                    window.dverse.deleteRecentSearch(cloudId).catch(err => console.warn('[DVerse] Failed to delete recent search:', err));
+                }
                 searchManager.renderSearchHistory();
             },
 
@@ -222,6 +234,9 @@
                 state.searchHistory = [];
                 localStorage.setItem('searchHistory', JSON.stringify([]));
                 localStorage.setItem('recentSearches', JSON.stringify([]));
+                if (window.cloudLibrary?.session && typeof window.dverse?.clearRecentSearches === 'function') {
+                    window.dverse.clearRecentSearches().catch(err => console.warn('[DVerse] Failed to clear recent searches:', err));
+                }
                 searchManager.renderSearchHistory();
             },
 

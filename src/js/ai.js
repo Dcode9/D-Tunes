@@ -3,6 +3,9 @@
     const DEFAULT_MODEL = "mercury-2.5";
     const CACHE_KEY = "dtunes_ai_playlists_cache_v2";
 
+    // The server-side API (/api/music/autoplay, /api/music/mixes) is preferred;
+    // this direct AI path is now a last-resort client fallback only.
+
     // Curated seed taste profile when user is brand new with 0 history
     const SEED_PROFILE = [
         { title: "Starboy", artist: "The Weeknd" },
@@ -188,7 +191,7 @@ ${dislikedList.length > 0 ? dislikedList.join(', ') : 'None'}
 CURATION INSTRUCTIONS:
 - Generate 6 distinct, immersive personalized playlist categories matching different moods, genres, and facets of their taste.
 - Ensure diversity across all 6 mixes: do NOT repeat the same artist across multiple mixes.
-- Each mix must contain EXACTLY 5 real, popular, widely known songs that exist on streaming platforms.
+- Each mix must contain BETWEEN 15 AND 25 real, popular, widely known songs that exist on streaming platforms.
 - Curate evocative, human playlist titles and descriptions that feel like Spotify/Apple Music editorial mixes (e.g. "Midnight Resonance", "Velvet Acoustic", "Sun-Drenched Drive", "Deep Focus & Flow", "High Voltage Anthem", "Nostalgia & Reprises").
 - Strictly obey all negative exclusions.
 
@@ -272,7 +275,18 @@ Return ONLY raw JSON: {"title": "Song Name", "artist": "Artist Name"}`;
                     { title: "Levitating", artist: "Dua Lipa" },
                     { title: "Midnight City", artist: "M83" },
                     { title: "Get Lucky", artist: "Daft Punk" },
-                    { title: "Starboy", artist: "The Weeknd" }
+                    { title: "Starboy", artist: "The Weeknd" },
+                    { title: "Die For You", artist: "The Weeknd" },
+                    { title: "Save Your Tears", artist: "The Weeknd" },
+                    { title: "Take On Me", artist: "a-ha" },
+                    { title: "Billie Jean", artist: "Michael Jackson" },
+                    { title: "Dancing On My Own", artist: "Robyn" },
+                    { title: "Nightcall", artist: "Kavinsky" },
+                    { title: "The Less I Know The Better", artist: "Tame Impala" },
+                    { title: "Electric Feel", artist: "MGMT" },
+                    { title: "Redbone", artist: "Childish Gambino" },
+                    { title: "Snooze", artist: "SZA" },
+                    { title: "Kill Bill", artist: "SZA" }
                 ]
             },
             {
@@ -285,7 +299,18 @@ Return ONLY raw JSON: {"title": "Song Name", "artist": "Artist Name"}`;
                     { title: "As It Was", artist: "Harry Styles" },
                     { title: "Sunflower", artist: "Post Malone & Swae Lee" },
                     { title: "Stay", artist: "The Kid LAROI & Justin Bieber" },
-                    { title: "Lovely", artist: "Billie Eilish & Khalid" }
+                    { title: "Lovely", artist: "Billie Eilish & Khalid" },
+                    { title: "Yellow", artist: "Coldplay" },
+                    { title: "Viva La Vida", artist: "Coldplay" },
+                    { title: "Good Life", artist: "OneRepublic" },
+                    { title: "Count On Me", artist: "Bruno Mars" },
+                    { title: "Island In The Sun", artist: "Weezer" },
+                    { title: "Banana Pancakes", artist: "Jack Johnson" },
+                    { title: "Put Your Records On", artist: "Corinne Bailey Rae" },
+                    { title: "Valerie", artist: "Mark Ronson & Amy Winehouse" },
+                    { title: "September", artist: "Earth, Wind & Fire" },
+                    { title: "Walking On Sunshine", artist: "Katrina & The Waves" },
+                    { title: "Here Comes The Sun", artist: "The Beatles" }
                 ]
             },
             {
@@ -298,7 +323,18 @@ Return ONLY raw JSON: {"title": "Song Name", "artist": "Artist Name"}`;
                     { title: "Shallow", artist: "Lady Gaga & Bradley Cooper" },
                     { title: "Someone Like You", artist: "Adele" },
                     { title: "All of Me", artist: "John Legend" },
-                    { title: "Riptide", artist: "Vance Joy" }
+                    { title: "Riptide", artist: "Vance Joy" },
+                    { title: "Tum Hi Ho", artist: "Arijit Singh" },
+                    { title: "Channa Mereya", artist: "Arijit Singh" },
+                    { title: "Agar Tum Saath Ho", artist: "Arijit Singh, Alka Yagnik" },
+                    { title: "Imagine", artist: "John Lennon" },
+                    { title: "Let It Be", artist: "The Beatles" },
+                    { title: "Nothing Compares 2 U", artist: "Sinéad O'Connor" },
+                    { title: "Fast Car", artist: "Tracy Chapman" },
+                    { title: "Landslide", artist: "Fleetwood Mac" },
+                    { title: "Ho Hey", artist: "The Lumineers" },
+                    { title: "I'm Yours", artist: "Jason Mraz" },
+                    { title: "Say You Won't Let Go", artist: "James Arthur" }
                 ]
             },
                         {
@@ -324,7 +360,18 @@ Return ONLY raw JSON: {"title": "Song Name", "artist": "Artist Name"}`;
                     { title: "Titanium", artist: "David Guetta & Sia" },
                     { title: "Wake Me Up", artist: "Avicii" },
                     { title: "Closer", artist: "The Chainsmokers" },
-                    { title: "Don't Start Now", artist: "Dua Lipa" }
+                    { title: "Don't Start Now", artist: "Dua Lipa" },
+                    { title: "Levels", artist: "Avicii" },
+                    { title: "Believer", artist: "Imagine Dragons" },
+                    { title: "Radioactive", artist: "Imagine Dragons" },
+                    { title: "Stronger", artist: "Kanye West" },
+                    { title: "Without Me", artist: "Eminem" },
+                    { title: "Can't Hold Us", artist: "Macklemore & Ryan Lewis" },
+                    { title: "Uptown Funk", artist: "Mark Ronson & Bruno Mars" },
+                    { title: "Happy", artist: "Pharrell Williams" },
+                    { title: "Shut Up and Dance", artist: "WALK THE MOON" },
+                    { title: "Mr. Brightside", artist: "The Killers" },
+                    { title: "Poison", artist: "The Prodigy" }
                 ]
             }
         ];

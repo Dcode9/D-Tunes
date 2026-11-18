@@ -346,7 +346,7 @@
         // Playback position in seconds. `time` is seconds, `positionMs` is
         // milliseconds and bare `position` is disambiguated by magnitude.
         const playbackTimeSeconds = (data) => {
-            const explicitMs = Number(data?.positionMs ?? data?.position_ms ?? data?.position_millis);
+            const explicitMs = Number(data?.positionMs ?? data?.position_ms ?? data?.position_millis ?? data?.positionMillis);
             if (Number.isFinite(explicitMs)) return explicitMs / 1000;
             const explicitSec = Number(data?.time ?? data?.positionSec ?? data?.position_sec ?? data?.seconds);
             if (Number.isFinite(explicitSec)) return explicitSec;
@@ -370,6 +370,7 @@
                     q: queue,
                     queue,
                     uq: (state.userQueue || []).map(normalizeSongShape),
+                    userQueue: (state.userQueue || []).map(normalizeSongShape),
                     idx: index,
                     index,
                     time: timeSec,
@@ -378,20 +379,41 @@
                     durationMs: durationSec ? Math.round(durationSec * 1000) : null,
                     playing: Boolean(state.playing),
                     isPlaying: Boolean(state.playing),
+                    repeatMode: Number.isFinite(state.repeat) ? state.repeat : 0,
+                    repeat_mode: Number.isFinite(state.repeat) ? state.repeat : 0,
+                    shuffle: Boolean(state.shuffle),
+                    shuffleEnabled: Boolean(state.shuffle),
                     updated_at: updatedAt,
-                    savedAt: updatedAt
+                    updatedAt,
+                    savedAt: updatedAt,
+                    saved_at: updatedAt,
+                    origin: 'dtunes-web'
                 };
             },
             apply: (data) => {
                 if(!data) return false;
-                const queue = firstArray(data.q, data.queue, data.items, data.queue_items, data.up_next);
+                const queue = firstArray(data.q, data.queue, data.items, data.queue_items, data.up_next, data.upNext);
                 const userQueue = firstArray(data.uq, data.userQueue);
-                const rawTrack = data.track || data.current || data.song || data.nowPlaying || null;
+                const rawTrack = data.track || data.current || data.song || data.nowPlaying || data.now_playing || data.trackData || null;
                 const timeSec = playbackTimeSeconds(data);
+                const updatedAt = data.updated_at || data.updatedAt || data.savedAt || data.saved_at;
+                if (updatedAt && !data.updated_at) data.updated_at = updatedAt;
                 if (queue) state.queue = queue.map(normalizeSongShape);
                 if (userQueue) state.userQueue = userQueue.map(normalizeSongShape);
-                const idx = Number(data.idx ?? data.index ?? data.currentIndex);
+                const idx = Number(data.idx ?? data.index ?? data.currentIndex ?? data.current_index ?? data.currentMediaIndex);
                 if (Number.isFinite(idx)) state.idx = idx;
+                const playing = data.playing ?? data.isPlaying ?? data.is_playing ?? data.playWhenReady ?? data.play_when_ready;
+                if (typeof playing === 'boolean') state.playing = playing;
+                const repeatMode = data.repeatMode ?? data.repeat_mode ?? data.repeat;
+                if (Number.isFinite(Number(repeatMode))) {
+                    state.repeat = Math.max(0, Math.min(2, Number(repeatMode)));
+                    try { localStorage.setItem('playRepeat', String(state.repeat)); } catch (_) {}
+                }
+                const shuffleRaw = data.shuffle ?? data.shuffleEnabled ?? data.shuffle_enabled ?? data.shuffled;
+                if (typeof shuffleRaw === 'boolean') {
+                    state.shuffle = shuffleRaw;
+                    try { localStorage.setItem('playShuffle', String(state.shuffle)); } catch (_) {}
+                }
 
                 if (rawTrack && (rawTrack.id || rawTrack.track_id)) {
                     const track = normalizeSongShape(rawTrack);
@@ -494,8 +516,143 @@
             profile: null,
             syncing: false,
             playbackSaveTimer: null,
+            applyingRemote: false,
+            remoteDirty: new Set(),
+            remoteRefreshTimer: null,
+            cloudChannel: null,
+            cloudChannelUserId: null,
             ready: () => Boolean(window.dverse?.isConfigured && window.dverse?.dtunes),
             songId: (song) => String(typeof song === 'object' ? song?.id : song || ''),
+            persistSearchHistory: (list) => {
+                state.searchHistory = list || [];
+                try {
+                    localStorage.setItem('searchHistory', JSON.stringify(state.searchHistory));
+                    localStorage.setItem('recentSearches', JSON.stringify(state.searchHistory));
+                } catch (_) {}
+            },
+            mapCloudSearchEntries: (entries) => (entries || []).map((entry) => {
+                const song = entry.song || null;
+                return {
+                    ...(song || {}),
+                    id: (song && song.id) || entry.track_id || entry.query || '',
+                    name: (song && (song.name || song.title)) || entry.query || 'Unknown Track',
+                    title: (song && (song.title || song.name)) || entry.query || 'Unknown Track',
+                    artist: (song && song.artist) || '',
+                    img: (song && (song.img || song.artwork_url)) || FALLBACK_ART,
+                    duration: (song && song.duration) || 0,
+                    query: entry.query || '',
+                    cloudId: entry.id ?? entry.cloudId ?? null,
+                    trackId: entry.track_id || null,
+                    searchedAt: entry.searchedAt || (entry.searched_at ? Date.parse(entry.searched_at) : Date.now())
+                };
+            }).filter((item) => item.id || item.query),
+            historyCursorKey: () => cloudLibrary.session?.user?.id ? `dtunesHistoryCursor:${cloudLibrary.session.user.id}` : null,
+            getHistoryCursor: () => {
+                const key = cloudLibrary.historyCursorKey();
+                if (!key) return null;
+                try { return localStorage.getItem(key) || null; } catch (_) { return null; }
+            },
+            setHistoryCursor: (value) => {
+                const key = cloudLibrary.historyCursorKey();
+                if (!key || !value) return;
+                try { localStorage.setItem(key, value); } catch (_) {}
+            },
+            connectRealtime: (userId) => {
+                if (!userId || typeof window.dverse?.subscribeToCloud !== 'function') return;
+                if (cloudLibrary.cloudChannelUserId === userId && cloudLibrary.cloudChannel) return;
+                try { if (cloudLibrary.cloudChannel?.unsubscribe) cloudLibrary.cloudChannel.unsubscribe(); } catch (_) {}
+                cloudLibrary.cloudChannelUserId = userId;
+                cloudLibrary.cloudChannel = window.dverse.subscribeToCloud((table) => cloudLibrary.scheduleRemoteRefresh(table));
+            },
+            disconnectRealtime: () => {
+                try { if (cloudLibrary.cloudChannel?.unsubscribe) cloudLibrary.cloudChannel.unsubscribe(); } catch (_) {}
+                cloudLibrary.cloudChannel = null;
+                cloudLibrary.cloudChannelUserId = null;
+                cloudLibrary.remoteDirty.clear();
+                if (cloudLibrary.remoteRefreshTimer) clearTimeout(cloudLibrary.remoteRefreshTimer);
+                cloudLibrary.remoteRefreshTimer = null;
+                cloudLibrary.applyingRemote = false;
+            },
+            scheduleRemoteRefresh: (table) => {
+                if (!table || cloudLibrary.applyingRemote || !cloudLibrary.session) return;
+                cloudLibrary.remoteDirty.add(table);
+                if (cloudLibrary.remoteRefreshTimer) clearTimeout(cloudLibrary.remoteRefreshTimer);
+                cloudLibrary.remoteRefreshTimer = setTimeout(() => {
+                    cloudLibrary.remoteRefreshTimer = null;
+                    if (cloudLibrary.applyingRemote || !cloudLibrary.session) return;
+                    const slices = new Set(cloudLibrary.remoteDirty);
+                    cloudLibrary.remoteDirty.clear();
+                    cloudLibrary.refreshRemoteSlices(slices).catch((error) => console.warn('[DVerse] Realtime refresh failed:', error));
+                }, 2000);
+            },
+            refreshRemoteSlices: async (slices = new Set()) => {
+                if (!slices.size || !cloudLibrary.session) return;
+                cloudLibrary.applyingRemote = true;
+                try {
+                    if (slices.has('dtunes_search_history') && typeof window.dverse?.listRecentSearches === 'function') {
+                        const entries = await window.dverse.listRecentSearches(25);
+                        cloudLibrary.persistSearchHistory(cloudLibrary.mapCloudSearchEntries(entries));
+                        if (window.ui?.getCurrentView?.() === 'search') window.searchManager?.renderSearchHistory?.();
+                    }
+                    if (slices.has('dtunes_playback_state')) {
+                        const remote = await window.dverse.dtunes.getPlaybackState();
+                        const preferred = cloudLibrary.choosePlaybackState(cloudLibrary.captureLocalSnapshot().playbackState, remote);
+                        if (preferred?.track?.id) {
+                            persist.apply(preferred);
+                            try { localStorage.setItem('playbackState', JSON.stringify(preferred)); } catch (_) {}
+                        }
+                    }
+                    if (slices.has('dtunes_library')) {
+                        const songs = await window.dverse.dtunes.listLibrary();
+                        if (songs && songs.length) {
+                            state.libraryIds = cloudLibrary.compactSongs([...songs, ...state.libraryIds]);
+                            try { localStorage.setItem('libraryIds', JSON.stringify(state.libraryIds)); } catch (_) {}
+                            window.ui?.renderLibraryLists?.();
+                        }
+                    }
+                    if (slices.has('dtunes_likes')) {
+                        const songs = await window.dverse.dtunes.listLikes();
+                        if (songs && songs.length) {
+                            state.likedIds = cloudLibrary.compactSongs([...songs, ...state.likedIds]);
+                            try { localStorage.setItem('likedIds', JSON.stringify(state.likedIds)); } catch (_) {}
+                            window.ui?.renderLibraryLists?.();
+                        }
+                    }
+                    if (slices.has('dtunes_history')) {
+                        const since = cloudLibrary.getHistoryCursor();
+                        const songs = await window.dverse.dtunes.listHistory(100, since);
+                        if (songs && songs.length) {
+                            state.playHistory = cloudLibrary.compactSongs([...songs, ...state.playHistory]).slice(0, 100);
+                            const latest = songs.reduce((max, song) => (song.played_at && (!max || song.played_at > max) ? song.played_at : max), since);
+                            cloudLibrary.setHistoryCursor(latest);
+                            try { localStorage.setItem('playHistory', JSON.stringify(state.playHistory)); } catch (_) {}
+                            window.ui?.renderHistory?.();
+                            window.homeView?.renderRecentlyPlayed?.();
+                        }
+                    }
+                    if (slices.has('dtunes_playlists') || slices.has('dtunes_playlist_items')) {
+                        const playlists = await window.dverse.dtunes.listPlaylists();
+                        const mergedPlaylists = { ...state.playlists };
+                        const mergedStyles = { ...state.playlistStyles };
+                        (playlists || []).forEach((playlist) => {
+                            const localSongs = mergedPlaylists[playlist.name] || [];
+                            mergedPlaylists[playlist.name] = cloudLibrary.compactSongs([...(playlist.songs || []), ...localSongs]);
+                            if (playlist.style && typeof playlist.style === 'object') {
+                                mergedStyles[playlist.name] = { ...(mergedStyles[playlist.name] || {}), ...playlist.style };
+                            }
+                        });
+                        state.playlists = mergedPlaylists;
+                        state.playlistStyles = mergedStyles;
+                        try {
+                            localStorage.setItem('playlists', JSON.stringify(state.playlists));
+                            localStorage.setItem('playlistStyles', JSON.stringify(state.playlistStyles));
+                        } catch (_) {}
+                        window.ui?.renderPlaylists?.();
+                    }
+                } finally {
+                    cloudLibrary.applyingRemote = false;
+                }
+            },
             compactSongs: (songs) => {
                 const seen = new Set();
                 return (songs || []).filter((song) => {
@@ -584,8 +741,8 @@
                 const cloudTrack = cloudPlayback?.track?.id || cloudPlayback?.track?.track_id;
                 if (!localTrack) return cloudTrack ? cloudPlayback : null;
                 if (!cloudTrack) return localPlayback;
-                const localTime = timestamp(localPlayback.updated_at || localPlayback.savedAt);
-                const cloudTime = timestamp(cloudPlayback.updated_at || cloudPlayback.savedAt);
+                const localTime = timestamp(localPlayback.updated_at || localPlayback.updatedAt || localPlayback.savedAt || localPlayback.saved_at);
+                const cloudTime = timestamp(cloudPlayback.updated_at || cloudPlayback.updatedAt || cloudPlayback.savedAt || cloudPlayback.saved_at);
                 return cloudTime > localTime ? cloudPlayback : localPlayback;
             },
             setStatus: (message) => {
@@ -747,6 +904,7 @@
             },
             signOutAndPurgeAll: async () => {
                 cloudLibrary._isSigningOut = true;
+                cloudLibrary.disconnectRealtime();
 
                 // Cancel all pending timers
                 if (cloudLibrary.playbackSaveTimer) {
@@ -818,7 +976,8 @@
                     'dverse_session_cache', 'dverse_tokens_cookie', 'dverse_auth_tokens',
                     'dverse_supabase_auth_token', 'sb-supabase-auth-token', 'dislikedSongs',
                     'dtunes_ai_playlists_cache_v2', 'dverse_auth_return_to', 'dverse.auth.returnTo',
-                    'sb-qvvnhvowffvbbhfgwypw-auth-token', 'dverse_desktop_auth'
+                    'sb-qvvnhvowffvbbhfgwypw-auth-token', 'dverse_desktop_auth',
+                    'dtunesHistoryCursor:' + (cloudLibrary.session?.user?.id || '')
                 ];
                 targetKeys.forEach(k => {
                     try { localStorage.removeItem(k); } catch (_) {}
@@ -926,6 +1085,7 @@
                 const triggerLoadOnce = async (source, userSession) => {
                     const uid = userSession?.user?.id;
                     if (!uid) return;
+                    cloudLibrary.connectRealtime(uid);
                     if (cloudLibrary._loadedUserId === uid && source !== 'MANUAL_FORCE') return;
                     cloudLibrary._loadedUserId = uid;
                     await cloudLibrary.load();
@@ -936,7 +1096,10 @@
                     cloudLibrary.session = session;
                     cloudLibrary.updateUI();
                     if (session) await triggerLoadOnce(_event, session);
-                    else cloudLibrary._loadedUserId = null;
+                    else {
+                        cloudLibrary._loadedUserId = null;
+                        cloudLibrary.disconnectRealtime();
+                    }
                 });
                 try {
                     const session = await window.dverse.getSession();
@@ -971,13 +1134,15 @@
                 try {
                     const localSnapshot = cloudLibrary.captureLocalSnapshot();
                     const shouldImportLocal = cloudLibrary.shouldPushLocalSnapshot(localSnapshot);
-                    const [historyRes, likesRes, libraryRes, playlistsRes, playbackRes, profileRes] = await Promise.allSettled([
-                        window.dverse.dtunes.listHistory(),
+                    const historySince = cloudLibrary.getHistoryCursor();
+                    const [historyRes, likesRes, libraryRes, playlistsRes, playbackRes, profileRes, searchesRes] = await Promise.allSettled([
+                        window.dverse.dtunes.listHistory(100, historySince),
                         window.dverse.dtunes.listLikes(),
                         window.dverse.dtunes.listLibrary(),
                         window.dverse.dtunes.listPlaylists(),
                         window.dverse.dtunes.getPlaybackState(),
-                        window.dverse.dtunes.fetchProfile ? window.dverse.dtunes.fetchProfile(cloudLibrary.session?.user?.id) : Promise.resolve(null)
+                        window.dverse.dtunes.fetchProfile ? window.dverse.dtunes.fetchProfile(cloudLibrary.session?.user?.id) : Promise.resolve(null),
+                        typeof window.dverse.listRecentSearches === 'function' ? window.dverse.listRecentSearches(25) : Promise.resolve([])
                     ]);
 
                     const history = historyRes.status === 'fulfilled' ? historyRes.value : [];
@@ -986,6 +1151,7 @@
                     const playlists = playlistsRes.status === 'fulfilled' ? playlistsRes.value : [];
                     const playbackState = playbackRes.status === 'fulfilled' ? playbackRes.value : null;
                     const profile = profileRes.status === 'fulfilled' ? profileRes.value : null;
+                    const recentSearches = searchesRes.status === 'fulfilled' ? (searchesRes.value || []) : [];
 
                     const user = cloudLibrary.session?.user;
                     const meta = user?.user_metadata || user?.raw_user_meta_data || {};
@@ -1045,6 +1211,15 @@
                         document.getElementById('section-recent')?.classList.remove('hidden');
                         document.getElementById('section-quick-picks')?.classList.remove('hidden');
                         document.getElementById('section-for-you')?.classList.remove('hidden');
+                    }
+                    const latestPlayedAt = (history || []).reduce((max, song) => (
+                        song.played_at && (!max || song.played_at > max) ? song.played_at : max
+                    ), historySince);
+                    if (latestPlayedAt) cloudLibrary.setHistoryCursor(latestPlayedAt);
+                    else if (!historySince) cloudLibrary.setHistoryCursor(new Date().toISOString());
+                    if (recentSearches.length) {
+                        cloudLibrary.persistSearchHistory(cloudLibrary.mapCloudSearchEntries(recentSearches));
+                        if (window.ui?.getCurrentView?.() === 'search') window.searchManager?.renderSearchHistory?.();
                     }
                     if (likes && likes.length > 0) {
                         state.likedIds = cloudLibrary.compactSongs([...(likes || []), ...state.likedIds]);
@@ -1215,7 +1390,8 @@
             accumulatedMs: 0,
             lastUpdate: 0,
             isPlaying: false,
-            
+            eventId: null,
+
             start: (track) => {
                 listeningSession.finalize();
                 if (!track) return;
@@ -1225,6 +1401,11 @@
                 listeningSession.accumulatedMs = 0;
                 listeningSession.lastUpdate = Date.now();
                 listeningSession.isPlaying = !audio.paused;
+                try {
+                    listeningSession.eventId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null;
+                } catch (_) {
+                    listeningSession.eventId = null;
+                }
             },
             
             update: () => {
@@ -1252,13 +1433,15 @@
                             duration_ms: ms,
                             started_at: startedAt,
                             ended_at: endedAt,
-                            source: 'dtunes-web'
+                            source: 'dtunes-web',
+                            client_event_id: listeningSession.eventId || undefined
                         }).catch(e => console.warn('[DVerse] recordPlay failed:', e));
                     }
                 }
                 listeningSession.songId = null;
                 listeningSession.track = null;
                 listeningSession.accumulatedMs = 0;
+                listeningSession.eventId = null;
             }
         };
         window.listeningSession = listeningSession;

@@ -28,7 +28,7 @@ The original single-file app has been split into:
 
 ## How the recommender works
 
-No embeddings or paid APIs are used. The engine combines explicit behavior signals, listening history, song metadata, and JioSaavn search/trending results.
+The rule-based engine uses no embeddings. The server proxies an external AI curation endpoint for autoplay and mixes (configurable with `AI_ENDPOINT`, `AI_MODEL`, and `AI_PROVIDER`), with an algorithmic fallback when that endpoint is unavailable, throttled, or returns no usable data. The engine itself combines explicit behavior signals, listening history, song metadata, and JioSaavn search/trending results. All AI logic lives server-side, so clients never call the AI endpoint directly.
 
 ### Recorded signals
 
@@ -123,11 +123,17 @@ The engine strongly penalizes repeatedly skipped songs and limits artist repetit
 ## API endpoints
 
 - `POST /api/music/event`
+- `POST /api/music/recalculate-profile`
+- `POST /api/music/autoplay` — body: `seedSongId`, `currentQueueIds`, `excludedSongIds`, `limit` (8–25). Returns `{ songs: [...] }`.
+- `POST /api/music/recommendations` — body: `userId`, `type`, `language`, `limit` (15–25), `currentQueueIds`, `sessionHistory`, `dislikedSongIds`, `negativeTitles`. Returns `{ songs: [...] }`.
+- `POST /api/music/mixes` — body: `userId`, `language`, `limit` (15–25 per mix), `currentQueueIds`, `sessionHistory`, `dislikedSongIds`, `negativeTitles`. Returns `{ mixes: [...] }` with five mixes (`daily-mix-1`, `daily-mix-2`, `discover-weekly`, `chill-vibes`, `mood`), each holding 15–25 songs.
+- `POST /api/music/feedback` — body: `userId`, `mixKey`, `isLiked`, `reason`, `songId`, `eventType`. Best-effort persistence; returns `{ ok: true }`.
 - `GET /api/music/recommendations?userId=...&type=for-you&limit=25`
 - `GET /api/music/similar?songId=...&limit=25`
 - `GET /api/music/artist-radio?artist=...&userId=...&limit=25`
 - `GET /api/music/playlist?type=late-night&userId=...&limit=25`
-- `POST /api/music/recalculate-profile`
+
+The POST endpoints apply normalized title/artist exclusions (including dislikes and the current queue), deduplicate tracks, backfill from JioSaavn trending so results meet the requested minimum, and return each song with both web and Android-compatible keys (`id`/`saavn_id`, `title`/`name`, `primary_artists`/`artist`, `album`, `duration`, `url`, `img`/`artwork_url`). Mix curation and autoplay are generated server-side with an algorithmic fallback. No festive or seasonal mixes are produced.
 
 ## Frontend features
 

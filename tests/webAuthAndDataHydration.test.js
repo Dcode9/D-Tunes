@@ -577,7 +577,7 @@ test('Web Auth & Data Hydration Test Suite', async (t) => {
         assert.ok(appCode.includes('homeView.renderDiscoverSection(true)'), 'app.js triggers discover section refresh');
     });
 
-    await t.test('Tier 9: Web sign-in routes to D\'Verse portal with return_to parameter and sets return cookies', async () => {
+    await t.test('Tier 9: Web sign-in routes directly to auth.html with the account picker initiator', async () => {
         const env = createTestEnvironment();
         setupSandbox(env);
 
@@ -607,9 +607,8 @@ test('Web Auth & Data Hydration Test Suite', async (t) => {
 
         await env.window.dverse.signInWithGoogle();
 
-        assert.ok(env.window.location.href.includes('https://d-verse.in/?dverse_return_to='), 'Redirects to D\'Verse portal');
-        assert.ok(env.window.location.href.includes(encodeURIComponent('https://tunes.d-verse.in/')), 'Includes correct return URL');
-        assert.ok(env.document.cookie.includes('dverse_auth_return_to'), 'Sets dverse_auth_return_to cookie');
+        assert.ok(env.window.location.href.includes('/auth.html?start=1'), 'Redirects directly to the auth hand-off page');
+        assert.ok(!env.window.location.href.includes('d-verse.in/?dverse_return_to='), 'Skips the multi-step D\'Verse portal hop');
     });
 
     await t.test('Tier 10: Session handoff from URL hash (#dverse_session=...) unpacks and initializes session', async () => {

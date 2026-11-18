@@ -4,8 +4,14 @@ const path = require('node:path');
 const { getRecommendations, PLAYLIST_TYPES } = require('./lib/recommendationEngine');
 const { deduplicateSongs } = require('./lib/deduplication');
 const store = require('./lib/jsonStore');
-const saavn = require('./lib/saavnClient');
 const lyricsService = require('./lib/lyricsService');
+const {
+  recommendationDeps,
+  buildAutoplay,
+  buildRecommendations,
+  buildMixes,
+  recordFeedback,
+} = require('./lib/recommendationRoutes');
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_ROOT = __dirname;
@@ -33,80 +39,6 @@ function parseBody(req) {
   });
 }
 
-function topKeys(map = {}, count = 3) {
-  return Object.entries(map).sort((a, b) => Number(b[1]) - Number(a[1])).slice(0, count).map(([key]) => key).filter(Boolean);
-}
-
-async function externalCandidates({ playlistType, profile, options, limit }) {
-  const candidates = [];
-  const artists = topKeys(profile.artist_scores_json, 3);
-  const languages = topKeys(profile.language_scores_json, 2);
-
-  if (options.seedSongId) {
-    // 1. First get direct recommendation suggestions for this exact track from recommendation backend
-    const suggestions = await saavn.getSongSuggestions(options.seedSongId, limit).catch(() => []);
-    candidates.push(...suggestions);
-
-    const seed = await saavn.getSong(options.seedSongId).catch(() => null);
-    if (seed) {
-      options.seedSong = seed;
-      if (seed.primary_artists) {
-        candidates.push(...await saavn.getArtistTopSongs(seed.primary_artists, Math.ceil(limit / 2)).catch(() => []));
-      }
-      candidates.push(...await saavn.searchSongs(`${seed.primary_artists} ${seed.title}`, limit).catch(() => []));
-      if (seed.album) candidates.push(...await saavn.searchSongs(`${seed.album} ${seed.primary_artists}`, limit).catch(() => []));
-    }
-  }
-
-  if (options.seedArtist) {
-    candidates.push(...await saavn.getArtistTopSongs(options.seedArtist, limit).catch(() => []));
-    candidates.push(...await saavn.searchSongs(`${options.seedArtist} top songs`, limit).catch(() => []));
-  }
-
-  if (options.language) {
-    candidates.push(...await saavn.searchSongs(`top ${options.language} hits 2026`, limit).catch(() => []));
-  }
-
-  if (playlistType === PLAYLIST_TYPES.LATE_NIGHT || playlistType === PLAYLIST_TYPES.CHILL_VIBES) {
-    candidates.push(...await saavn.searchSongs('soft acoustic lofi romantic songs', limit).catch(() => []));
-    candidates.push(...await saavn.searchSongs('midnight chill unplugged melodies', limit).catch(() => []));
-  } else if (playlistType === PLAYLIST_TYPES.DISCOVERY || playlistType === PLAYLIST_TYPES.DISCOVER_WEEKLY) {
-    candidates.push(...await saavn.searchSongs(`${languages[0] || ''} new indie trending songs`.trim(), limit).catch(() => []));
-    candidates.push(...await saavn.searchSongs('fresh breakthrough indie pop 2026', limit).catch(() => []));
-  } else if (playlistType === PLAYLIST_TYPES.DAILY_MIX_1) {
-    if (artists[0]) candidates.push(...await saavn.getArtistTopSongs(artists[0], limit).catch(() => []));
-    candidates.push(...await saavn.searchSongs(`${languages[0] || ''} top hits`, limit).catch(() => []));
-  } else if (playlistType === PLAYLIST_TYPES.DAILY_MIX_2) {
-    if (artists[1] || artists[0]) candidates.push(...await saavn.getArtistTopSongs(artists[1] || artists[0], limit).catch(() => []));
-    candidates.push(...await saavn.searchSongs(`${languages[1] || languages[0] || ''} viral songs`, limit).catch(() => []));
-  } else if (playlistType === PLAYLIST_TYPES.RELEASE_RADAR) {
-    candidates.push(...await saavn.searchSongs(`${languages[0] || ''} new releases 2026`, limit).catch(() => []));
-    candidates.push(...await saavn.searchSongs('latest new songs 2026', limit).catch(() => []));
-  }
-
-  for (const artist of artists) {
-    candidates.push(...await saavn.getArtistTopSongs(artist, Math.ceil(limit / 2)).catch(() => []));
-  }
-  for (const language of languages) {
-    candidates.push(...await saavn.searchSongs(`${language} top hits`, Math.ceil(limit / 2)).catch(() => []));
-  }
-
-  // Always bring in rich trending data
-  candidates.push(...await saavn.getTrending(limit).catch(() => []));
-
-  return deduplicateSongs(candidates);
-}
-
-async function recommendationDeps(options = {}) {
-  return {
-    getTasteProfile: store.getTasteProfile,
-    getRecentEvents: store.getRecentEvents,
-    getUserSongScores: store.getUserSongScores,
-    getLocalCandidates: store.getLocalCandidates,
-    fetchExternalCandidates: (ctx) => externalCandidates({ ...ctx, options: { ...ctx.options, ...options } }),
-  };
-}
-
 async function handleApi(req, res, url) {
   if (req.method === 'OPTIONS') {
     res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-headers': 'content-type' });
@@ -126,6 +58,26 @@ async function handleApi(req, res, url) {
     const body = await parseBody(req);
     const userId = body.userId || url.searchParams.get('userId') || 'anonymous';
     return sendJson(res, 200, { profile: store.rebuildUserTasteProfile(userId) });
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/music/autoplay') {
+    const body = await parseBody(req).catch(() => ({}));
+    return sendJson(res, 200, await buildAutoplay(body));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/music/recommendations') {
+    const body = await parseBody(req).catch(() => ({}));
+    return sendJson(res, 200, await buildRecommendations(body));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/music/mixes') {
+    const body = await parseBody(req).catch(() => ({}));
+    return sendJson(res, 200, await buildMixes(body));
+  }
+
+  if (req.method === 'POST' && url.pathname === '/api/music/feedback') {
+    const body = await parseBody(req).catch(() => ({}));
+    return sendJson(res, 200, await recordFeedback(body));
   }
 
   if (req.method === 'GET' && url.pathname === '/api/music/recommendations') {

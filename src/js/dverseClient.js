@@ -248,6 +248,16 @@
   const PORTAL_ORIGIN = (window.DVERSE_PORTAL_ORIGIN || 'https://d-verse.in').replace(/\/$/, '');
   const AUTH_BRIDGE_URL = `${PORTAL_ORIGIN}/auth-bridge.html`;
   const authRedirectUrl = () => `${window.location.origin}/`;
+
+  function newUuid() {
+    try {
+      if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+    } catch (_) {}
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      const r = Math.random() * 16 | 0;
+      return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+  }
   let portalSessionPromise = null;
   let currentSession = null;
   let checkedUrlHandoff = false;
@@ -905,7 +915,7 @@
           options: {
             redirectTo: loopbackRedirect,
             skipBrowserRedirect: true,
-            queryParams: { prompt: 'select_account' }
+            queryParams: { prompt: 'select_account', access_type: 'online' }
           }
         });
         if (error) throw error;
@@ -941,7 +951,7 @@
           provider: 'google',
           options: {
             redirectTo: redirectUrl,
-            queryParams: { prompt: 'select_account' }
+            queryParams: { prompt: 'select_account', access_type: 'online' }
           }
         });
         if (error) throw error;
@@ -955,17 +965,9 @@
     }
 
     // 3. Production Web Browser flow:
-    // Route sign-in through the central D'Verse portal (https://d-verse.in/?dverse_return_to=...).
-    // The portal initiates Google OAuth with the whitelisted Site URL (https://d-verse.in/),
-    // exchanges the code on return, and hands back the session via #dverse_session=<base64url>.
-    const returnUrl = `${window.location.origin}${window.location.pathname}`;
-    setCookie('dverse_auth_return_to', returnUrl, 1);
-    setCookie('dverse.auth.returnTo', returnUrl, 1);
-    try {
-      localStorage.setItem('dverse.auth.returnTo', returnUrl);
-      sessionStorage.setItem('dverse.auth.returnTo', returnUrl);
-    } catch (_) {}
-    window.location.href = `${PORTAL_ORIGIN}/?dverse_return_to=${encodeURIComponent(returnUrl)}&prompt=select_account`;
+    // A single hand-off to auth.html, which always opens the Google account
+    // picker (prompt=select_account) and returns tokens to the web/app client.
+    window.location.href = `${window.location.origin}/auth.html?start=1`;
   }
 
   async function signOut() {
@@ -1054,7 +1056,7 @@
       ? new Date(new Date(endedAt).getTime() - durationMs).toISOString()
       : null);
     try {
-      const { error } = await client.from('dtunes_history').insert({
+      const { error } = await client.from('dtunes_history').upsert({
         user_id: session.user.id,
         track_id: track?.id || String(song.id || song),
         played_at: endedAt,
@@ -1062,30 +1064,37 @@
         started_at: startedAt,
         ended_at: endedAt,
         client: 'dtunes-web',
-        context: { source: 'dtunes-web', ...context }
-      });
+        context: { source: 'dtunes-web', ...context },
+        client_event_id: context.client_event_id || newUuid()
+      }, { onConflict: 'client_event_id', ignoreDuplicates: true });
       if (error) console.warn('[DVerse] recordPlay error:', error.message);
     } catch (err) {
       console.warn('[DVerse] recordPlay failed:', err);
     }
   }
 
-  async function listHistory(limit = 100) {
+  async function listHistory(limit = 100, since = null) {
     if (!client) return [];
     const session = currentSession || await getSession();
     if (!session?.user?.id) return [];
     try {
-      const { data, error } = await client
+      let query = client
         .from('dtunes_history')
         .select('played_at, track_id, context, dtunes_tracks(*)')
         .eq('user_id', session.user.id)
         .order('played_at', { ascending: false })
         .limit(limit);
+      if (since) query = query.gte('played_at', since);
+      const { data, error } = await query;
       if (error) {
         console.warn('[DVerse] listHistory select error:', error.message);
         return [];
       }
-      return (data || []).map((row) => songFromTrack(row.dtunes_tracks, row.track_id)).filter(Boolean);
+      return (data || []).map((row) => {
+        const song = songFromTrack(row.dtunes_tracks, row.track_id);
+        if (song && row.played_at) song.played_at = row.played_at;
+        return song;
+      }).filter(Boolean);
     } catch (err) {
       console.warn('[DVerse] listHistory exception:', err);
       return [];
@@ -1219,6 +1228,85 @@
     } catch (err) {
       console.warn('[DVerse] clearSearchHistory exception:', err);
     }
+  }
+
+  async function recordSearch(songOrQuery) {
+    if (!client) return;
+    const session = currentSession || await getSession();
+    if (!session?.user?.id) return;
+    const isSong = Boolean(songOrQuery && typeof songOrQuery === 'object');
+    const query = isSong
+      ? String(songOrQuery.query || songOrQuery.name || songOrQuery.title || songOrQuery.id || '').trim()
+      : String(songOrQuery || '').trim();
+    if (!query) return;
+    let trackId = null;
+    if (isSong) {
+      const track = await upsertTrack(songOrQuery);
+      trackId = track?.id || String(songOrQuery.id || songOrQuery.track_id || '') || null;
+    }
+    const now = new Date().toISOString();
+    try {
+      const { error } = await client.from('dtunes_search_history').insert({
+        user_id: session.user.id,
+        track_id: trackId,
+        query,
+        searched_at: now,
+        created_at: now
+      });
+      if (error) console.warn('[DVerse] recordSearch error:', error.message);
+    } catch (err) {
+      console.warn('[DVerse] recordSearch failed:', err);
+    }
+  }
+
+  async function listRecentSearches(limit = 25) {
+    if (!client) return [];
+    const session = currentSession || await getSession();
+    if (!session?.user?.id) return [];
+    try {
+      const { data, error } = await client
+        .from('dtunes_search_history')
+        .select('id, searched_at, query, track_id, dtunes_tracks(*)')
+        .eq('user_id', session.user.id)
+        .order('searched_at', { ascending: false })
+        .limit(limit);
+      if (error) {
+        console.warn('[DVerse] listRecentSearches select error:', error.message);
+        return [];
+      }
+      return (data || []).map((row) => ({
+        id: row.id,
+        cloudId: row.id,
+        query: row.query || '',
+        track_id: row.track_id || null,
+        searched_at: row.searched_at || null,
+        searchedAt: row.searched_at ? Date.parse(row.searched_at) : null,
+        song: songFromTrack(row.dtunes_tracks, row.track_id)
+      }));
+    } catch (err) {
+      console.warn('[DVerse] listRecentSearches exception:', err);
+      return [];
+    }
+  }
+
+  async function deleteRecentSearch(id) {
+    if (!client || !id) return;
+    const session = currentSession || await getSession();
+    if (!session?.user?.id) return;
+    try {
+      let query = client.from('dtunes_search_history').delete().eq('user_id', session.user.id);
+      query = /^\d+$/.test(String(id))
+        ? query.eq('id', id)
+        : query.eq('track_id', String(id));
+      const { error } = await query;
+      if (error) console.warn('[DVerse] deleteRecentSearch error:', error.message);
+    } catch (err) {
+      console.warn('[DVerse] deleteRecentSearch failed:', err);
+    }
+  }
+
+  async function clearRecentSearches() {
+    return clearSearchHistoryRemote();
   }
 
   async function listPlaylists() {
@@ -1355,6 +1443,7 @@
       ...playbackState,
       updated_at: playbackState.updated_at || new Date().toISOString()
     };
+    const track = normalizeTrack(payload.track);
     fetch(`${SUPABASE_URL}/rest/v1/dtunes_playback_state?on_conflict=user_id`, {
       method: 'POST',
       keepalive: true,
@@ -1366,7 +1455,7 @@
       },
       body: JSON.stringify([{
         user_id: currentSession.user.id,
-        track_id: null,
+        track_id: track?.id || null,
         playback_state: payload,
         updated_at: payload.updated_at
       }])
@@ -1453,6 +1542,34 @@
     }
   }
 
+  function subscribeToCloud(handler) {
+    if (!client || typeof handler !== 'function') return null;
+    const userId = currentSession?.user?.id;
+    if (!userId) return null;
+    const tables = [
+      'dtunes_playback_state',
+      'dtunes_search_history',
+      'dtunes_library',
+      'dtunes_likes',
+      'dtunes_playlists',
+      'dtunes_playlist_items',
+      'dtunes_history'
+    ];
+    const channel = client.channel('dtunes-' + userId);
+    tables.forEach((table) => {
+      channel.on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table,
+        filter: 'user_id=eq.' + userId
+      }, (payload) => {
+        try { handler(table, payload); } catch (err) { console.warn('[DVerse] Realtime handler error:', err); }
+      });
+    });
+    channel.subscribe();
+    return channel;
+  }
+
   window.dverse = {
     supabase: client,
     isConfigured: ready,
@@ -1462,7 +1579,17 @@
     onAuthStateChange,
     signInWithGoogle,
     signOut,
+    recordSearch,
+    listRecentSearches,
+    deleteRecentSearch,
+    clearRecentSearches,
+    subscribeToCloud,
     dtunes: {
+      recordSearch,
+      listRecentSearches,
+      deleteRecentSearch,
+      clearRecentSearches,
+      subscribeToCloud,
       recordPlay,
       listHistory,
       recordSearchHistory,

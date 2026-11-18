@@ -8,6 +8,7 @@
   <title>Signing in | D'Tunes</title>
   <link rel="icon" type="image/svg+xml" href="DTunes.svg">
   <link rel="stylesheet" href="src/css/brand.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     * {
       box-sizing: border-box;
@@ -135,6 +136,8 @@
   <script>
     (function () {
       var PACKAGE = 'com.dcode9.dtunes';
+      var SUPABASE_URL = window.DVERSE_SUPABASE_URL || 'https://gmwieijbrrztukqpfwkg.supabase.co';
+      var SUPABASE_ANON_KEY = window.DVERSE_SUPABASE_ANON_KEY || 'sb_publishable_KX3MYtV84QJJdy9bPDuMEA_V99sLKSE';
 
       function base64UrlDecode(value) {
         try {
@@ -162,14 +165,54 @@
 
       var card = document.getElementById('card');
       var btn = document.getElementById('open-app-btn');
+      var hintEl = document.getElementById('hint');
 
       function showError(message) {
         card.classList.add('error');
         document.getElementById('icon').textContent = '!';
         document.getElementById('title').textContent = "Sign-in didn't finish";
         document.getElementById('desc').textContent = message;
-        document.getElementById('hint').textContent = 'Go back to D\'Tunes and tap "Sign in with Google" again.';
+        hintEl.textContent = 'Go back to D\'Tunes and tap "Sign in with Google" again.';
         btn.hidden = true;
+      }
+
+      function startGoogleSignIn() {
+        function begin() {
+          if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+            showError('The sign-in service could not be loaded. Check your connection and try again.');
+            return;
+          }
+          document.getElementById('title').textContent = 'Choosing your Google account…';
+          document.getElementById('desc').textContent = 'Opening the Google account picker so you can choose which account to use.';
+          hintEl.textContent = 'Use the account picker to switch between Google accounts.';
+          try {
+            var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            supabase.auth.signInWithOAuth({
+              provider: 'google',
+              options: {
+                queryParams: { prompt: 'select_account', access_type: 'online' },
+                redirectTo: window.location.origin + '/auth.html?desktop_auth=1',
+                skipBrowserRedirect: false
+              }
+            }).then(function (result) {
+              if (result && result.error) showError(result.error.message || 'Google sign-in could not be started.');
+            }).catch(function (error) {
+              showError((error && error.message) || 'Google sign-in could not be started.');
+            });
+          } catch (error) {
+            showError((error && error.message) || 'Google sign-in could not be started.');
+          }
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', begin, { once: true });
+        } else {
+          begin();
+        }
+      }
+
+      if (searchParams.get('start') === '1') {
+        startGoogleSignIn();
+        return;
       }
 
       var providerError = allParams.get('error_description') || allParams.get('error');
@@ -210,6 +253,31 @@
         } catch (_) {}
       }
 
+      try {
+        var persisted = null;
+        if (decoded && decoded.access_token) {
+          persisted = {
+            access_token: decoded.access_token,
+            refresh_token: decoded.refresh_token,
+            expires_at: decoded.expires_in ? Math.floor(Date.now() / 1000) + Number(decoded.expires_in) : null,
+            user_id: decoded.user_id || null,
+            email: decoded.email || null
+          };
+        } else if (allParams.get('access_token') && allParams.get('refresh_token')) {
+          persisted = {
+            access_token: allParams.get('access_token'),
+            refresh_token: allParams.get('refresh_token'),
+            expires_at: allParams.get('expires_in') ? Math.floor(Date.now() / 1000) + Number(allParams.get('expires_in')) : null
+          };
+        }
+        if (persisted) {
+          var serialized = JSON.stringify(persisted);
+          localStorage.setItem('dverse_session_cache', serialized);
+          localStorage.setItem('dverse_auth_tokens', serialized);
+          sessionStorage.setItem('dverse_session_cache', serialized);
+        }
+      } catch (_) {}
+
       var qs = allParams.toString();
       var dtunesUrl = 'dtunes://auth?' + qs;
       var intentUrl = 'intent://auth?' + qs +
@@ -218,6 +286,7 @@
       var primaryUrl = /Android/i.test(navigator.userAgent) ? intentUrl : dtunesUrl;
 
       btn.href = primaryUrl;
+      hintEl.textContent = 'Signed in with the Google account picker. To switch accounts, sign in again from D\'Tunes. If the app didn\'t open, tap the button above.';
 
       var launched = false;
       function launchApp() {
