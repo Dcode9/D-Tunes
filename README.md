@@ -133,7 +133,7 @@ The engine strongly penalizes repeatedly skipped songs and limits artist repetit
 - `GET /api/music/artist-radio?artist=...&userId=...&limit=25`
 - `GET /api/music/playlist?type=late-night&userId=...&limit=25`
 
-The POST endpoints apply normalized title/artist exclusions (including dislikes and the current queue), deduplicate tracks, backfill from JioSaavn trending so results meet the requested minimum, and return each song with both web and Android-compatible keys (`id`/`saavn_id`, `title`/`name`, `primary_artists`/`artist`, `album`, `duration`, `url`, `img`/`artwork_url`). Mix curation and autoplay are generated server-side with an algorithmic fallback. No festive or seasonal mixes are produced.
+The POST endpoints apply normalized title/artist exclusions (including dislikes and the current queue), deduplicate tracks, backfill from JioSaavn trending so results meet the requested minimum, and return each song with both web and Android-compatible keys (`id`/`saavn_id`, `title`/`name`, `primary_artists`/`artist`, `album`, `duration`, `url`, `img`/`artwork_url`). Mix curation and autoplay are generated server-side with an algorithmic fallback.
 
 ## Frontend features
 
