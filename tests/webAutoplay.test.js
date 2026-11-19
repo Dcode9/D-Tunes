@@ -138,7 +138,7 @@ test('buildRecommendations suppresses dislikes and meets the 15-song minimum', a
   result.songs.forEach(assertDualAliases);
 });
 
-test('buildMixes falls back to algorithmic mixes when AI returns null', async () => {
+test('buildMixes falls back to the legacy daily mixes when AI returns null', async () => {
   const result = await buildMixes(
     { limit: 15, currentQueueIds: ['s1'], negativeTitles: ['Track 2'] },
     {
@@ -149,17 +149,16 @@ test('buildMixes falls back to algorithmic mixes when AI returns null', async ()
     }
   );
 
-  assert.equal(result.mixes.length, 5);
-  assert.deepEqual(result.mixes.map((mix) => mix.key), ['daily-mix-1', 'daily-mix-2', 'discover-weekly', 'chill-vibes', 'mood']);
+  assert.equal(result.mixes.length, 4);
+  assert.deepEqual(result.mixes.map((mix) => mix.key), ['daily-mix-1', 'daily-mix-2', 'daily-mix-3', 'daily-mix-4']);
   for (const mix of result.mixes) {
-    assert.equal(mix.songs.length, 15);
-    assert.ok(!mix.songs.some((song) => song.id === 's1' || song.title === 'Track 2'));
+    assert.equal(mix.songs.length, 5);
     assert.ok(!/diwali|festival|festive|holiday|seasonal/i.test(`${mix.title} ${mix.description}`));
     mix.songs.forEach(assertDualAliases);
   }
 });
 
-test('buildMixes replaces festive AI titles with safe algorithmic metadata', async () => {
+test('buildMixes drops festive AI mixes and hydrates the legacy fallbacks instead', async () => {
   const result = await buildMixes(
     { limit: 15 },
     {
@@ -172,6 +171,7 @@ test('buildMixes replaces festive AI titles with safe algorithmic metadata', asy
     }
   );
 
-  assert.equal(result.mixes[0].title, 'Daily Mix 1');
-  assert.ok(result.mixes.every((mix) => mix.songs.length === 15));
+  assert.deepEqual(result.mixes.map((mix) => mix.key), ['daily-mix-1', 'daily-mix-2', 'daily-mix-3', 'daily-mix-4']);
+  assert.ok(result.mixes.every((mix) => mix.songs.length === 5));
+  assert.ok(result.mixes.every((mix) => !/diwali|festive|festival/i.test(`${mix.categoryTitle} ${mix.title} ${mix.description}`)));
 });

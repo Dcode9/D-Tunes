@@ -369,16 +369,89 @@
         return hydrated;
     }
 
+    function resolveTasteSong(item) {
+        if (item && typeof item === 'object') return item;
+        return (window.songStore && typeof window.songStore.get === 'function' ? window.songStore.get(item) : null) ||
+            (state.playHistory || []).find(h => h.id === item) || null;
+    }
+
+    async function buildDailyMixTastePayload() {
+        try {
+            const toPair = (item) => {
+                const song = resolveTasteSong(item);
+                if (!song) return null;
+                const title = song.name || song.title || '';
+                if (!title) return null;
+                return { title, artist: song.artist || song.primary_artists || 'Artist' };
+            };
+
+            const playlists = Object.entries(state.playlists || {})
+                .filter(([, songs]) => Array.isArray(songs) && songs.length > 0)
+                .slice(0, 10)
+                .map(([name, songs]) => ({
+                    name,
+                    count: songs.length,
+                    songs: songs.slice(0, 10).map(s => ({
+                        title: s.name || s.title || '',
+                        artist: s.artist || s.primary_artists || 'Artist',
+                        duration: Number(s.duration) || 0
+                    })).filter(s => s.title)
+                }));
+
+            const history = (state.playHistory || []).slice(0, 25).map(h => ({
+                title: h.name || h.title || '',
+                artist: h.artist || h.primary_artists || 'Artist',
+                duration: Number(h.duration) || 0,
+                playedAt: h.playedAt || ''
+            })).filter(h => h.title);
+
+            const artists = Object.entries(state.artistPlayCounts || {})
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 8)
+                .map(([name, count]) => ({ name, count: Number(count) || 0 }));
+
+            let stats = [];
+            try {
+                if (window.dverse && window.dverse.dtunes && window.dverse.dtunes.fetchListeningStats) {
+                    const rows = await window.dverse.dtunes.fetchListeningStats(15);
+                    stats = (Array.isArray(rows) ? rows : []).map(row => {
+                        const track = row.dtunes_tracks || {};
+                        return {
+                            title: track.title || '',
+                            artist: track.artist || 'Artist',
+                            playCount: Number(row.play_count) || 0,
+                            durationMs: Number(row.total_duration_ms) || 0
+                        };
+                    }).filter(s => s.title);
+                }
+            } catch (_) {}
+
+            return {
+                playlists,
+                stats,
+                history,
+                artists,
+                liked: (state.likedIds || []).map(toPair).filter(Boolean).slice(0, 200),
+                library: (state.libraryIds || []).map(toPair).filter(Boolean).slice(0, 200),
+                disliked: (state.dislikedSongs || []).map(toPair).filter(Boolean).slice(0, 200)
+            };
+        } catch (_) {
+            return null;
+        }
+    }
+
     async function fetchDailyMixesFromApi(userId) {
         if (!window.ai || typeof window.ai.fetchServerMixes !== 'function') return null;
         const disliked = state.dislikedSongs || [];
+        const taste = await buildDailyMixTastePayload();
         const mixes = await window.ai.fetchServerMixes({
             userId,
             limit: 20,
             currentQueueIds: state.queue || [],
             sessionHistory: (state.playHistory || []).slice(0, 10),
             dislikedSongIds: disliked.map(d => typeof d === 'object' ? (d.id || d.saavn_id) : d).filter(Boolean),
-            negativeTitles: disliked.map(d => typeof d === 'object' ? (d.name || d.title) : '').filter(Boolean)
+            negativeTitles: disliked.map(d => typeof d === 'object' ? (d.name || d.title) : '').filter(Boolean),
+            taste: taste || undefined
         });
         if (!mixes || mixes.length === 0) return null;
         const playlists = [];

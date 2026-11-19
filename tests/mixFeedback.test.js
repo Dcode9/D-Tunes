@@ -159,7 +159,7 @@ test('buildMixes includes disliked mix reasons in the AI prompt', async () => {
   const rows = [{ mix_key: 'chill-vibes', is_liked: false, reason: 'too much rap' }];
 
   await buildMixes(
-    { userId: 'user-1', limit: 15 },
+    { userId: 'user-1', limit: 15, type: 'your-mix' },
     {
       saavn: createFakeSaavn(),
       store: createFeedbackStore(rows),
@@ -174,7 +174,7 @@ test('buildMixes includes disliked mix reasons in the AI prompt', async () => {
   assert.ok(prompt.includes('Disliked mixes to avoid'));
   assert.ok(prompt.includes('too much rap'));
   assert.ok(prompt.includes('rap'));
-  assert.ok(prompt.includes('Curate exactly 5'));
+  assert.ok(prompt.includes('Curate exactly 1'));
 });
 
 test('buildAutoplay adds up to 10 session history entries to the AI prompt and defaults to 15 songs', async () => {
@@ -237,7 +237,7 @@ test('your-mix is a first-class server mix but stays out of the default mix payl
   assert.equal(requested.mixes[0].songs.length, 15);
 
   const defaultResult = await buildMixes({ limit: 15 }, deps);
-  assert.equal(defaultResult.mixes.length, 5);
+  assert.equal(defaultResult.mixes.length, 4);
   assert.ok(defaultResult.mixes.every((mix) => mix.key !== 'your-mix'));
 });
 
