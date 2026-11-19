@@ -539,6 +539,10 @@ Requirements:
     }
 
     async function fetchServerAutoplay(options = {}) {
+        const disliked = Array.isArray(options.disliked) ? options.disliked : [];
+        const negativeTitles = Array.isArray(options.negativeTitles)
+            ? options.negativeTitles
+            : disliked.map(d => typeof d === 'object' ? (d.name || d.title) : d).filter(Boolean);
         const payload = {
             userId: options.userId || resolveApiUserId(),
             seedSongId: options.seedSongId || options.songId || undefined,
@@ -546,7 +550,13 @@ Requirements:
             currentQueueIds: toIdList(options.currentQueueIds),
             excludedSongIds: toIdList(options.excludedSongIds || options.dislikedSongIds || options.disliked)
         };
+        if (options.seedTitle) payload.seedTitle = options.seedTitle;
+        if (options.seedArtist) payload.seedArtist = options.seedArtist;
         if (options.language) payload.language = options.language;
+        if (negativeTitles.length) payload.negativeTitles = negativeTitles;
+        if (Array.isArray(options.sessionHistory) && options.sessionHistory.length) {
+            payload.sessionHistory = options.sessionHistory;
+        }
         const data = await postMusicApi('/api/music/autoplay', payload);
         if (!data || !Array.isArray(data.songs) || data.songs.length === 0) return null;
         return data.songs.map(normalizeApiSong).filter(Boolean);

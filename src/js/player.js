@@ -955,7 +955,8 @@
                             seedArtist,
                             limit: count,
                             currentQueueIds: (state.queue || []).map(s => s.saavn_id || s.id),
-                            excludedSongIds: disliked.map(d => typeof d === 'object' ? (d.id || d.saavn_id) : d).filter(Boolean)
+                            excludedSongIds: disliked.map(d => typeof d === 'object' ? (d.id || d.saavn_id) : d).filter(Boolean),
+                            negativeTitles: disliked.map(d => typeof d === 'object' ? (d.name || d.title) : d).filter(Boolean)
                         }) || [];
                     }
 

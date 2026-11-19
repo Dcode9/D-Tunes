@@ -177,7 +177,7 @@ test('buildMixes includes disliked mix reasons in the AI prompt', async () => {
   assert.ok(prompt.includes('Curate exactly 1'));
 });
 
-test('buildAutoplay adds up to 10 session history entries to the AI prompt and defaults to 15 songs', async () => {
+test('buildAutoplay uses the legacy prompt and defaults to 8 songs', async () => {
   let prompt = '';
   const sessionHistory = Array.from({ length: 12 }, (_, index) => ({
     title: `History ${index + 1}`,
@@ -195,13 +195,11 @@ test('buildAutoplay adds up to 10 session history entries to the AI prompt and d
     }
   );
 
-  assert.equal(result.songs.length, 15);
-  assert.ok(prompt.includes('Seed Track'));
-  for (let index = 1; index <= 10; index += 1) {
-    assert.ok(prompt.includes(`History ${index}"`), `prompt should include history ${index}`);
-  }
-  assert.ok(!prompt.includes('History 11'));
-  assert.ok(!prompt.includes('History 12'));
+  assert.equal(result.songs.length, 8);
+  assert.ok(prompt.includes('The listener is currently enjoying "Seed Track" by "Seed Artist".'));
+  assert.ok(prompt.includes('Strict exclusions (never recommend): [None]'));
+  assert.ok(prompt.includes('Recommend 8 real, popular, and stylistically similar songs'));
+  assert.ok(!prompt.includes('History 1'));
 });
 
 test('buildAutoplay keeps explicit small counts at the 8-song floor', async () => {
