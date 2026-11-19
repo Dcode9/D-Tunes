@@ -168,6 +168,10 @@
       var hash = window.location.hash ? window.location.hash.replace(/^#\/?/, '') : '';
       var hashParams = new URLSearchParams(hash.charAt(0) === '?' ? hash.slice(1) : hash);
 
+      // App flows (Android / desktop) opt into the deep-link hand-off explicitly.
+      // Plain web sign-ins stay on the web player.
+      var desktopAuth = searchParams.get('desktop_auth') === '1' || hashParams.get('desktop_auth') === '1';
+
       var allParams = new URLSearchParams();
       searchParams.forEach(function (val, key) { allParams.set(key, val); });
       hashParams.forEach(function (val, key) { allParams.set(key, val); });
@@ -197,8 +201,23 @@
         showError(message);
         btn.hidden = false;
         btn.textContent = 'Try again';
-        btn.href = AUTH_START_URL;
+        btn.href = AUTH_START_URL + (desktopAuth ? '&desktop_auth=1' : '');
         hintEl.textContent = 'Tap "Try again" to reopen the Google account picker.';
+      }
+
+      // The Supabase SDK is loaded with `defer`, so it is undefined while this inline
+      // script runs. Anything that needs it must wait for DOMContentLoaded (deferred
+      // scripts execute before that event).
+      function whenSupabaseReady(callback) {
+        if (window.supabase && typeof window.supabase.createClient === 'function') {
+          callback();
+          return;
+        }
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', callback, { once: true });
+        } else {
+          setTimeout(callback, 0);
+        }
       }
 
       function startGoogleSignIn() {
@@ -223,7 +242,7 @@
               provider: 'google',
               options: {
                 queryParams: { prompt: 'select_account', access_type: 'online' },
-                redirectTo: window.location.origin + '/auth.html',
+                redirectTo: window.location.origin + '/auth.html' + (desktopAuth ? '?desktop_auth=1' : ''),
                 skipBrowserRedirect: false
               }
             }).then(function (result) {
@@ -311,6 +330,19 @@
         };
         persistSession(payload);
 
+        // Plain web sign-in: keep the session in this browser and return to the player.
+        // Only app flows (desktop_auth=1, plus older Android builds without the flag)
+        // should hand off through the deep link.
+        if (!desktopAuth && !/Android/i.test(navigator.userAgent)) {
+          document.getElementById('title').textContent = 'Signed in';
+          document.getElementById('desc').textContent = "Returning you to D'Tunes…";
+          hintEl.textContent = 'Your session is saved in this browser.';
+          btn.hidden = true;
+          cleanBrowserUrl();
+          setTimeout(function () { window.location.replace(window.location.origin + '/'); }, 300);
+          return;
+        }
+
         // Desktop (Electron) listener; harmless no-op elsewhere.
         if (!/Android/i.test(navigator.userAgent)) {
           try {
@@ -379,34 +411,36 @@
 
       if (code) {
         // The PKCE code verifier lives in this browser's storage, so Supabase must be
-        // exchanged here. Android cannot exchange it later.
-        if (!window.supabase || typeof window.supabase.createClient !== 'function') {
-          showRetry('The sign-in service could not be loaded. Check your connection and try again.');
-          return;
-        }
-        document.getElementById('title').textContent = 'Finishing sign-in…';
-        document.getElementById('desc').textContent = 'Verifying your Google session…';
-        try {
-          var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-            auth: {
-              flowType: 'pkce',
-              detectSessionInUrl: false,
-              persistSession: true,
-              autoRefreshToken: false
-            }
-          });
-          supabase.auth.exchangeCodeForSession(code).then(function (result) {
-            if (!result || result.error || !result.data || !result.data.session) {
+        // exchanged here. Android cannot exchange it later. Wait for the deferred SDK.
+        whenSupabaseReady(function () {
+          if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+            showRetry('The sign-in service could not be loaded. Check your connection and try again.');
+            return;
+          }
+          document.getElementById('title').textContent = 'Finishing sign-in…';
+          document.getElementById('desc').textContent = 'Verifying your Google session…';
+          try {
+            var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+              auth: {
+                flowType: 'pkce',
+                detectSessionInUrl: false,
+                persistSession: true,
+                autoRefreshToken: false
+              }
+            });
+            supabase.auth.exchangeCodeForSession(code).then(function (result) {
+              if (!result || result.error || !result.data || !result.data.session) {
+                showRetry('Google sign-in could not be completed in this browser. Please try again.');
+                return;
+              }
+              completeHandoff(result.data.session);
+            }).catch(function () {
               showRetry('Google sign-in could not be completed in this browser. Please try again.');
-              return;
-            }
-            completeHandoff(result.data.session);
-          }).catch(function () {
+            });
+          } catch (error) {
             showRetry('Google sign-in could not be completed in this browser. Please try again.');
-          });
-        } catch (error) {
-          showRetry('Google sign-in could not be completed in this browser. Please try again.');
-        }
+          }
+        });
         return;
       }
 
