@@ -2,6 +2,11 @@
   const ANON_USER_KEY = 'dtunesAnonymousUserId';
   const LOCAL_EVENTS_KEY = 'dtunesRecommendationEvents';
   const DUPLICATE_WINDOW_MS = 3500;
+  const API_TIMEOUT_MS = 12000;
+  const EVENT_TIMEOUT_MS = 4000;
+  const DEFAULT_LIMIT = 20;
+  const MIN_LIMIT = 15;
+  const MAX_LIMIT = 25;
 
   function isOffline() {
     try {
@@ -24,12 +29,18 @@
     return userId;
   }
 
+  function normalizeLimit(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return DEFAULT_LIMIT;
+    return Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, Math.round(n)));
+  }
+
   function toApiSong(song) {
     if (!song) return null;
     return {
-      saavn_id: song.saavn_id || song.id,
-      title: song.title || song.name,
-      primary_artists: song.primary_artists || song.primaryArtists || song.artist,
+      saavn_id: song.saavn_id || song.id || null,
+      title: song.title || song.name || '',
+      primary_artists: song.primary_artists || song.primaryArtists || song.artist || '',
       featured_artists: song.featured_artists || song.featuredArtists || '',
       album: song.album || '',
       language: song.language || '',
@@ -42,23 +53,49 @@
   }
 
   function toAppSong(song) {
+    if (!song) return null;
     return {
       ...song,
-      id: song.saavn_id || song.id,
-      name: song.name || song.title,
+      id: song.saavn_id || song.id || null,
+      name: song.name || song.title || '',
       artist: song.artist || song.primary_artists || song.primaryArtists || 'Unknown Artist',
       img: song.img || song.image_url || 'DTunes.svg',
       url: song.url || song.play_url || null,
       duration: song.duration || song.duration_seconds || 0,
-      source: 'recommendation',
+      source: song.source || 'recommendation',
     };
+  }
+
+  function normalizeSongs(list) {
+    if (!Array.isArray(list)) return [];
+    const seen = new Set();
+    const out = [];
+    for (const item of list) {
+      const appSong = toAppSong(item);
+      const id = appSong && appSong.id != null ? String(appSong.id) : '';
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      out.push(appSong);
+    }
+    return out;
+  }
+
+  function makeTimeoutSignal(ms) {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+      return AbortSignal.timeout(ms);
+    }
+    return undefined;
   }
 
   const recentKeys = new Map();
   function rememberLocal(payload) {
-    const current = JSON.parse(localStorage.getItem(LOCAL_EVENTS_KEY) || '[]');
-    current.push(payload);
-    localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify(current.slice(-500)));
+    try {
+      const current = JSON.parse(localStorage.getItem(LOCAL_EVENTS_KEY) || '[]');
+      current.push(payload);
+      localStorage.setItem(LOCAL_EVENTS_KEY, JSON.stringify(current.slice(-500)));
+    } catch (_) {
+      // Ignore localStorage quota/parse failures.
+    }
   }
 
   async function recordEvent(eventType, song, details = {}) {
@@ -81,86 +118,124 @@
 
     if (isOffline()) return;
     try {
-      await fetch('/api/music/event', {
+      const response = await fetch('/api/music/event', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: makeTimeoutSignal(EVENT_TIMEOUT_MS),
       });
-    } catch (error) {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (_) {
       // Offline/static hosting fallback: keep anonymous history in localStorage and sync later.
     }
   }
 
   async function generateClientFallback(type, options = {}) {
-    const limit = options.limit || 25;
+    const limit = normalizeLimit(options.limit);
     try {
-      if (window.jiosaavnAPI) {
+      if (typeof window !== 'undefined' && window.jiosaavnAPI) {
         if (type === 'artist-radio' && options.artist) {
           const res = await window.jiosaavnAPI.searchSongs(options.artist, limit);
-          if (res && res.length > 0) return res.map(toAppSong);
+          const songs = normalizeSongs(res).slice(0, limit);
+          if (songs.length > 0) return songs;
         }
         if (type === 'similar' && options.songId) {
           const song = await window.jiosaavnAPI.getSong(options.songId);
-          if (song && (song.artist || song.name)) {
-            const query = `${(song.artist || '').split(',')[0].trim()} ${song.name || ''}`.trim();
-            const res = await window.jiosaavnAPI.searchSongs(query, limit);
-            if (res && res.length > 0) return res.map(toAppSong);
+          if (song && (song.artist || song.name || song.primary_artists || song.title)) {
+            const artist = (song.artist || song.primary_artists || '').split(',')[0].trim();
+            const query = `${artist} ${song.name || song.title || ''}`.trim();
+            if (query) {
+              const res = await window.jiosaavnAPI.searchSongs(query, limit);
+              const songs = normalizeSongs(res).filter((s) => String(s.id) !== String(options.songId)).slice(0, limit);
+              if (songs.length > 0) return songs;
+            }
           }
         }
         if (type === 'late-night') {
           const lang = options.language || '';
           const res = await window.jiosaavnAPI.searchSongs(`${lang} acoustic romantic songs`.trim(), limit);
-          if (res && res.length > 0) return res.map(toAppSong);
+          const songs = normalizeSongs(res).slice(0, limit);
+          if (songs.length > 0) return songs;
         }
         if (type === 'discovery') {
           const lang = options.language || '';
           const res = await window.jiosaavnAPI.searchSongs(`${lang} indie songs`.trim(), limit);
-          if (res && res.length > 0) return res.map(toAppSong);
+          const songs = normalizeSongs(res).slice(0, limit);
+          if (songs.length > 0) return songs;
         }
         let seed = '';
         try {
           const counts = JSON.parse(localStorage.getItem('artistPlayCounts') || '{}');
           const topArtist = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
           if (topArtist && topArtist[0]) seed = topArtist[0];
-        } catch (e) {}
+        } catch (_) {}
         if (seed) {
           const res = await window.jiosaavnAPI.searchSongs(seed, limit);
-          if (res && res.length > 0) return res.map(toAppSong);
+          const songs = normalizeSongs(res).slice(0, limit);
+          if (songs.length > 0) return songs;
         }
-        const trending = await window.jiosaavnAPI.getTrending();
-        if (trending && trending.length > 0) return trending.slice(0, limit).map(toAppSong);
+        if (typeof window.jiosaavnAPI.getTrending === 'function') {
+          const trending = await window.jiosaavnAPI.getTrending();
+          const songs = normalizeSongs(trending).slice(0, limit);
+          if (songs.length > 0) return songs;
+        }
       }
     } catch (e) {
-      console.warn('[RecommendationClient] Client playlist fallback failed:', e);
+      if (typeof console !== 'undefined' && console.warn) {
+        console.warn('[RecommendationClient] Client playlist fallback failed:', e);
+      }
     }
     return [];
   }
 
   async function fetchPlaylist(type, options = {}) {
-    if (isOffline()) return [];
+    const limit = normalizeLimit(options.limit);
     const seedSongId = options.songId || options.seedSongId;
     const seedArtist = options.artist || options.seedArtist;
-    const params = new URLSearchParams({ userId: options.userId || getUserId(), type, limit: options.limit || 25 });
+    const userId = options.userId || getUserId();
+    const params = new URLSearchParams({ userId, type, limit: String(limit) });
     if (options.language) params.set('language', options.language);
-    const endpoint = type === 'similar'
-      ? `/api/music/similar?songId=${encodeURIComponent(seedSongId || '')}&limit=${options.limit || 25}`
-      : type === 'artist-radio'
-        ? `/api/music/artist-radio?artist=${encodeURIComponent(seedArtist || '')}&userId=${encodeURIComponent(params.get('userId'))}&limit=${options.limit || 25}`
-        : `/api/music/playlist?${params.toString()}`;
-    try {
-      const signal = typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(3000) : undefined;
-      const response = await fetch(endpoint, { signal });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      if (Array.isArray(data.songs) && data.songs.length > 0) {
-        return data.songs.map(toAppSong);
-      }
-    } catch (error) {
-      // Offline/static hosting fallback (e.g. Vercel static)
+
+    if (isOffline()) {
+      return await generateClientFallback(type, { ...options, userId, songId: seedSongId, artist: seedArtist, limit });
     }
-    return await generateClientFallback(type, options);
+
+    const endpoint = type === 'similar'
+      ? `/api/music/similar?songId=${encodeURIComponent(seedSongId || '')}&limit=${encodeURIComponent(String(limit))}`
+      : type === 'artist-radio'
+        ? `/api/music/artist-radio?artist=${encodeURIComponent(seedArtist || '')}&userId=${encodeURIComponent(userId)}&limit=${encodeURIComponent(String(limit))}`
+        : `/api/music/playlist?${params.toString()}`;
+
+    try {
+      const response = await fetch(endpoint, { signal: makeTimeoutSignal(API_TIMEOUT_MS) });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json().catch(() => null);
+      const songs = normalizeSongs(data && data.songs);
+      if (songs.length > 0) {
+        return songs.slice(0, limit);
+      }
+    } catch (_) {
+      // Offline/static hosting fallback (e.g. Vercel static, timeout, server error)
+    }
+    return await generateClientFallback(type, { ...options, userId, songId: seedSongId, artist: seedArtist, limit });
   }
 
-  window.recommendationClient = { getUserId, recordEvent, fetchPlaylist, toAppSong, toApiSong };
+  window.recommendationClient = {
+    getUserId,
+    recordEvent,
+    fetchPlaylist,
+    toAppSong,
+    toApiSong,
+    normalizeLimit,
+    _internal: {
+      ANON_USER_KEY,
+      DEFAULT_LIMIT,
+      MIN_LIMIT,
+      MAX_LIMIT,
+      API_TIMEOUT_MS,
+    },
+  };
 }());
 

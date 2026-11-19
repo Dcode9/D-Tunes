@@ -8,7 +8,7 @@ D-Tunes is a browser music player for tunes.d-verse.in backed by JioSaavn unoffi
 npm start
 ```
 
-Open <http://localhost:3000>. The Node server serves the static app and exposes `/api/music/*` recommendation endpoints. Local/simple deployments use `data/recommendations.json` as a persistence fallback; production deployments should apply the PostgreSQL migration in `db/migrations/001_recommendations.sql` and wire the same repository interface to Postgres.
+Open <http://localhost:3000>. The Node server serves the static app and exposes `/api/music/*` recommendation endpoints. The durable source for listening history and taste profiles is Supabase (`SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_ACCESS_TOKEN`), enabled with `DTUNES_REMOTE_TASTE=1` or automatically on Vercel. A local `data/recommendations.json` file is only a development/offline fallback when remote taste storage is disabled or unavailable; the SQL schema lives in `db/migrations/`.
 
 ## Multi-file structure
 
@@ -23,12 +23,12 @@ The original single-file app has been split into:
 - `lib/saavnClient.js` — JioSaavn unofficial API wrapper.
 - `lib/jsonStore.js` — JSON-file persistence fallback implementing the recommendation data model.
 - `server.js` — static server plus music API endpoints.
-- `db/migrations/001_recommendations.sql` — PostgreSQL schema.
+- `db/migrations/` — SQL schema for recommendation, library, and cloud-sync tables.
 - `tests/recommendationEngine.test.js` — scoring/ranking tests.
 
 ## How the recommender works
 
-The rule-based engine uses no embeddings. The server proxies an external AI curation endpoint for autoplay and mixes (configurable with `AI_ENDPOINT`, `AI_MODEL`, and `AI_PROVIDER`), with an algorithmic fallback when that endpoint is unavailable, throttled, or returns no usable data. The engine itself combines explicit behavior signals, listening history, song metadata, and JioSaavn search/trending results. All AI logic lives server-side, so clients never call the AI endpoint directly.
+The rule-based engine uses no embeddings. Autoplay and mixes use server-side AI curation (configurable with `AI_ENDPOINT`, `AI_MODEL`, and `AI_PROVIDER`), with a deterministic algorithmic fallback when that endpoint is unavailable, throttled, or returns no usable data. The engine itself combines explicit behavior signals, listening history, song metadata, and JioSaavn search/trending results. All AI logic lives server-side, so clients never call the AI endpoint directly.
 
 ### Recorded signals
 
@@ -122,9 +122,9 @@ The engine strongly penalizes repeatedly skipped songs and limits artist repetit
 
 ## API endpoints
 
-- `POST /api/music/event`
+- `POST /api/music/event` — body: `userId` (non-empty string), `eventType` (one of the nine types listed above), and `songSaavnId` or `song.id`/`song.saavn_id` (string). Invalid payloads return `400`; oversized bodies return `413`.
 - `POST /api/music/recalculate-profile`
-- `POST /api/music/autoplay` — body: `seedSongId`, `currentQueueIds`, `excludedSongIds`, `limit` (8–25). Returns `{ songs: [...] }`.
+- `POST /api/music/autoplay` (also `GET` with the same parameters as query strings) — `seedSongId` (or `songId`), `userId`, `language`, `currentQueueIds`, `excludedSongIds`, `limit` (8–25, default 10; clamped server-side). A seed is optional; without one, autoplay falls back to trending/popular candidates. Uses server-side AI curation when a seed is available, with an algorithmic fallback. Returns `{ songs: [...] }`.
 - `POST /api/music/recommendations` — body: `userId`, `type`, `language`, `limit` (15–25), `currentQueueIds`, `sessionHistory`, `dislikedSongIds`, `negativeTitles`. Returns `{ songs: [...] }`.
 - `POST /api/music/mixes` — body: `userId`, `language`, `limit` (15–25 per mix), `currentQueueIds`, `sessionHistory`, `dislikedSongIds`, `negativeTitles`. Returns `{ mixes: [...] }` with five mixes (`daily-mix-1`, `daily-mix-2`, `discover-weekly`, `chill-vibes`, `mood`), each holding 15–25 songs.
 - `POST /api/music/feedback` — body: `userId`, `mixKey`, `isLiked`, `reason`, `songId`, `eventType`. Best-effort persistence; returns `{ ok: true }`.
@@ -133,7 +133,7 @@ The engine strongly penalizes repeatedly skipped songs and limits artist repetit
 - `GET /api/music/artist-radio?artist=...&userId=...&limit=25`
 - `GET /api/music/playlist?type=late-night&userId=...&limit=25`
 
-The POST endpoints apply normalized title/artist exclusions (including dislikes and the current queue), deduplicate tracks, backfill from JioSaavn trending so results meet the requested minimum, and return each song with both web and Android-compatible keys (`id`/`saavn_id`, `title`/`name`, `primary_artists`/`artist`, `album`, `duration`, `url`, `img`/`artwork_url`). Mix curation and autoplay are generated server-side with an algorithmic fallback.
+The POST endpoints apply normalized title/artist exclusions (including dislikes and the current queue), deduplicate tracks, backfill from JioSaavn trending so results meet the requested minimum, and return each song with both web and Android-compatible keys (`id`/`saavn_id`, `title`/`name`, `primary_artists`/`artist`, `album`, `duration`, `url`, `img`/`artwork_url`). Mix curation and autoplay use server-side AI with an algorithmic fallback; durable taste data comes from Supabase, with the local JSON store only as a fallback. All `/api/*` routes answer `OPTIONS` preflight (`Access-Control-Allow-Origin: *`, methods `GET, POST, OPTIONS`, and requested headers such as `Content-Type`/`Authorization`).
 
 ## Frontend features
 

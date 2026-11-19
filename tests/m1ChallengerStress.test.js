@@ -152,7 +152,7 @@ test('CHALLENGER M1: Adversarial Stress Test Suite', async (t) => {
         const minimalAppSong = { id: 's_min' };
         const minimalApi = recClient.toApiSong(minimalAppSong);
         assert.equal(minimalApi.saavn_id, 's_min');
-        assert.equal(minimalApi.title, undefined);
+        assert.equal(minimalApi.title, '');
 
         const fullAppSong = { id: 'saavn_99', name: 'Test Song', artist: 'Singer A, Singer B', img: 'http://art.jpg', url: 'http://audio.mp3', duration: 250 };
         const apiSong = recClient.toApiSong(fullAppSong);
@@ -171,7 +171,7 @@ test('CHALLENGER M1: Adversarial Stress Test Suite', async (t) => {
         const similarRes1 = await recClient.fetchPlaylist('similar', { songId: 'track_alpha', limit: 10 });
         assert.equal(similarRes1.length, 1);
         assert.equal(similarRes1[0].id, 'rec_s1');
-        assert.ok(fetchCalls.some(c => c.url.includes('/api/music/similar?songId=track_alpha&limit=10')));
+        assert.ok(fetchCalls.some(c => c.url.includes('/api/music/similar?songId=track_alpha&limit=15')));
 
         const similarRes2 = await recClient.fetchPlaylist('similar', { seedSongId: 'track_beta', limit: 15 });
         assert.equal(similarRes2.length, 1);

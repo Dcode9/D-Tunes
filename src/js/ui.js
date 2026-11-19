@@ -3255,6 +3255,166 @@ const mPlayBtn = document.getElementById('m-icon-play');
             }
         };
 
+        const mixFeedbackManager = {
+            MODAL_ID: 'dtunes-mix-feedback-modal',
+            REASONS: [
+                'Not interested in this kind of mix',
+                'Too few songs in this mix',
+                "Tracks don't match the vibe of this playlist",
+                'Other'
+            ],
+            _overlay: null,
+            _selectedReason: -1,
+            _escapeHandler: null,
+            currentContext: null,
+
+            escapeHtml: (value) => String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;'),
+
+            openFeedbackModal: function(options = {}) {
+                if (typeof document === 'undefined' || !document.createElement) return;
+                this.closeFeedbackModal();
+                this.currentContext = options;
+                this._selectedReason = -1;
+
+                const overlay = document.createElement('div');
+                overlay.id = this.MODAL_ID;
+                overlay.className = 'fixed inset-0 z-[120] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4';
+                overlay.innerHTML = `
+                    <div class="w-full max-w-md rounded-2xl glass-panel border border-white/10 shadow-2xl overflow-hidden animate-fade-in">
+                        <div class="px-5 pt-5 pb-4 border-b border-white/10">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <h3 class="text-lg font-bold text-white tracking-tight">Help us improve this mix</h3>
+                                    <p class="text-xs text-neutral-400 mt-1">Tell us what didn't work for <span class="text-white/80">${this.escapeHtml(options.mixTitle || 'this mix')}</span>.</p>
+                                </div>
+                                <button type="button" data-mix-feedback-close class="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition flex-shrink-0" aria-label="Close feedback">
+                                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="px-5 py-4">
+                            <p class="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold mb-2">What should we change?</p>
+                            <div class="space-y-2">
+                                ${this.REASONS.map((reason, index) => `
+                                    <button type="button" data-mix-reason="${index}" class="mix-reason-option w-full text-left px-3.5 py-2.5 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-sm text-neutral-200 transition flex items-center gap-3">
+                                        <span class="mix-reason-dot w-3.5 h-3.5 rounded-full border border-neutral-500 flex-shrink-0"></span>
+                                        <span>${this.escapeHtml(reason)}</span>
+                                    </button>
+                                `).join('')}
+                            </div>
+                            <label for="mix-feedback-review" class="block text-[11px] uppercase tracking-wider text-neutral-500 font-semibold mt-4 mb-2">Anything else? (optional)</label>
+                            <textarea id="mix-feedback-review" rows="3" maxlength="500" placeholder="Share a quick note with us..." class="w-full rounded-xl bg-black/30 border border-white/10 text-sm text-white placeholder-neutral-500 px-3 py-2.5 resize-none focus:outline-none focus:border-[var(--accent-color)]"></textarea>
+                            <p data-mix-feedback-error class="hidden text-xs text-rose-300 mt-2"></p>
+                        </div>
+                        <div class="px-5 pb-5 flex items-center justify-end gap-2">
+                            <button type="button" data-mix-feedback-close class="px-4 py-2 rounded-full text-xs font-bold text-neutral-300 hover:text-white hover:bg-white/10 transition">Cancel</button>
+                            <button type="button" data-mix-feedback-submit class="px-4 py-2 rounded-full bg-[var(--accent-color)] text-black text-xs font-bold hover:brightness-110 active:scale-95 transition">Send feedback</button>
+                        </div>
+                    </div>
+                `;
+
+                if (document.body && typeof document.body.appendChild === 'function') document.body.appendChild(overlay);
+                this._overlay = overlay;
+
+                const reasonButtons = overlay.querySelectorAll('[data-mix-reason]') || [];
+                reasonButtons.forEach((btn) => {
+                    btn.addEventListener('click', () => {
+                        const index = Number(btn.getAttribute('data-mix-reason'));
+                        this._selectedReason = this._selectedReason === index ? -1 : index;
+                        reasonButtons.forEach((other) => {
+                            const active = Number(other.getAttribute('data-mix-reason')) === this._selectedReason;
+                            other.className = 'mix-reason-option w-full text-left px-3.5 py-2.5 rounded-xl text-sm transition flex items-center gap-3 ' +
+                                (active ? 'border border-[var(--accent-color)]/60 bg-[var(--accent-color)]/10 text-white' : 'border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-neutral-200');
+                            const dot = other.querySelector('.mix-reason-dot');
+                            if (dot) {
+                                dot.className = 'mix-reason-dot w-3.5 h-3.5 rounded-full border flex-shrink-0 ' +
+                                    (active ? 'border-[var(--accent-color)] bg-[var(--accent-color)]' : 'border-neutral-500');
+                            }
+                        });
+                        this.showError('');
+                    });
+                });
+
+                const closeButtons = overlay.querySelectorAll('[data-mix-feedback-close]') || [];
+                closeButtons.forEach((btn) => btn.addEventListener('click', () => this.closeFeedbackModal()));
+
+                const submitBtn = overlay.querySelector('[data-mix-feedback-submit]');
+                if (submitBtn) submitBtn.addEventListener('click', () => this.submitFeedback());
+
+                overlay.addEventListener('click', (event) => {
+                    if (event && event.target === overlay) this.closeFeedbackModal();
+                });
+
+                this._escapeHandler = (event) => {
+                    if (event && event.key === 'Escape') this.closeFeedbackModal();
+                };
+                if (typeof document.addEventListener === 'function') document.addEventListener('keydown', this._escapeHandler);
+
+                const review = overlay.querySelector('#mix-feedback-review');
+                if (review && typeof review.focus === 'function' && typeof setTimeout === 'function') {
+                    setTimeout(() => { if (review.focus) review.focus(); }, 60);
+                }
+            },
+
+            showError: function(message) {
+                if (!this._overlay || !this._overlay.querySelector) return;
+                const error = this._overlay.querySelector('[data-mix-feedback-error]');
+                if (!error) return;
+                error.textContent = message || '';
+                if (error.classList) error.classList.toggle('hidden', !message);
+            },
+
+            closeFeedbackModal: function() {
+                if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function' && this._escapeHandler) {
+                    document.removeEventListener('keydown', this._escapeHandler);
+                }
+                this._escapeHandler = null;
+                if (this._overlay && typeof this._overlay.remove === 'function') this._overlay.remove();
+                this._overlay = null;
+                this._selectedReason = -1;
+                this.currentContext = null;
+            },
+
+            submitFeedback: async function() {
+                const context = this.currentContext;
+                if (!context || typeof context.onSubmit !== 'function') return;
+
+                let customFeedback = '';
+                if (this._overlay && this._overlay.querySelector) {
+                    const review = this._overlay.querySelector('#mix-feedback-review');
+                    if (review) customFeedback = String(review.value || '').trim();
+                }
+                const reason = this._selectedReason >= 0 ? this.REASONS[this._selectedReason] : '';
+                if (!reason && !customFeedback) {
+                    this.showError('Choose a reason or write a short note.');
+                    return;
+                }
+
+                const submitBtn = this._overlay && this._overlay.querySelector ? this._overlay.querySelector('[data-mix-feedback-submit]') : null;
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = 'Sending...';
+                }
+
+                try {
+                    await context.onSubmit({ reason, customFeedback });
+                    this.closeFeedbackModal();
+                } catch (err) {
+                    this.showError('Could not send feedback. Please try again.');
+                } finally {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Send feedback';
+                    }
+                }
+            }
+        };
+
         // ============================================
         // REVIEWS & COMMUNITY FEEDBACK MANAGER
         // ============================================
@@ -3530,6 +3690,7 @@ const mPlayBtn = document.getElementById('m-icon-play');
         if (typeof window !== 'undefined') {
             window.aiReportManager = aiReportManager;
             window.reviewsManager = reviewsManager;
+            window.mixFeedbackManager = mixFeedbackManager;
             window.ui = ui;
         }
 
@@ -3544,7 +3705,7 @@ const mPlayBtn = document.getElementById('m-icon-play');
         }
 
         if (typeof module !== 'undefined' && module.exports) {
-            module.exports = { ui, aiReportManager, reviewsManager };
+            module.exports = { ui, aiReportManager, reviewsManager, mixFeedbackManager };
         }
 
 // Outside click dismiss for profile dropdown

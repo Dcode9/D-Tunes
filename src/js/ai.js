@@ -468,11 +468,153 @@ Requirements:
         localStorage.removeItem(CACHE_KEY);
     }
 
+    const API_TIMEOUT_MS = 12000;
+    const ANON_USER_KEY = 'dtunesAnonymousUserId';
+
+    function resolveApiUserId() {
+        try {
+            if (window.recommendationClient && typeof window.recommendationClient.getUserId === 'function') {
+                const id = window.recommendationClient.getUserId();
+                if (id) return id;
+            }
+        } catch (_) {}
+        try {
+            if (window.cloudLibrary && cloudLibrary.session && cloudLibrary.session.user && cloudLibrary.session.user.id) {
+                return cloudLibrary.session.user.id;
+            }
+        } catch (_) {}
+        try {
+            let id = localStorage.getItem(ANON_USER_KEY);
+            if (!id) {
+                const random = (typeof crypto !== 'undefined' && crypto.randomUUID)
+                    ? crypto.randomUUID()
+                    : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+                id = `anon_${random}`;
+                localStorage.setItem(ANON_USER_KEY, id);
+            }
+            return id;
+        } catch (_) {
+            return 'anonymous';
+        }
+    }
+
+    function isOfflineNow() {
+        try {
+            if (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function') {
+                return window.__dtunesIsOffline();
+            }
+        } catch (_) {}
+        return typeof navigator !== 'undefined' && navigator.onLine === false;
+    }
+
+    function normalizeApiSong(song) {
+        if (!song) return null;
+        try {
+            if (window.recommendationClient && typeof window.recommendationClient.toAppSong === 'function') {
+                return window.recommendationClient.toAppSong(song);
+            }
+        } catch (_) {}
+        return {
+            ...song,
+            id: song.saavn_id || song.saavnId || song.id || null,
+            name: song.name || song.title || '',
+            artist: song.artist || song.primary_artists || song.primaryArtists || 'Unknown Artist',
+            img: song.img || song.image_url || song.artwork_url || 'DTunes.svg',
+            url: song.url || song.play_url || null,
+            duration: song.duration || song.duration_seconds || 0,
+            source: song.source || 'recommendation'
+        };
+    }
+
+    function toIdList(value) {
+        if (!Array.isArray(value)) return [];
+        return value
+            .map(item => (item && typeof item === 'object' ? (item.saavn_id || item.saavnId || item.id) : item))
+            .filter(Boolean)
+            .map(String);
+    }
+
+    async function postMusicApi(path, payload) {
+        if (isOfflineNow()) return null;
+        let controller = null;
+        let timer = null;
+        try {
+            if (typeof AbortController !== 'undefined') {
+                controller = new AbortController();
+                timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+            }
+            const res = await fetch(path, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify(payload),
+                signal: controller ? controller.signal : undefined
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return await res.json();
+        } catch (e) {
+            return null;
+        } finally {
+            if (timer) clearTimeout(timer);
+        }
+    }
+
+    async function fetchServerMixes(options = {}) {
+        const payload = {
+            userId: options.userId || resolveApiUserId(),
+            limit: options.limit || 20,
+            currentQueueIds: toIdList(options.currentQueueIds),
+            sessionHistory: Array.isArray(options.sessionHistory) ? options.sessionHistory : [],
+            dislikedSongIds: toIdList(options.dislikedSongIds || options.disliked),
+            negativeTitles: toIdList(options.negativeTitles)
+        };
+        if (options.language) payload.language = options.language;
+        if (options.type) payload.type = options.type;
+        const data = await postMusicApi('/api/music/mixes', payload);
+        if (!data || !Array.isArray(data.mixes) || data.mixes.length === 0) return null;
+        return data.mixes.map((mix, i) => ({
+            key: mix.key || `daily-mix-${i + 1}`,
+            categoryTitle: mix.categoryTitle || mix.title || 'Mix',
+            title: mix.title || mix.categoryTitle || 'Mix',
+            description: mix.description || '',
+            styleIndex: Number.isFinite(Number(mix.styleIndex)) ? Number(mix.styleIndex) : i,
+            songs: (Array.isArray(mix.songs) ? mix.songs : []).map(normalizeApiSong).filter(Boolean)
+        })).filter(mix => mix.songs.length > 0);
+    }
+
+    async function fetchServerAutoplay(options = {}) {
+        const payload = {
+            userId: options.userId || resolveApiUserId(),
+            seedSongId: options.seedSongId || options.songId || undefined,
+            limit: options.limit || options.count || 8,
+            currentQueueIds: toIdList(options.currentQueueIds),
+            excludedSongIds: toIdList(options.excludedSongIds || options.dislikedSongIds || options.disliked)
+        };
+        if (options.language) payload.language = options.language;
+        const data = await postMusicApi('/api/music/autoplay', payload);
+        if (!data || !Array.isArray(data.songs) || data.songs.length === 0) return null;
+        return data.songs.map(normalizeApiSong).filter(Boolean);
+    }
+
+    function getLocalYourMix() {
+        const mix = getFallbackPlaylists()[0] || {};
+        return {
+            key: 'your-mix',
+            categoryTitle: 'Your Mix',
+            title: mix.title || 'Your Mix',
+            description: mix.description || '',
+            styleIndex: Number.isFinite(mix.styleIndex) ? mix.styleIndex : 0,
+            songs: mix.songs || []
+        };
+    }
+
     window.ai = {
         generateCustomPlaylists,
         generateQueueAutoplay,
         generateNextSimilar,
         generateVibeMix,
-        clearCache
+        clearCache,
+        fetchServerMixes,
+        fetchServerAutoplay,
+        getLocalYourMix
     };
 })();

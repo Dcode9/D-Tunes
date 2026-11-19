@@ -31,6 +31,159 @@
     const TRENDING_CACHE_KEY = 'dtunes_trending_cache_v1';
     const TRENDING_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
+    const MIX_FEEDBACK_CACHE_KEY = 'dtunes_mix_feedback_v1';
+    const ANON_USER_KEY = 'dtunesAnonymousUserId';
+    let mixFeedbackState = null;
+
+    const LIKE_ACTIVE_CLASSES = 'text-emerald-300 bg-emerald-500/20 border border-emerald-400/30';
+    const DISLIKE_ACTIVE_CLASSES = 'text-rose-300 bg-rose-500/20 border border-rose-400/30';
+    const FEEDBACK_IDLE_CLASSES = 'text-gray-300 bg-white/10 hover:bg-white/20 hover:text-white border border-transparent';
+
+    function ratingButtonClass(kind, active) {
+        if (!active) return FEEDBACK_IDLE_CLASSES;
+        return kind === 'like' ? LIKE_ACTIVE_CLASSES : DISLIKE_ACTIVE_CLASSES;
+    }
+
+    function getMixKey(playlist) {
+        if (!playlist) return '';
+        const raw = playlist.mixKey || playlist.categoryTitle || playlist.title || 'mix';
+        return String(raw).trim() || 'mix';
+    }
+
+    function readMixFeedbackState() {
+        if (mixFeedbackState) return mixFeedbackState;
+        try {
+            const parsed = JSON.parse(localStorage.getItem(MIX_FEEDBACK_CACHE_KEY) || '{}');
+            mixFeedbackState = (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+        } catch (_) {
+            mixFeedbackState = {};
+        }
+        return mixFeedbackState;
+    }
+
+    function persistMixFeedback(mixKey, entry) {
+        const stateMap = readMixFeedbackState();
+        stateMap[mixKey] = entry;
+        try {
+            localStorage.setItem(MIX_FEEDBACK_CACHE_KEY, JSON.stringify(stateMap));
+        } catch (_) {}
+        return entry;
+    }
+
+    function resolveFeedbackUserId() {
+        try {
+            if (window.recommendationClient && typeof window.recommendationClient.getUserId === 'function') {
+                const id = window.recommendationClient.getUserId();
+                if (id) return id;
+            }
+        } catch (_) {}
+        try {
+            if (_lastRenderedUserId) return _lastRenderedUserId;
+            const session = (window.cloudLibrary && cloudLibrary.session) || null;
+            if (session && session.user && session.user.id) return session.user.id;
+        } catch (_) {}
+        try {
+            let id = localStorage.getItem(ANON_USER_KEY);
+            if (!id) {
+                const random = (typeof crypto !== 'undefined' && crypto.randomUUID)
+                    ? crypto.randomUUID()
+                    : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+                id = `anon_${random}`;
+                localStorage.setItem(ANON_USER_KEY, id);
+            }
+            return id;
+        } catch (_) {
+            return 'anonymous';
+        }
+    }
+
+    function updateMixRatingButtons(playlistId, rating) {
+        if (typeof document === 'undefined' || !document.querySelectorAll) return;
+        const buttons = document.querySelectorAll('[data-mix-feedback-btn][data-playlist-id="' + playlistId + '"]');
+        if (!buttons || !buttons.forEach) return;
+        buttons.forEach((btn) => {
+            const kind = btn.getAttribute('data-mix-feedback-btn');
+            const active = kind === 'like' ? rating && rating.isLiked === true : rating && rating.isLiked === false;
+            btn.className = 'p-1.5 rounded-full active:scale-95 transition shadow-sm cursor-pointer ' + ratingButtonClass(kind, Boolean(active));
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+            if (btn.querySelector) {
+                const svg = btn.querySelector('svg');
+                if (svg && svg.setAttribute) svg.setAttribute('fill', active ? 'currentColor' : 'none');
+            }
+        });
+    }
+
+    async function submitMixFeedback(playlistId, options = {}) {
+        const item = aiPlaylistsStore.get(playlistId);
+        if (!item) return false;
+
+        const isLiked = Boolean(options.isLiked);
+        const reason = options.reason || null;
+        const customFeedback = options.customFeedback || '';
+        const mixKey = getMixKey(item);
+        const mixTitle = item.title || item.categoryTitle || 'Mix';
+        const payload = {
+            userId: resolveFeedbackUserId(),
+            mixKey,
+            mixTitle,
+            isLiked,
+            reason,
+            customFeedback
+        };
+
+        persistMixFeedback(mixKey, {
+            isLiked,
+            reason,
+            customFeedback,
+            updatedAt: new Date().toISOString()
+        });
+        updateMixRatingButtons(playlistId, { isLiked });
+
+        try {
+            const fetchFn = (typeof window !== 'undefined' && typeof window.fetch === 'function')
+                ? window.fetch.bind(window)
+                : (typeof fetch === 'function' ? fetch : null);
+            if (fetchFn) {
+                await fetchFn('/api/music/feedback', {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            }
+        } catch (_) {}
+
+        if (window.ui && typeof ui.showToast === 'function') {
+            ui.showToast(isLiked ? 'Thanks for liking this mix' : "Thanks — we'll tune your future mixes", 'success');
+        }
+        return true;
+    }
+
+    function rateMix(playlistId) {
+        return submitMixFeedback(playlistId, { isLiked: true, reason: null, customFeedback: '' });
+    }
+
+    function openMixFeedback(playlistId) {
+        const item = aiPlaylistsStore.get(playlistId);
+        if (!item) return;
+        const mixTitle = item.title || item.categoryTitle || 'Mix';
+        if (window.mixFeedbackManager && typeof window.mixFeedbackManager.openFeedbackModal === 'function') {
+            window.mixFeedbackManager.openFeedbackModal({
+                mixTitle,
+                initial: readMixFeedbackState()[getMixKey(item)] || null,
+                onSubmit: async ({ reason, customFeedback }) => {
+                    await submitMixFeedback(playlistId, { isLiked: false, reason, customFeedback });
+                }
+            });
+        } else if (window.ui && typeof ui.showToast === 'function') {
+            ui.showToast('Feedback is unavailable right now. Please try again.', 'info');
+        }
+    }
+
+    function getMixRating(playlistId) {
+        const item = aiPlaylistsStore.get(playlistId);
+        return item ? (readMixFeedbackState()[getMixKey(item)] || null) : null;
+    }
+
     const isDesktopApp = () => {
         if (typeof window === "undefined") return false;
         return Boolean(
@@ -188,6 +341,117 @@
         return null;
     }
 
+    function isPlayableApiSong(song) {
+        return Boolean(song && song.url && typeof song.url === 'string' && song.url.startsWith('http') &&
+            song.img && typeof song.img === 'string' && song.img.startsWith('http') &&
+            !song.img.includes('DTunes.svg') && song.img !== FALLBACK_ART);
+    }
+
+    async function hydrateApiSongs(songs) {
+        const hydrated = [];
+        for (const raw of (Array.isArray(songs) ? songs : [])) {
+            if (!raw) continue;
+            let track = isPlayableApiSong(raw) ? raw : null;
+            if (!track) {
+                track = await searchTrackData(raw.title || raw.name, raw.artist || raw.primary_artists || '');
+            }
+            if (!track) {
+                try {
+                    const query = `${raw.title || raw.name || ''} ${raw.artist || raw.primary_artists || ''}`.trim();
+                    if (query && window.jiosaavnAPI && jiosaavnAPI.searchSongs) {
+                        const results = await jiosaavnAPI.searchSongs(query, 1);
+                        if (results && results[0]) track = results[0];
+                    }
+                } catch (_) {}
+            }
+            if (isPlayableApiSong(track)) hydrated.push(track);
+        }
+        return hydrated;
+    }
+
+    async function fetchDailyMixesFromApi(userId) {
+        if (!window.ai || typeof window.ai.fetchServerMixes !== 'function') return null;
+        const disliked = state.dislikedSongs || [];
+        const mixes = await window.ai.fetchServerMixes({
+            userId,
+            limit: 20,
+            currentQueueIds: state.queue || [],
+            sessionHistory: (state.playHistory || []).slice(0, 10),
+            dislikedSongIds: disliked.map(d => typeof d === 'object' ? (d.id || d.saavn_id) : d).filter(Boolean),
+            negativeTitles: disliked.map(d => typeof d === 'object' ? (d.name || d.title) : '').filter(Boolean)
+        });
+        if (!mixes || mixes.length === 0) return null;
+        const playlists = [];
+        for (let i = 0; i < mixes.length; i++) {
+            const mix = mixes[i];
+            const songs = await hydrateApiSongs(mix.songs);
+            if (songs.length < 2) continue;
+            playlists.push({
+                key: mix.key || `daily-mix-${i + 1}`,
+                categoryTitle: mix.categoryTitle || mix.title || 'Mix',
+                title: mix.title || mix.categoryTitle || 'Mix',
+                description: mix.description || '',
+                styleIndex: Number.isFinite(mix.styleIndex) ? mix.styleIndex : i,
+                songs
+            });
+        }
+        return playlists.length > 0 ? playlists : null;
+    }
+
+    async function loadYourMix(userId) {
+        try {
+            let mix = null;
+            if (window.ai && typeof window.ai.fetchServerMixes === 'function') {
+                const serverMixes = await window.ai.fetchServerMixes({
+                    userId,
+                    type: 'your-mix',
+                    limit: 20,
+                    currentQueueIds: state.queue || []
+                });
+                if (serverMixes && serverMixes.length > 0) mix = serverMixes[0];
+            }
+            if (!mix && window.ai && typeof window.ai.getLocalYourMix === 'function') {
+                mix = window.ai.getLocalYourMix();
+            }
+            if (!mix) return null;
+            const songs = await hydrateApiSongs(mix.songs);
+            if (songs.length < 2) return null;
+            return {
+                key: mix.key || 'your-mix',
+                mixKey: mix.key || 'your-mix',
+                categoryTitle: 'Your Mix',
+                title: mix.title || 'Your Mix',
+                description: mix.description || '',
+                styleIndex: Number.isFinite(mix.styleIndex) ? mix.styleIndex : 6,
+                songs
+            };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    async function renderDailyPlaylists(container, playlists, options = {}) {
+        let withYourMix = playlists;
+        if (!options.offline && options.userId) {
+            const yourMix = await loadYourMix(options.userId);
+            if (yourMix) withYourMix = [...playlists, yourMix];
+        }
+        renderPlaylistView(container, withYourMix, options);
+    }
+
+    let _lastLocalMixWriteAt = 0;
+    function markLocalMixWrite() {
+        _lastLocalMixWriteAt = Date.now();
+    }
+    async function refreshDailyMixesFromCloud() {
+        if (Date.now() - _lastLocalMixWriteAt < 10000) return;
+        clearDailyMixCache();
+        _lastRenderedUserId = null;
+        _lastRenderedDateKey = null;
+        _cachedDailyPlaylists = null;
+        await renderAIHome(false);
+    }
+
     const aiPlaylistsStore = new Map();
 
     // Render skeleton layout with shimmering placeholders
@@ -285,6 +549,9 @@
             const playlist = playlists[pIdx];
             const playlistId = 'pl_daily_' + pIdx;
             const style = COVER_STYLES[(playlist.styleIndex || pIdx) % COVER_STYLES.length];
+            const mixRating = readMixFeedbackState()[getMixKey(playlist)] || {};
+            const mixLiked = mixRating.isLiked === true;
+            const mixDisliked = mixRating.isLiked === false;
 
             // Ensure every song is stored in songStore
             const validSongs = (playlist.songs || []).filter(s =>
@@ -332,7 +599,6 @@
                             <h3 class="text-xl font-bold text-white tracking-tight flex items-center gap-2">
                                 <span>${utils.escapeHtml(playlist.categoryTitle || playlist.title)}</span>
                             </h3>
-                            ${playlist.description ? `<p class="text-xs text-gray-400 mt-0.5">${utils.escapeHtml(playlist.description)}</p>` : ''}
                         </div>
                         <div class="flex items-center gap-2">
                             ${offline ? '' : `<button onclick="window.aiHome.playEntirePlaylist('${playlistId}')" class="px-3.5 py-1.5 rounded-full bg-[var(--accent-color)] text-black text-xs font-bold hover:brightness-110 active:scale-[0.98] transition flex items-center gap-1.5" title="Play Playlist">
@@ -343,6 +609,12 @@
                                 <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                                 <span>Add to Queue</span>
                             </button>`}
+                            <button data-mix-feedback-btn="like" data-playlist-id="${playlistId}" aria-pressed="${mixLiked ? 'true' : 'false'}" onclick="window.aiHome.rateMix('${playlistId}')" class="p-1.5 rounded-full active:scale-95 transition shadow-sm cursor-pointer ${ratingButtonClass('like', mixLiked)}" title="Like this mix" aria-label="Like this mix">
+                                <svg width="14" height="14" fill="${mixLiked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/></svg>
+                            </button>
+                            <button data-mix-feedback-btn="dislike" data-playlist-id="${playlistId}" aria-pressed="${mixDisliked ? 'true' : 'false'}" onclick="window.aiHome.openMixFeedback('${playlistId}')" class="p-1.5 rounded-full active:scale-95 transition shadow-sm cursor-pointer ${ratingButtonClass('dislike', mixDisliked)}" title="Dislike this mix" aria-label="Dislike this mix">
+                                <svg width="14" height="14" fill="${mixDisliked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 15V19a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zM17 2h3a2 2 0 012 2v7a2 2 0 01-2 2h-3"/></svg>
+                            </button>
                             <button onclick="window.aiHome.savePlaylistToLibrary('${playlistId}')" class="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white active:scale-95 transition shadow-sm" title="Save to Your Library">
                                 <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>
                             </button>
@@ -674,7 +946,7 @@ async function renderOfflineHome(container) {
         const localCache = readDailyMixCache();
         const cacheIsFromToday = localCache?.dateKey === todayKey;
         if (!forceRefresh && cacheIsFromToday && localCache.playlists?.length && (!localCache.userId || localCache.userId === userId)) {
-            renderPlaylistView(container, localCache.playlists, {
+            await renderDailyPlaylists(container, localCache.playlists, {
                 userId,
                 todayKey: localCache.dateKey || todayKey,
                 expiresAt: localCache.expiresAt
@@ -711,46 +983,42 @@ async function renderOfflineHome(container) {
 
             // 4. If not generated for today, generate and hydrate
             if (!playlists || playlists.length === 0) {
-                const history = state.playHistory || [];
-                const liked = state.likedIds || [];
-                const lib = state.libraryIds || [];
-                const disliked = state.dislikedSongs || [];
+                playlists = await fetchDailyMixesFromApi(userId);
 
-                const generated = await window.ai.generateCustomPlaylists(history, liked, lib, disliked, forceRefresh);
-                if (!generated || generated.length === 0) {
-                    container.innerHTML = '';
-                    return;
-                }
+                if (!playlists || playlists.length === 0) {
+                    const history = state.playHistory || [];
+                    const liked = state.likedIds || [];
+                    const lib = state.libraryIds || [];
+                    const disliked = state.dislikedSongs || [];
 
-                // Hydrate songs and strictly exclude any that fail to load audio or album art
-                const hydratedPlaylists = [];
-                for (let i = 0; i < generated.length; i++) {
-                    const pl = generated[i];
-                    const rawSongs = pl.songs || [];
-                    const hydratedSongs = await Promise.all(
-                        rawSongs.map(s => searchTrackData(s.title, s.artist))
-                    );
+                    const generated = await window.ai.generateCustomPlaylists(history, liked, lib, disliked, forceRefresh);
+                    if (!generated || generated.length === 0) {
+                        container.innerHTML = '';
+                        return;
+                    }
 
-                    // Must have a streamable URL and genuine artwork
-                    const validSongs = hydratedSongs.filter(s =>
-                        s && s.url && typeof s.url === 'string' && s.url.startsWith('http') &&
-                        s.img && typeof s.img === 'string' && s.img.startsWith('http') &&
-                        !s.img.includes('DTunes.svg') && s.img !== FALLBACK_ART
-                    );
-
-                    // Only include playlist if at least 2 valid songs exist
-                    if (validSongs.length >= 2) {
+                    const hydratedPlaylists = [];
+                    for (let i = 0; i < generated.length; i++) {
+                        const pl = generated[i];
+                        const songs = await hydrateApiSongs(pl.songs || []);
+                        if (songs.length < 2) continue;
                         hydratedPlaylists.push({
+                            key: pl.key || pl.mixKey || `daily-mix-${i + 1}`,
                             categoryTitle: pl.categoryTitle || pl.title || 'Mix',
                             title: pl.title || pl.categoryTitle || 'Mix',
                             description: pl.description || '',
                             styleIndex: pl.styleIndex !== undefined ? pl.styleIndex : i,
-                            songs: validSongs
+                            songs
                         });
                     }
+
+                    playlists = hydratedPlaylists;
                 }
 
-                playlists = hydratedPlaylists;
+                if (!playlists || playlists.length === 0) {
+                    container.innerHTML = '';
+                    return;
+                }
 
                 // 5. Update user's single row in Supabase for today
                 if (supabase && playlists.length > 0) {
@@ -758,9 +1026,10 @@ async function renderOfflineHome(container) {
                         await supabase.from('dtunes_daily_mixes').upsert({
                             user_id: userId,
                             date_key: todayKey,
-                            playlists: playlists,
+                            playlists: playlists.map(({ key, mixKey, ...rest }) => rest),
                             updated_at: new Date().toISOString()
                         }, { onConflict: 'user_id' });
+                        markLocalMixWrite();
                     } catch (e) {
                         console.warn('[Daily Mixes] Failed to store daily mixes in Supabase:', e);
                     }
@@ -775,7 +1044,7 @@ async function renderOfflineHome(container) {
             // 6. Save today's mixes locally before painting so an offline reload can
             // show them without Supabase or the AI endpoint.
             const cachePayload = writeDailyMixCache(userId, playlists);
-            renderPlaylistView(container, playlists, {
+            await renderDailyPlaylists(container, playlists, {
                 userId,
                 todayKey,
                 expiresAt: cachePayload?.expiresAt || null
@@ -928,7 +1197,12 @@ async function renderOfflineHome(container) {
         savePlaylistToLibrary,
         loadTrendingHits,
         loadRecentlyPlayed,
-        searchTrackData
+        searchTrackData,
+        rateMix,
+        openMixFeedback,
+        submitMixFeedback,
+        getMixRating,
+        refreshDailyMixesFromCloud
     };
 
     // Override homeView cleanly
@@ -971,26 +1245,32 @@ async function renderOfflineHome(container) {
             if (window.ui?.showToast) ui.showToast("Autoplay: Queuing next tracks...");
             
             try {
-                let songList = [];
                 const disliked = state.dislikedSongs || [];
-                if (window.ai && window.ai.generateQueueAutoplay) {
+                let songList = [];
+                if (window.ai && window.ai.fetchServerAutoplay) {
+                    songList = await window.ai.fetchServerAutoplay({
+                        seedSongId: currentTrack.saavn_id || currentTrack.id,
+                        seedTitle: trackTitle,
+                        seedArtist: trackArtist,
+                        limit: 8,
+                        currentQueueIds: state.queue || [],
+                        excludedSongIds: disliked.map(d => typeof d === 'object' ? (d.id || d.saavn_id) : d).filter(Boolean)
+                    }) || [];
+                }
+
+                if (songList.length === 0 && window.jiosaavnAPI && jiosaavnAPI.searchSongs) {
+                    songList = await jiosaavnAPI.searchSongs(`${trackArtist} hits`, 8);
+                }
+
+                if (songList.length === 0 && window.ai && window.ai.generateQueueAutoplay) {
                     songList = await window.ai.generateQueueAutoplay(trackTitle, trackArtist, 8, disliked);
                 }
 
-                if (!songList || songList.length === 0) {
-                    if (window.jiosaavnAPI && jiosaavnAPI.searchSongs) {
-                        songList = await jiosaavnAPI.searchSongs(`${trackArtist} hits`, 8);
-                    }
-                }
-
                 const hydrated = [];
-                for (const s of songList) {
-                    const matchedSong = await searchTrackData(s.title || s.name, s.artist);
-                    if (matchedSong && matchedSong.url && matchedSong.img && !matchedSong.img.includes('DTunes.svg') && matchedSong.img !== FALLBACK_ART) {
-                        const appTrack = window.recommendationClient ? window.recommendationClient.toAppSong(matchedSong) : matchedSong;
-                        if (!state.queue.some(q => q.id === appTrack.id)) {
-                            hydrated.push(appTrack);
-                        }
+                for (const track of await hydrateApiSongs(songList)) {
+                    const appTrack = window.recommendationClient ? window.recommendationClient.toAppSong(track) : track;
+                    if (!state.queue.some(q => q.id === appTrack.id)) {
+                        hydrated.push(appTrack);
                     }
                 }
 

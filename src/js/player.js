@@ -946,16 +946,25 @@
                 if (window.ui?.showToast) ui.showToast(`Finding ${count} songs for autoplay...`);
 
                 try {
-                    let songList = [];
                     const disliked = state.dislikedSongs || [];
-                    if (window.ai && window.ai.generateQueueAutoplay) {
-                        songList = await window.ai.generateQueueAutoplay(seedTitle, seedArtist, count, disliked);
+                    let songList = [];
+                    if (window.ai && window.ai.fetchServerAutoplay) {
+                        songList = await window.ai.fetchServerAutoplay({
+                            seedSongId: current?.saavn_id || current?.id,
+                            seedTitle,
+                            seedArtist,
+                            limit: count,
+                            currentQueueIds: (state.queue || []).map(s => s.saavn_id || s.id),
+                            excludedSongIds: disliked.map(d => typeof d === 'object' ? (d.id || d.saavn_id) : d).filter(Boolean)
+                        }) || [];
                     }
 
-                    if (!songList || songList.length === 0) {
-                        if (window.jiosaavnAPI && jiosaavnAPI.searchSongs) {
-                            songList = await jiosaavnAPI.searchSongs(`${seedArtist} hits`, count);
-                        }
+                    if (songList.length === 0 && window.jiosaavnAPI && jiosaavnAPI.searchSongs) {
+                        songList = await jiosaavnAPI.searchSongs(`${seedArtist} hits`, count);
+                    }
+
+                    if (songList.length === 0 && window.ai && window.ai.generateQueueAutoplay) {
+                        songList = await window.ai.generateQueueAutoplay(seedTitle, seedArtist, count, disliked);
                     }
 
                     const hydrated = [];

@@ -139,6 +139,8 @@
       var SUPABASE_URL = window.DVERSE_SUPABASE_URL || 'https://gmwieijbrrztukqpfwkg.supabase.co';
       var SUPABASE_ANON_KEY = window.DVERSE_SUPABASE_ANON_KEY || 'sb_publishable_KX3MYtV84QJJdy9bPDuMEA_V99sLKSE';
 
+      var AUTH_START_URL = window.location.origin + '/auth.html?start=1';
+
       function base64UrlDecode(value) {
         try {
           var normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
@@ -151,6 +153,17 @@
         }
       }
 
+      function base64UrlEncode(value) {
+        try {
+          var bytes = new TextEncoder().encode(value);
+          var binary = '';
+          for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        } catch (e) {
+          return '';
+        }
+      }
+
       var searchParams = new URLSearchParams(window.location.search);
       var hash = window.location.hash ? window.location.hash.replace(/^#\/?/, '') : '';
       var hashParams = new URLSearchParams(hash.charAt(0) === '?' ? hash.slice(1) : hash);
@@ -160,47 +173,66 @@
       hashParams.forEach(function (val, key) { allParams.set(key, val); });
       allParams.delete('desktop_auth');
 
-      // Tokens must not linger in the address bar or browser history.
-      try { window.history.replaceState(null, document.title, window.location.pathname); } catch (_) {}
-
       var card = document.getElementById('card');
       var btn = document.getElementById('open-app-btn');
       var hintEl = document.getElementById('hint');
+
+      function cleanBrowserUrl() {
+        // Tokens must not linger in the address bar or browser history. Only run after
+        // the values above have been captured so nothing needed for the exchange is lost.
+        try { window.history.replaceState(null, document.title, window.location.pathname); } catch (_) {}
+      }
 
       function showError(message) {
         card.classList.add('error');
         document.getElementById('icon').textContent = '!';
         document.getElementById('title').textContent = "Sign-in didn't finish";
         document.getElementById('desc').textContent = message;
-        hintEl.textContent = 'Go back to D\'Tunes and tap "Sign in with Google" again.';
+        hintEl.textContent = 'Go back to D\'Tunes and tap "Sign In with Google" again.';
         btn.hidden = true;
+        cleanBrowserUrl();
+      }
+
+      function showRetry(message) {
+        showError(message);
+        btn.hidden = false;
+        btn.textContent = 'Try again';
+        btn.href = AUTH_START_URL;
+        hintEl.textContent = 'Tap "Try again" to reopen the Google account picker.';
       }
 
       function startGoogleSignIn() {
         function begin() {
           if (!window.supabase || typeof window.supabase.createClient !== 'function') {
-            showError('The sign-in service could not be loaded. Check your connection and try again.');
+            showRetry('The sign-in service could not be loaded. Check your connection and try again.');
             return;
           }
           document.getElementById('title').textContent = 'Choosing your Google account…';
           document.getElementById('desc').textContent = 'Opening the Google account picker so you can choose which account to use.';
           hintEl.textContent = 'Use the account picker to switch between Google accounts.';
           try {
-            var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+              auth: {
+                flowType: 'pkce',
+                detectSessionInUrl: false,
+                persistSession: true,
+                autoRefreshToken: false
+              }
+            });
             supabase.auth.signInWithOAuth({
               provider: 'google',
               options: {
                 queryParams: { prompt: 'select_account', access_type: 'online' },
-                redirectTo: window.location.origin + '/auth.html?desktop_auth=1',
+                redirectTo: window.location.origin + '/auth.html',
                 skipBrowserRedirect: false
               }
             }).then(function (result) {
-              if (result && result.error) showError(result.error.message || 'Google sign-in could not be started.');
+              if (result && result.error) showRetry(result.error.message || 'Google sign-in could not be started.');
             }).catch(function (error) {
-              showError((error && error.message) || 'Google sign-in could not be started.');
+              showRetry((error && error.message) || 'Google sign-in could not be started.');
             });
           } catch (error) {
-            showError((error && error.message) || 'Google sign-in could not be started.');
+            showRetry((error && error.message) || 'Google sign-in could not be started.');
           }
         }
         if (document.readyState === 'loading') {
@@ -210,97 +242,175 @@
         }
       }
 
-      if (searchParams.get('start') === '1') {
-        startGoogleSignIn();
-        return;
-      }
-
       var providerError = allParams.get('error_description') || allParams.get('error');
       if (providerError) {
-        showError(providerError.replace(/\+/g, ' '));
+        showRetry(providerError.replace(/\+/g, ' '));
         return;
       }
 
       var dverseSession = allParams.get('dverse_session');
       var decoded = dverseSession ? base64UrlDecode(dverseSession) : null;
-      var hasTokens = Boolean(
-        (decoded && decoded.access_token) ||
-        (allParams.get('access_token') && allParams.get('refresh_token')) ||
-        allParams.get('code')
-      );
-      if (!hasTokens) {
-        showError('No session was returned from Google. This can happen if the sign-in tab was reopened.');
+      var code = allParams.get('code');
+      var accessToken = allParams.get('access_token') || (decoded && decoded.access_token) || null;
+      var refreshToken = allParams.get('refresh_token') || (decoded && decoded.refresh_token) || null;
+      var expiresIn = allParams.get('expires_in') || (decoded && decoded.expires_in) || null;
+      var tokenType = allParams.get('token_type') || (decoded && decoded.token_type) || 'bearer';
+      var returnedUserId = (decoded && decoded.user_id) || null;
+      var returnedEmail = (decoded && decoded.email) || null;
+      var hasReturnedAuth = Boolean(code || accessToken || decoded);
+
+      // Normally ?start=1 launches OAuth. If Supabase fell back to the start URL and still
+      // appended a session/code to it, finish that return leg instead of starting over.
+      if (searchParams.get('start') === '1' && !hasReturnedAuth) {
+        startGoogleSignIn();
         return;
       }
 
-      // Desktop (Electron) listener; harmless no-op elsewhere.
-      if (!/Android/i.test(navigator.userAgent)) {
-        try {
-          var payload = {};
-          if (decoded && decoded.access_token) {
-            payload.access_token = decoded.access_token;
-            payload.refresh_token = decoded.refresh_token;
-            payload.expires_in = decoded.expires_in;
-            payload.token_type = decoded.token_type;
-          } else {
-            allParams.forEach(function (v, k) { payload[k] = v; });
-          }
-          fetch('http://127.0.0.1:49200/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          }).catch(function () {});
-        } catch (_) {}
+      if (!hasReturnedAuth) {
+        showRetry('No session was returned from Google. Please sign in again.');
+        return;
       }
 
-      try {
-        var persisted = null;
-        if (decoded && decoded.access_token) {
-          persisted = {
-            access_token: decoded.access_token,
-            refresh_token: decoded.refresh_token,
-            expires_at: decoded.expires_in ? Math.floor(Date.now() / 1000) + Number(decoded.expires_in) : null,
-            user_id: decoded.user_id || null,
-            email: decoded.email || null
-          };
-        } else if (allParams.get('access_token') && allParams.get('refresh_token')) {
-          persisted = {
-            access_token: allParams.get('access_token'),
-            refresh_token: allParams.get('refresh_token'),
-            expires_at: allParams.get('expires_in') ? Math.floor(Date.now() / 1000) + Number(allParams.get('expires_in')) : null
-          };
-        }
-        if (persisted) {
-          var serialized = JSON.stringify(persisted);
+      function persistSession(payload) {
+        try {
+          var serialized = JSON.stringify({
+            access_token: payload.access_token,
+            refresh_token: payload.refresh_token,
+            expires_at: payload.expires_at,
+            user_id: payload.user_id || null,
+            email: payload.email || null
+          });
           localStorage.setItem('dverse_session_cache', serialized);
           localStorage.setItem('dverse_auth_tokens', serialized);
           sessionStorage.setItem('dverse_session_cache', serialized);
-        }
-      } catch (_) {}
-
-      var qs = allParams.toString();
-      var dtunesUrl = 'dtunes://auth?' + qs;
-      var intentUrl = 'intent://auth?' + qs +
-        '#Intent;scheme=dtunes;package=' + PACKAGE +
-        ';action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end';
-      var primaryUrl = /Android/i.test(navigator.userAgent) ? intentUrl : dtunesUrl;
-
-      btn.href = primaryUrl;
-      hintEl.textContent = 'Signed in with the Google account picker. To switch accounts, sign in again from D\'Tunes. If the app didn\'t open, tap the button above.';
-
-      var launched = false;
-      function launchApp() {
-        try { window.location.href = primaryUrl; } catch (_) {}
+        } catch (_) {}
       }
 
-      // Chrome allows this when it follows the user's tap on the Google account picker.
-      // If it's blocked, the button below provides the user gesture it needs.
-      launchApp();
-      setTimeout(function () { if (!launched) launchApp(); }, 600);
+      function completeHandoff(session) {
+        if (!session || !session.access_token || !session.refresh_token) {
+          showRetry('Google did not return a complete session. Please try again.');
+          return;
+        }
 
-      document.addEventListener('visibilitychange', function () {
-        if (document.visibilityState === 'hidden') launched = true;
-      });
+        var now = Math.floor(Date.now() / 1000);
+        var sessionExpiresIn = Number(session.expires_in);
+        if (!sessionExpiresIn && session.expires_at) {
+          sessionExpiresIn = Math.max(0, Number(session.expires_at) - now);
+        }
+        if (!sessionExpiresIn || !isFinite(sessionExpiresIn)) sessionExpiresIn = 3600;
+
+        var user = session.user || {};
+        var payload = {
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+          expires_in: sessionExpiresIn,
+          expires_at: session.expires_at || (now + sessionExpiresIn),
+          token_type: session.token_type || 'bearer',
+          user_id: user.id || returnedUserId || null,
+          email: user.email || returnedEmail || null
+        };
+        persistSession(payload);
+
+        // Desktop (Electron) listener; harmless no-op elsewhere.
+        if (!/Android/i.test(navigator.userAgent)) {
+          try {
+            fetch('http://127.0.0.1:49200/token', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                access_token: payload.access_token,
+                refresh_token: payload.refresh_token,
+                expires_in: payload.expires_in,
+                token_type: payload.token_type
+              })
+            }).catch(function () {});
+          } catch (_) {}
+        }
+
+        // Android imports this base64url session without needing the PKCE verifier.
+        // Raw tokens stay too so older app builds and the desktop handoff keep working.
+        var handoffParams = new URLSearchParams();
+        handoffParams.set('dverse_session', base64UrlEncode(JSON.stringify(payload)));
+        handoffParams.set('access_token', payload.access_token);
+        handoffParams.set('refresh_token', payload.refresh_token);
+        handoffParams.set('expires_in', String(payload.expires_in));
+        handoffParams.set('token_type', payload.token_type);
+
+        var qs = handoffParams.toString();
+        var dtunesUrl = 'dtunes://auth?' + qs;
+        var intentUrl = 'intent://auth?' + qs +
+          '#Intent;scheme=dtunes;package=' + PACKAGE +
+          ';action=android.intent.action.VIEW;category=android.intent.category.BROWSABLE;end';
+        var primaryUrl = /Android/i.test(navigator.userAgent) ? intentUrl : dtunesUrl;
+
+        btn.href = primaryUrl;
+        btn.textContent = "Open D'Tunes";
+        document.getElementById('title').textContent = 'Signed in';
+        document.getElementById('desc').textContent = "Returning you to the D'Tunes app…";
+        hintEl.textContent = 'Signed in with the Google account picker. To switch accounts, sign in again from D\'Tunes. If the app didn\'t open, tap the button above.';
+
+        cleanBrowserUrl();
+
+        var launched = false;
+        function launchApp() {
+          try { window.location.href = primaryUrl; } catch (_) {}
+        }
+
+        // Chrome allows this when it follows the user's tap on the Google account picker.
+        // If it's blocked, the button below provides the user gesture it needs.
+        launchApp();
+        setTimeout(function () { if (!launched) launchApp(); }, 600);
+
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'hidden') launched = true;
+        });
+      }
+
+      if (accessToken && refreshToken) {
+        completeHandoff({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+          expires_in: Number(expiresIn) || null,
+          token_type: tokenType,
+          user: returnedUserId ? { id: returnedUserId, email: returnedEmail } : null
+        });
+        return;
+      }
+
+      if (code) {
+        // The PKCE code verifier lives in this browser's storage, so Supabase must be
+        // exchanged here. Android cannot exchange it later.
+        if (!window.supabase || typeof window.supabase.createClient !== 'function') {
+          showRetry('The sign-in service could not be loaded. Check your connection and try again.');
+          return;
+        }
+        document.getElementById('title').textContent = 'Finishing sign-in…';
+        document.getElementById('desc').textContent = 'Verifying your Google session…';
+        try {
+          var supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            auth: {
+              flowType: 'pkce',
+              detectSessionInUrl: false,
+              persistSession: true,
+              autoRefreshToken: false
+            }
+          });
+          supabase.auth.exchangeCodeForSession(code).then(function (result) {
+            if (!result || result.error || !result.data || !result.data.session) {
+              showRetry('Google sign-in could not be completed in this browser. Please try again.');
+              return;
+            }
+            completeHandoff(result.data.session);
+          }).catch(function () {
+            showRetry('Google sign-in could not be completed in this browser. Please try again.');
+          });
+        } catch (error) {
+          showRetry('Google sign-in could not be completed in this browser. Please try again.');
+        }
+        return;
+      }
+
+      showRetry('No session was returned from Google. Please sign in again.');
     })();
   </script>
 </body>

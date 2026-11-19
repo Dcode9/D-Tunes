@@ -1553,7 +1553,8 @@
       'dtunes_likes',
       'dtunes_playlists',
       'dtunes_playlist_items',
-      'dtunes_history'
+      'dtunes_history',
+      'dtunes_daily_mixes'
     ];
     const channel = client.channel('dtunes-' + userId);
     tables.forEach((table) => {
@@ -1564,6 +1565,9 @@
         filter: 'user_id=eq.' + userId
       }, (payload) => {
         try { handler(table, payload); } catch (err) { console.warn('[DVerse] Realtime handler error:', err); }
+        if (table === 'dtunes_daily_mixes' && window.aiHome && typeof window.aiHome.refreshDailyMixesFromCloud === 'function') {
+          try { window.aiHome.refreshDailyMixesFromCloud().catch(() => {}); } catch (err) { console.warn('[DVerse] Daily mixes refresh failed:', err); }
+        }
       });
     });
     channel.subscribe();

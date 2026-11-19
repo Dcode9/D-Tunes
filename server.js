@@ -4,6 +4,7 @@ const path = require('node:path');
 const { getRecommendations, PLAYLIST_TYPES } = require('./lib/recommendationEngine');
 const { deduplicateSongs } = require('./lib/deduplication');
 const store = require('./lib/jsonStore');
+const { verifySupabaseJwt, isAuthRequired, normalizeUserId } = require('./lib/apiSecurity');
 const lyricsService = require('./lib/lyricsService');
 const {
   recommendationDeps,
@@ -15,129 +16,197 @@ const {
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_ROOT = __dirname;
+const MAX_JSON_BODY_BYTES = 1024 * 1024;
+const ALLOWED_EVENT_TYPES = new Set([
+  'play_start', 'play_complete', 'skip', 'like', 'unlike',
+  'search_play', 'playlist_add', 'repeat', 'queue_add',
+]);
 
 function sendJson(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
   res.end(JSON.stringify(body));
 }
 
+function bearerToken(req) {
+  const header = req.headers && req.headers.authorization;
+  if (typeof header !== 'string') return null;
+  const match = header.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1].trim() : null;
+}
+
+async function resolveUserId(req, supplied) {
+  if (isAuthRequired()) {
+    return verifySupabaseJwt(req.headers && req.headers.authorization);
+  }
+  return normalizeUserId(supplied);
+}
+
+function bodyTooLargeError() {
+  const error = new Error('Request body too large');
+  error.status = 413;
+  return error;
+}
+
+function isBodyTooLarge(value) {
+  try {
+    return Buffer.byteLength(JSON.stringify(value), 'utf8') > MAX_JSON_BODY_BYTES;
+  } catch (error) {
+    return false;
+  }
+}
+
 function parseBody(req) {
   if (req.body !== undefined && req.body !== null) {
-    if (typeof req.body === 'object') return Promise.resolve(req.body);
+    if (typeof req.body === 'object') {
+      return isBodyTooLarge(req.body)
+        ? Promise.reject(bodyTooLargeError())
+        : Promise.resolve(req.body);
+    }
     if (typeof req.body === 'string') {
-      try { return Promise.resolve(req.body ? JSON.parse(req.body) : {}); } catch (error) { return Promise.reject(error); }
+      if (Buffer.byteLength(req.body, 'utf8') > MAX_JSON_BODY_BYTES) return Promise.reject(bodyTooLargeError());
+      try {
+        const parsed = req.body ? JSON.parse(req.body) : {};
+        return Promise.resolve(parsed && typeof parsed === 'object' ? parsed : {});
+      } catch (error) { return Promise.reject(error); }
     }
   }
   return new Promise((resolve, reject) => {
     let raw = '';
-    req.on('data', (chunk) => { raw += chunk; });
-    req.on('end', () => {
-      if (!raw) return resolve({});
-      try { resolve(JSON.parse(raw)); } catch (error) { reject(error); }
+    let bytes = 0;
+    let settled = false;
+    req.on('data', (chunk) => {
+      if (settled) return;
+      bytes += typeof chunk === 'string' ? Buffer.byteLength(chunk, 'utf8') : chunk.length;
+      if (bytes > MAX_JSON_BODY_BYTES) {
+        settled = true;
+        reject(bodyTooLargeError());
+        return;
+      }
+      raw += chunk;
     });
-    req.on('error', (err) => reject(err));
+    req.on('end', () => {
+      if (settled) return;
+      settled = true;
+      if (!raw) return resolve({});
+      try {
+        const parsed = JSON.parse(raw);
+        resolve(parsed && typeof parsed === 'object' ? parsed : {});
+      } catch (error) { reject(error); }
+    });
+    req.on('error', (err) => {
+      if (!settled) { settled = true; reject(err); }
+    });
   });
+}
+
+function parseBodyAllowInvalid(req) {
+  return parseBody(req).catch((error) => {
+    if (error && error.status === 413) throw error;
+    return {};
+  });
+}
+
+function toIdArray(value) {
+  return Array.isArray(value) ? value.map(String) : [];
 }
 
 async function handleApi(req, res, url) {
   if (req.method === 'OPTIONS') {
-    res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-headers': 'content-type' });
+    const requestedHeaders = req.headers['access-control-request-headers'];
+    res.writeHead(204, {
+      'access-control-allow-origin': '*',
+      'access-control-allow-methods': 'GET,POST,OPTIONS',
+      'access-control-allow-headers': requestedHeaders || 'content-type, authorization, x-requested-with',
+    });
     return res.end();
+  }
+
+  if (req.method === 'POST' || req.method === 'PUT' || req.method === 'PATCH') {
+    const declaredLength = Number(req.headers['content-length']);
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_JSON_BODY_BYTES) {
+      if (typeof req.resume === 'function') req.resume();
+      return sendJson(res, 413, { error: 'Request body too large' });
+    }
   }
 
   if (req.method === 'POST' && url.pathname === '/api/music/event') {
     const body = await parseBody(req);
-    if (!body.userId || !body.eventType || (!body.songSaavnId && !body.song?.saavn_id && !body.song?.id)) {
+    const songId = body.songSaavnId !== undefined
+      ? body.songSaavnId
+      : (body.song && (body.song.saavn_id !== undefined ? body.song.saavn_id : body.song.id));
+    const validUserId = typeof body.userId === 'string' && body.userId.trim().length > 0;
+    const validEventType = typeof body.eventType === 'string' && ALLOWED_EVENT_TYPES.has(body.eventType);
+    const validSongId = typeof songId === 'string' && songId.trim().length > 0;
+    if (!validUserId || !validEventType || !validSongId) {
       return sendJson(res, 400, { error: 'userId, eventType, and songSaavnId/song are required' });
     }
+    const resolvedUserId = await resolveUserId(req, body.userId);
+    if (!resolvedUserId) return sendJson(res, 401, { error: 'Unauthorized' });
+    body.userId = resolvedUserId;
     const event = store.recordEvent(body);
     return sendJson(res, 201, { event });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/music/recalculate-profile') {
     const body = await parseBody(req);
-    const userId = body.userId || url.searchParams.get('userId') || 'anonymous';
+    const userId = await resolveUserId(req, body.userId || url.searchParams.get('userId'));
+    if (!userId) return sendJson(res, 401, { error: 'Unauthorized' });
     return sendJson(res, 200, { profile: store.rebuildUserTasteProfile(userId) });
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/music/autoplay') {
-    const body = await parseBody(req).catch(() => ({}));
-    return sendJson(res, 200, await buildAutoplay(body));
-  }
-
   if (req.method === 'POST' && url.pathname === '/api/music/recommendations') {
-    const body = await parseBody(req).catch(() => ({}));
-    return sendJson(res, 200, await buildRecommendations(body));
+    const body = await parseBodyAllowInvalid(req);
+    const userId = await resolveUserId(req, body.userId);
+    if (!userId) return sendJson(res, 401, { error: 'Unauthorized' });
+    body.userId = userId;
+    return sendJson(res, 200, await buildRecommendations(body, { accessToken: bearerToken(req) }));
   }
 
   if (req.method === 'POST' && url.pathname === '/api/music/mixes') {
-    const body = await parseBody(req).catch(() => ({}));
-    return sendJson(res, 200, await buildMixes(body));
+    const body = await parseBodyAllowInvalid(req);
+    const userId = await resolveUserId(req, body.userId);
+    if (!userId) return sendJson(res, 401, { error: 'Unauthorized' });
+    body.userId = userId;
+    return sendJson(res, 200, await buildMixes(body, { accessToken: bearerToken(req) }));
   }
 
   if (req.method === 'POST' && url.pathname === '/api/music/feedback') {
-    const body = await parseBody(req).catch(() => ({}));
+    const body = await parseBodyAllowInvalid(req);
+    const userId = await resolveUserId(req, body.userId);
+    if (!userId) return sendJson(res, 401, { error: 'Unauthorized' });
+    body.userId = userId;
     return sendJson(res, 200, await recordFeedback(body));
   }
 
   if (req.method === 'GET' && url.pathname === '/api/music/recommendations') {
-    const userId = url.searchParams.get('userId') || 'anonymous';
+    const userId = await resolveUserId(req, url.searchParams.get('userId'));
+    if (!userId) return sendJson(res, 401, { error: 'Unauthorized' });
     const type = url.searchParams.get('type') || PLAYLIST_TYPES.FOR_YOU;
     const limit = Number(url.searchParams.get('limit') || 25);
-    const deps = await recommendationDeps({ language: url.searchParams.get('language') });
+    const deps = await recommendationDeps(
+      { language: url.searchParams.get('language') },
+      { userId, accessToken: bearerToken(req) }
+    );
     const songs = await getRecommendations(userId, { limit, playlistType: type, language: url.searchParams.get('language') }, deps);
     return sendJson(res, 200, { songs: deduplicateSongs(songs) });
   }
 
   if ((req.method === 'POST' || req.method === 'GET') && url.pathname === '/api/music/autoplay') {
-    const body = req.method === 'POST' ? await parseBody(req) : {};
-    const seedSongId = body.seedSongId || body.songId || url.searchParams.get('seedSongId') || url.searchParams.get('songId');
-    const limit = Number(body.limit || url.searchParams.get('limit') || 10);
-    const currentQueueIds = new Set((body.currentQueueIds || []).map(String));
-    const excludedSongIds = new Set((body.excludedSongIds || []).map(String));
-    const language = body.language || url.searchParams.get('language');
-    const userId = body.userId || url.searchParams.get('userId') || 'anonymous';
-
-    if (!seedSongId) {
-      return sendJson(res, 400, { error: 'seedSongId is required' });
-    }
-
-    const deps = await recommendationDeps({ seedSongId, language });
-    const rawCandidates = await getRecommendations(userId, {
-      limit: Math.max(limit * 3, 30),
-      playlistType: PLAYLIST_TYPES.SIMILAR,
-      seedSongId,
-      language
-    }, deps).catch(() => []);
-
-    const suggestions = await saavn.getSongSuggestions(seedSongId, limit * 2).catch(() => []);
-    const allCandidates = deduplicateSongs([...rawCandidates, ...suggestions]);
-
-    const norm = (str) => String(str || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
-    const seed = await saavn.getSong(seedSongId).catch(() => null);
-    const seedKey = seed ? (norm(seed.title) + ':' + norm(seed.primary_artists || seed.artist)) : '';
-
-    const seenKeys = new Set();
-    if (seedKey) {
-      seenKeys.add(seedKey);
-    }
-
-    const filtered = allCandidates.filter((song) => {
-      if (!song) return false;
-      const sid = String(song.id || song.saavn_id || '');
-      if (!sid || sid === String(seedSongId)) return false;
-      if (currentQueueIds.has(sid) || excludedSongIds.has(sid)) return false;
-
-      const key = norm(song.title) + ':' + norm(song.primary_artists || song.artist);
-      if (key && seenKeys.has(key)) return false;
-      if (key) seenKeys.add(key);
-      return true;
-    });
-
-    return sendJson(res, 200, {
-      seedSongId,
-      songs: filtered.slice(0, limit)
-    });
+    const body = req.method === 'POST' ? await parseBodyAllowInvalid(req) : {};
+    const params = url.searchParams;
+    const normalized = {
+      ...body,
+      seedSongId: body.seedSongId || body.songId || params.get('seedSongId') || params.get('songId') || undefined,
+      userId: body.userId || params.get('userId') || 'anonymous',
+      language: body.language || params.get('language') || undefined,
+      limit: Number(body.limit || params.get('limit') || 10),
+      currentQueueIds: toIdArray(body.currentQueueIds || params.getAll('currentQueueIds')),
+      excludedSongIds: toIdArray(body.excludedSongIds || params.getAll('excludedSongIds')),
+    };
+    const userId = await resolveUserId(req, normalized.userId);
+    if (!userId) return sendJson(res, 401, { error: 'Unauthorized' });
+    normalized.userId = userId;
+    return sendJson(res, 200, await buildAutoplay(normalized, { accessToken: bearerToken(req) }));
   }
 
   if (req.method === 'GET' && url.pathname === '/api/music/similar') {
@@ -282,7 +351,8 @@ if (require.main === module) {
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
       return serveStatic(req, res, url);
     } catch (error) {
-      return sendJson(res, 500, { error: error.message });
+      const status = error && error.status === 413 ? 413 : 500;
+      return sendJson(res, status, { error: error.message });
     }
   }).listen(PORT, '0.0.0.0', () => {
     console.log(`D'Tunes listening on http://0.0.0.0:${PORT}`);
@@ -296,6 +366,7 @@ module.exports = async (req, res) => {
     const url = new URL(req.url, `${protocol}://${host}`);
     return await handleApi(req, res, url);
   } catch (error) {
-    return sendJson(res, 500, { error: error.message });
+    const status = error && error.status === 413 ? 413 : 500;
+    return sendJson(res, status, { error: error.message });
   }
 };
