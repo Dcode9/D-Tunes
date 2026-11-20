@@ -11,6 +11,14 @@
       "destination": "/downloads/index.html"
     },
     {
+      "source": "/api-v2",
+      "destination": "/api/v2.py"
+    },
+    {
+      "source": "/api-v2/(.*)",
+      "destination": "/api/v2.py"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/index.js"
     }
@@ -34,6 +42,16 @@
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" },
         { "key": "Service-Worker-Allowed", "value": "/" }
+      ]
+    },
+    {
+      "source": "/api-v2/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,OPTIONS,HEAD" },
+        { "key": "Access-Control-Allow-Headers", "value": "Range, If-Range, Content-Type, Authorization, X-Requested-With" },
+        { "key": "Access-Control-Expose-Headers", "value": "Content-Range, Accept-Ranges, Content-Length" },
+        { "key": "Cache-Control", "value": "no-store, private" }
       ]
     },
     {

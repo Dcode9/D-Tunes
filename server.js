@@ -344,10 +344,32 @@ function serveStatic(req, res, url) {
   });
 }
 
+function proxyApiV2(req, res, url) {
+  const targetHost = process.env.YTDLP_API_HOST || '127.0.0.1';
+  const targetPort = Number(process.env.YTDLP_API_PORT || 8000);
+  const targetPath = url.pathname.replace(/^\/api-v2/, '/api') + url.search;
+  const options = {
+    hostname: targetHost,
+    port: targetPort,
+    path: targetPath,
+    method: req.method,
+    headers: { ...req.headers, host: `${targetHost}:${targetPort}` },
+  };
+  const proxyReq = http.request(options, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    proxyRes.pipe(res);
+  });
+  proxyReq.on('error', (err) => {
+    sendJson(res, 502, { error: 'Failed to connect to yt-dlp backend', details: err.message });
+  });
+  req.pipe(proxyReq);
+}
+
 if (require.main === module) {
   http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     try {
+      if (url.pathname.startsWith('/api-v2')) return proxyApiV2(req, res, url);
       if (url.pathname.startsWith('/api/')) return await handleApi(req, res, url);
       return serveStatic(req, res, url);
     } catch (error) {

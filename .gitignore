@@ -10,3 +10,5 @@ browserless-automation/
 *.mp4
 
 data/
+__pycache__/
+*.pyc
