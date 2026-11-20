@@ -21,16 +21,19 @@ test('D-Tunes API v2: Python backend file exists and has required routes and opt
 
   const content = fs.readFileSync(v2Path, 'utf8');
   assert.ok(content.includes('def search_sync'), 'api/v2.py must have search_sync');
+  assert.ok(content.includes('def search_ytmusic'), 'api/v2.py must have search_ytmusic');
   assert.ok(content.includes('def resolve_sync'), 'api/v2.py must have resolve_sync');
   assert.ok(content.includes('player_client'), 'api/v2.py must configure YouTube player_client');
   assert.ok(content.includes('/health'), 'api/v2.py must have /health endpoint');
   assert.ok(content.includes('/search'), 'api/v2.py must have /search endpoint');
+  assert.ok(content.includes('/related/{video_id}'), 'api/v2.py must have /related/{video_id} endpoint');
+  assert.ok(content.includes('/lyrics/{video_id}'), 'api/v2.py must have /lyrics/{video_id} endpoint');
   assert.ok(content.includes('/stream/{video_id}'), 'api/v2.py must have /stream/{video_id} endpoint');
   assert.ok(content.includes('/resolve/{video_id}'), 'api/v2.py must have /resolve/{video_id} endpoint');
   assert.ok(content.includes('prefix="/api-v2"'), 'api/v2.py must mount router with /api-v2 prefix');
 });
 
-test('D-Tunes API v2: requirements.txt specifies fastapi, httpx, yt-dlp, and pydantic', () => {
+test('D-Tunes API v2: requirements.txt specifies fastapi, httpx, yt-dlp, pydantic, and ytmusicapi', () => {
   const reqPath = path.join(__dirname, '../requirements.txt');
   assert.ok(fs.existsSync(reqPath), 'requirements.txt must exist');
   const reqContent = fs.readFileSync(reqPath, 'utf8');
@@ -38,6 +41,7 @@ test('D-Tunes API v2: requirements.txt specifies fastapi, httpx, yt-dlp, and pyd
   assert.ok(reqContent.includes('yt-dlp'), 'requirements.txt must include yt-dlp');
   assert.ok(reqContent.includes('httpx'), 'requirements.txt must include httpx');
   assert.ok(reqContent.includes('pydantic'), 'requirements.txt must include pydantic');
+  assert.ok(reqContent.includes('ytmusicapi'), 'requirements.txt must include ytmusicapi');
 });
 
 test('D-Tunes API v2: src/js/api.js implements mediaAPI and aliases jiosaavnAPI', () => {

@@ -163,7 +163,26 @@
 
             const tickPlayhead = () => {
                 const isTransitioning = (typeof trackTransition !== 'undefined' && trackTransition.active);
-                if (state.playing && !state.isDragging && !state.isGlidingToStart && !isTransitioning && Number.isFinite(audio.duration) && audio.duration > 0) {
+                const isYT = state.currentTrack?.source === 'youtube' && !state.currentTrack?.isOffline && window._ytPlayerInstance && typeof window._ytPlayerInstance.getCurrentTime === 'function';
+                if (isYT && state.playing && !state.isDragging) {
+                    try {
+                        const cur = window._ytPlayerInstance.getCurrentTime() || 0;
+                        const dur = window._ytPlayerInstance.getDuration() || state.currentTrack?.duration || 1;
+                        if (dur > 0) {
+                            paintPlayhead(cur / dur);
+                            const currTimeEl = document.getElementById('seek-current-time');
+                            const durTimeEl = document.getElementById('seek-duration-time');
+                            if (currTimeEl && typeof utils !== 'undefined' && utils.formatTime) currTimeEl.textContent = utils.formatTime(cur);
+                            if (durTimeEl && typeof utils !== 'undefined' && utils.formatTime) durTimeEl.textContent = utils.formatTime(dur);
+                            const sb = document.getElementById('seek-bar');
+                            if (sb) {
+                                sb.value = cur;
+                                sb.max = dur;
+                            }
+                            if (typeof lyricsManager !== 'undefined' && lyricsManager.syncTime) lyricsManager.syncTime(cur, true);
+                        }
+                    } catch (_) {}
+                } else if (state.playing && !state.isDragging && !state.isGlidingToStart && !isTransitioning && Number.isFinite(audio.duration) && audio.duration > 0) {
                     paintPlayhead(audio.currentTime / audio.duration);
                 }
                 requestAnimationFrame(tickPlayhead);

@@ -98,7 +98,26 @@
             },
 
             getSongSuggestions: async (id, limit = 20) => {
-                return [];
+                if (!id || isNetworkOffline()) return [];
+                try {
+                    const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/related/${encodeURIComponent(id)}?limit=${limit}`);
+                    if (Array.isArray(data)) {
+                        return data.map(r => mediaAPI.normalizeTrack(r)).filter(Boolean);
+                    }
+                    return [];
+                } catch (e) {
+                    return [];
+                }
+            },
+
+            getLyrics: async (id) => {
+                if (!id || isNetworkOffline()) return null;
+                try {
+                    const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/lyrics/${encodeURIComponent(id)}`);
+                    return data?.lyrics || null;
+                } catch (e) {
+                    return null;
+                }
             },
 
             getSong: async (id) => {
@@ -138,6 +157,7 @@
                     title: title,
                     artist: artist,
                     primaryArtists: artist,
+                    album: item.album || '',
                     img: artwork,
                     artwork: artwork,
                     url: playUrl,

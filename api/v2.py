@@ -18,6 +18,18 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, field_validator
 import yt_dlp
 
+try:
+    from ytmusicapi import YTMusic
+    _ytmusic_client: Optional[YTMusic] = None
+
+    def get_ytmusic() -> YTMusic:
+        global _ytmusic_client
+        if _ytmusic_client is None:
+            _ytmusic_client = YTMusic()
+        return _ytmusic_client
+except Exception:
+    get_ytmusic = None  # type: ignore
+
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
@@ -28,6 +40,7 @@ class Track(BaseModel):
     artist: str
     artwork: str
     duration: Optional[int] = None
+    album: Optional[str] = None
     source: str = "youtube"
 
     @field_validator("id")
@@ -193,7 +206,73 @@ def _normalize_entry(entry: dict) -> Optional[Track]:
     )
 
 
+def search_ytmusic(query: str, limit: int = 10) -> list[Track]:
+    """Search YouTube Music songs using ytmusicapi."""
+    if not get_ytmusic:
+        return []
+    try:
+        ytm = get_ytmusic()
+        raw = ytm.search(query, filter="songs")
+        tracks: list[Track] = []
+        for item in raw:
+            if not isinstance(item, dict) or item.get("resultType") != "song":
+                continue
+            video_id = item.get("videoId")
+            if not video_id or not is_valid_video_id(video_id):
+                continue
+            title = item.get("title") or "Unknown"
+            artists_list = item.get("artists") or []
+            artist_names = [a.get("name") for a in artists_list if isinstance(a, dict) and a.get("name")]
+            artist = ", ".join(artist_names) if artist_names else "Unknown Artist"
+
+            album_info = item.get("album")
+            album_name = album_info.get("name") if isinstance(album_info, dict) else None
+
+            duration = item.get("duration_seconds")
+            if duration is None:
+                dur_str = item.get("duration")
+                if dur_str and ":" in dur_str:
+                    parts = dur_str.split(":")
+                    try:
+                        if len(parts) == 2:
+                            duration = int(parts[0]) * 60 + int(parts[1])
+                        elif len(parts) == 3:
+                            duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                    except ValueError:
+                        duration = None
+
+            thumbnails = item.get("thumbnails") or []
+            artwork = ""
+            if thumbnails:
+                artwork = thumbnails[-1].get("url", "")
+                if artwork:
+                    artwork = re.sub(r"=w\d+-h\d+", "=w544-h544", artwork)
+
+            tracks.append(
+                Track(
+                    id=video_id,
+                    title=title,
+                    artist=artist,
+                    artwork=artwork,
+                    duration=int(duration) if duration else None,
+                    album=album_name,
+                    source="youtube",
+                )
+            )
+            if len(tracks) >= limit:
+                break
+        return tracks
+    except Exception:
+        return []
+
+
 def search_sync(query: str, limit: int = 10) -> list[Track]:
+    # Primary: ytmusicapi for fast, rich music search
+    ytm_results = search_ytmusic(query, limit=limit)
+    if ytm_results:
+        return ytm_results
+
+    # Secondary: fallback to yt-dlp across client candidates
     last_err: Optional[Exception] = None
     for client_list in CLIENT_CANDIDATES:
         try:
@@ -508,6 +587,113 @@ async def resolve(video_id: str) -> ResolveResponse:
         ext=info.ext,
         cached=was_cached,
     )
+
+
+def related_sync(video_id: str, limit: int = 20) -> list[Track]:
+    """Get related / up next tracks via YouTube Music watch playlist."""
+    if not get_ytmusic:
+        return []
+    try:
+        ytm = get_ytmusic()
+        watch = ytm.get_watch_playlist(videoId=video_id)
+        raw_tracks = watch.get("tracks") or []
+        tracks: list[Track] = []
+        for item in raw_tracks:
+            if not isinstance(item, dict):
+                continue
+            v_id = item.get("videoId")
+            if not v_id or not is_valid_video_id(v_id) or v_id == video_id:
+                continue
+            title = item.get("title") or "Unknown"
+            artists_list = item.get("artists") or []
+            artist_names = [a.get("name") for a in artists_list if isinstance(a, dict) and a.get("name")]
+            artist = ", ".join(artist_names) if artist_names else "Unknown Artist"
+
+            album_info = item.get("album")
+            album_name = album_info.get("name") if isinstance(album_info, dict) else None
+
+            duration = item.get("duration_seconds")
+            if duration is None:
+                dur_str = item.get("duration")
+                if dur_str and ":" in dur_str:
+                    parts = dur_str.split(":")
+                    try:
+                        if len(parts) == 2:
+                            duration = int(parts[0]) * 60 + int(parts[1])
+                        elif len(parts) == 3:
+                            duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                    except ValueError:
+                        duration = None
+
+            thumbnails = item.get("thumbnails") or []
+            artwork = ""
+            if thumbnails:
+                artwork = thumbnails[-1].get("url", "")
+                if artwork:
+                    artwork = re.sub(r"=w\d+-h\d+", "=w544-h544", artwork)
+
+            tracks.append(
+                Track(
+                    id=v_id,
+                    title=title,
+                    artist=artist,
+                    artwork=artwork,
+                    duration=int(duration) if duration else None,
+                    album=album_name,
+                    source="youtube",
+                )
+            )
+            if len(tracks) >= limit:
+                break
+        return tracks
+    except Exception:
+        return []
+
+
+def lyrics_sync(video_id: str) -> Optional[str]:
+    """Get lyrics for a track via YouTube Music."""
+    if not get_ytmusic:
+        return None
+    try:
+        ytm = get_ytmusic()
+        watch = ytm.get_watch_playlist(videoId=video_id)
+        browse_id = watch.get("lyrics")
+        if not browse_id:
+            return None
+        lyr = ytm.get_lyrics(browse_id)
+        return lyr.get("lyrics") if isinstance(lyr, dict) else None
+    except Exception:
+        return None
+
+
+@router.get("/related/{video_id}")
+async def related(video_id: str, limit: int = 20) -> list[Track]:
+    if not is_valid_video_id(video_id):
+        raise HTTPException(status_code=400, detail={"error": "Invalid video ID format", "code": "invalid_id"})
+    limit_val = max(1, min(limit, 50))
+    cache_key = f"related:{video_id}:{limit_val}"
+    cached = await search_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    results: list[Track] = await asyncio.to_thread(related_sync, video_id, limit_val)
+    await search_cache.set(cache_key, results, SEARCH_TTL)
+    return results
+
+
+@router.get("/lyrics/{video_id}")
+async def lyrics_endpoint(video_id: str) -> dict[str, Any]:
+    if not is_valid_video_id(video_id):
+        raise HTTPException(status_code=400, detail={"error": "Invalid video ID format", "code": "invalid_id"})
+    cache_key = f"lyrics:{video_id}"
+    cached = await search_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    text = await asyncio.to_thread(lyrics_sync, video_id)
+    if not text:
+        raise HTTPException(status_code=404, detail={"error": "Lyrics not found", "code": "lyrics_not_found"})
+    data = {"lyrics": text, "source": "YouTube Music"}
+    await search_cache.set(cache_key, data, STREAM_TTL)
+    return data
 
 
 # ---------------------------------------------------------------------------
