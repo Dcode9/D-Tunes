@@ -148,10 +148,10 @@
                     results.classList.add('is-updating');
                     const requestedQuery = query;
                     state.searchDebounce = setTimeout(async () => {
-                        const songs = await jiosaavnAPI.searchSongs(requestedQuery, 5);
+                        const songs = await jiosaavnAPI.searchSongs(requestedQuery, 6);
                         if (input.value.trim() !== requestedQuery) return;
                         results.classList.remove('is-updating');
-                        if(songs.length === 0) {
+                        if (!songs || songs.length === 0) {
                             results.innerHTML = '<div class="p-4 text-center text-zinc-400 text-sm font-medium">No songs found</div>';
                             return;
                         }
@@ -161,7 +161,7 @@
                         }).join('');
                         stripTouchHoverClasses();
                         updateMarquees();
-                    }, deviceMode.isMobileUI() ? 120 : 180);
+                    }, 350);
                 });
                 
                 input.addEventListener('keydown', (e) => {
@@ -307,15 +307,46 @@
 
             performFullSearch: async (query) => {
                 ui.switchView('search');
-                document.getElementById('search-title').textContent = `Results for "${query}"`;
+                const titleEl = document.getElementById('search-title');
+                if (titleEl) titleEl.textContent = `Results for "${query}"`;
                 document.getElementById('search-history-section')?.classList.add('hidden');
-                document.getElementById('search-content').classList.add('hidden');
-                document.getElementById('search-loading').classList.remove('hidden');
+                const contentEl = document.getElementById('search-content');
+                const loadingEl = document.getElementById('search-loading');
+                if (contentEl) contentEl.classList.add('hidden');
+                if (loadingEl) loadingEl.classList.remove('hidden');
 
                 const data = await jiosaavnAPI.searchAll(query);
-                document.getElementById('search-loading').classList.add('hidden');
-                document.getElementById('search-content').classList.remove('hidden');
-                if(!data.top) { document.getElementById('search-content').innerHTML = '<p class="text-gray-400 pl-8">No results found.</p>'; return; }
+                if (loadingEl) loadingEl.classList.add('hidden');
+                if (contentEl) contentEl.classList.remove('hidden');
+
+                let emptyEl = document.getElementById('search-empty-state');
+                if (!emptyEl && contentEl) {
+                    emptyEl = document.createElement('div');
+                    emptyEl.id = 'search-empty-state';
+                    emptyEl.className = 'text-gray-400 pl-4 md:pl-8 py-8 text-base hidden';
+                    contentEl.insertBefore(emptyEl, contentEl.firstChild);
+                }
+
+                const topResultEl = document.getElementById('search-top-result');
+                const topWrapper = topResultEl ? topResultEl.closest('.grid') : null;
+                const albumsWrapper = document.getElementById('search-albums-grid')?.closest('.mb-12');
+                const artistsWrapper = document.getElementById('search-artists-grid')?.closest('.mb-12');
+
+                if (!data || !data.top) {
+                    if (emptyEl) {
+                        emptyEl.textContent = `No results found for "${query}".`;
+                        emptyEl.classList.remove('hidden');
+                    }
+                    if (topWrapper) topWrapper.classList.add('hidden');
+                    if (albumsWrapper) albumsWrapper.classList.add('hidden');
+                    if (artistsWrapper) artistsWrapper.classList.add('hidden');
+                    return;
+                }
+
+                if (emptyEl) emptyEl.classList.add('hidden');
+                if (topWrapper) topWrapper.classList.remove('hidden');
+                if (albumsWrapper) albumsWrapper.classList.remove('hidden');
+                if (artistsWrapper) artistsWrapper.classList.remove('hidden');
 
                 const topStoreId = songStore.add(data.top);
                 const topBlocked = ui.isOfflineUnavailable(data.top);

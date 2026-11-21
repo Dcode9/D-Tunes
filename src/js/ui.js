@@ -2140,6 +2140,11 @@
                 const activeLoading = !!loading && (state.playing || isPlaybackPending || state.loading);
                 island?.classList.toggle('is-loading', activeLoading);
                 document.getElementById('album-art-wrapper')?.classList.toggle('is-loading', activeLoading);
+                document.getElementById('seek-bar-container')?.classList.toggle('is-buffering', activeLoading);
+                document.getElementById('fs-seek-bar-container')?.classList.toggle('is-buffering', activeLoading);
+                document.getElementById('btn-play')?.classList.toggle('is-loading', activeLoading);
+                document.getElementById('fs-btn-play')?.classList.toggle('is-loading', activeLoading);
+
                 if (state.currentTrack) {
                     if (state.currentTrack.name && (!title.textContent || title.textContent === 'Not Playing')) {
                         title.textContent = state.currentTrack.name;
@@ -2440,6 +2445,9 @@ const mPlayBtn = document.getElementById('m-icon-play');
                     }
                 }
                 const playing = state.playing;
+                const isLoading = !!(state.loading || isPlaybackPending);
+                document.getElementById('btn-play')?.classList.toggle('is-loading', isLoading);
+                document.getElementById('fs-btn-play')?.classList.toggle('is-loading', isLoading);
                 ui.morphPlayIcon(playing);
                 const mPlayBtn = document.getElementById('m-icon-play');
                 const mPauseBtn = document.getElementById('m-icon-pause');

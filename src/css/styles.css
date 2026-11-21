@@ -1816,18 +1816,72 @@ html[data-ui-mode="mobile"] #player-footer {
     will-change: transform, opacity;
 }
 
-/* Instant loading feedback */
+/* Instant loading & API Delay feedback */
 #info-island.is-loading #p-title,
 #info-island.is-loading #p-artist {
     opacity: 0.92;
+    animation: title-buffering-pulse 1.4s ease-in-out infinite;
 }
 
-#album-art-wrapper.is-loading::after {
-    display: none !important;
+@keyframes title-buffering-pulse {
+    0%, 100% { opacity: 0.92; }
+    50% { opacity: 0.55; }
 }
 
-#album-art-wrapper.is-loading::before {
-    display: none !important;
+#album-art-wrapper.is-loading {
+    animation: album-loading-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes album-loading-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.75; transform: scale(0.98); }
+}
+
+#seek-bar-container.is-buffering #seek-bar-track,
+#fs-seek-bar-container.is-buffering #fs-seek-bar-track {
+    background: linear-gradient(90deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.65) 50%, rgba(255,255,255,0.15) 100%) !important;
+    background-size: 200% 100% !important;
+    animation: seekbar-buffering-shimmer 1.2s ease-in-out infinite !important;
+}
+
+@keyframes seekbar-buffering-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.btn-mezzotint-play.is-loading {
+    position: relative !important;
+}
+
+.btn-mezzotint-play.is-loading .pp-glyph {
+    opacity: 0.25;
+}
+
+.btn-mezzotint-play.is-loading::after {
+    content: '';
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border: 2.5px solid rgba(255, 255, 255, 0.2);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: play-btn-spin 0.75s linear infinite;
+    pointer-events: none;
+}
+
+@keyframes play-btn-spin {
+    to { transform: rotate(360deg); }
+}
+
+.song-card.is-loading-track,
+.swipe-song-card.is-loading-track {
+    border-color: rgba(255, 255, 255, 0.4) !important;
+    animation: card-loading-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes card-loading-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.65; }
 }
 
 @keyframes album-loading-sheen {

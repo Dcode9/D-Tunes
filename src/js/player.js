@@ -21,6 +21,53 @@
         // YouTube Client-Side Player Adapter
         let ytPlayer = null;
         let ytPlayerReady = false;
+        let ytProgressTimer = null;
+
+        const startYTProgressTimer = () => {
+            if (ytProgressTimer) clearInterval(ytProgressTimer);
+            ytProgressTimer = setInterval(() => {
+                if (!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function' || !state.playing) return;
+                const cur = ytPlayer.getCurrentTime() || 0;
+                const ytDur = typeof ytPlayer.getDuration === 'function' ? ytPlayer.getDuration() : 0;
+                const dur = (ytDur > 0) ? ytDur : (state.currentTrack?.duration || state.currentTrack?.duration_seconds || 0);
+
+                if (dur > 0 && !state.isDragging) {
+                    const sb = document.getElementById('seek-bar');
+                    if (sb && document.activeElement !== sb) {
+                        sb.max = dur;
+                        sb.value = cur;
+                    }
+                    if (typeof paintPlayhead === 'function') paintPlayhead(cur / dur);
+                    const currTimeEl = document.getElementById('seek-current-time');
+                    const durTimeEl = document.getElementById('seek-duration-time');
+                    if (currTimeEl && typeof utils !== 'undefined') currTimeEl.textContent = utils.formatTime(cur);
+                    if (durTimeEl && typeof utils !== 'undefined') durTimeEl.textContent = utils.formatTime(dur);
+                    if (state.fullscreenMode) {
+                        const fsCurr = document.getElementById('fs-curr-time');
+                        const fsDur = document.getElementById('fs-dur-time');
+                        const fsSeekEdge = document.getElementById('fs-seek-edge-marker');
+                        const fsVisualizer = document.getElementById('fs-visualizer-canvas');
+                        const fsSeekOld = document.getElementById('fs-seek-progress');
+                        if (fsCurr && typeof utils !== 'undefined') fsCurr.textContent = utils.formatTime(cur);
+                        if (fsDur && typeof utils !== 'undefined') fsDur.textContent = utils.formatTime(dur);
+                        const pct = (cur / dur) * 100;
+                        if (fsSeekEdge) fsSeekEdge.style.left = `${pct}%`;
+                        if (fsVisualizer) fsVisualizer.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+                        if (fsSeekOld) fsSeekOld.style.width = `${pct}%`;
+                    }
+                    if (typeof lyricsManager !== 'undefined' && lyricsManager.syncTime) {
+                        lyricsManager.syncTime(cur);
+                    }
+                }
+            }, 250);
+        };
+
+        const stopYTProgressTimer = () => {
+            if (ytProgressTimer) {
+                clearInterval(ytProgressTimer);
+                ytProgressTimer = null;
+            }
+        };
 
         const initYTPlayer = () => {
             if (typeof window === 'undefined' || typeof YT === 'undefined' || !YT.Player) return;
@@ -49,16 +96,19 @@
                                 state.loading = false;
                                 ui.setPlayerLoading(false);
                                 ui.updatePlayBtn();
+                                startYTProgressTimer();
                                 if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
                                 if (typeof viz !== 'undefined' && viz.start) viz.start();
                             } else if (event.data === 2) { // PAUSED
                                 state.playing = false;
                                 ui.updatePlayBtn();
+                                stopYTProgressTimer();
                                 if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
                             } else if (event.data === 3) { // BUFFERING
                                 state.loading = true;
                                 ui.setPlayerLoading(true);
                             } else if (event.data === 0) { // ENDED
+                                stopYTProgressTimer();
                                 if (state.repeat === 2) {
                                     ytPlayer.seekTo(0, true);
                                     ytPlayer.playVideo();
@@ -69,6 +119,7 @@
                         },
                         onError: (err) => {
                             console.warn('[DTunes] YouTube Player error:', err);
+                            stopYTProgressTimer();
                             if (state.currentTrack?.url) {
                                 audio.crossOrigin = 'anonymous';
                                 audio.src = state.currentTrack.url;
@@ -215,6 +266,7 @@
                     ytPlayer.playVideo();
                     state.playing = true;
                     ui.updatePlayBtn();
+                    startYTProgressTimer();
                     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
                     if (typeof viz !== 'undefined' && viz.start) viz.start();
                     return;
@@ -250,6 +302,7 @@
                     ytPlayer.pauseVideo();
                     state.playing = false;
                     ui.updatePlayBtn();
+                    stopYTProgressTimer();
                     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
                     return;
                 } catch (_) {}

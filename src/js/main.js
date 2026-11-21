@@ -749,45 +749,58 @@
             }, { passive: true });
 
             let lastPersistSecond = -1;
+            audio.addEventListener('playing', () => {
+                if (typeof ui !== 'undefined' && ui.setPlayerLoading) ui.setPlayerLoading(false);
+            });
+            audio.addEventListener('waiting', () => {
+                if (typeof ui !== 'undefined' && ui.setPlayerLoading) ui.setPlayerLoading(true);
+            });
             audio.addEventListener('timeupdate', () => {
                 if (typeof lyricsManager !== 'undefined' && lyricsManager.syncTime) lyricsManager.syncTime(audio.currentTime);
                 if (window.listeningSession) listeningSession.update();
-                if (Number.isFinite(audio.duration) && audio.duration > 0 && !state.isDragging) {
-                    seekBar.max = audio.duration;
-                    if (document.activeElement !== seekBar) seekBar.value = audio.currentTime;
-                    paintPlayhead(audio.currentTime / audio.duration);
+                const cur = audio.currentTime || 0;
+                const dur = (Number.isFinite(audio.duration) && audio.duration > 0)
+                    ? audio.duration
+                    : (state.currentTrack?.duration || state.currentTrack?.duration_seconds || 0);
+
+                if (cur > 0.2 && typeof ui !== 'undefined' && ui.setPlayerLoading && state.loading) {
+                    ui.setPlayerLoading(false);
+                }
+
+                if (dur > 0 && !state.isDragging) {
+                    seekBar.max = dur;
+                    if (document.activeElement !== seekBar) seekBar.value = cur;
+                    paintPlayhead(cur / dur);
                     if (state.playing && !isVizLoopRunning && typeof viz !== 'undefined' && viz.start) {
                         viz.start();
                     }
 
                     const currTimeEl = document.getElementById('seek-current-time');
                     const durTimeEl = document.getElementById('seek-duration-time');
-                    if (currTimeEl) currTimeEl.textContent = utils.formatTime(audio.currentTime || 0);
+                    if (currTimeEl) currTimeEl.textContent = utils.formatTime(cur);
+                    if (durTimeEl) durTimeEl.textContent = utils.formatTime(dur);
                     if (state.fullscreenMode) {
                         const fsCurr = document.getElementById('fs-curr-time');
                         const fsDur = document.getElementById('fs-dur-time');
                         const fsSeekEdge = document.getElementById('fs-seek-edge-marker');
                         const fsVisualizer = document.getElementById('fs-visualizer-canvas');
                         const fsSeekOld = document.getElementById('fs-seek-progress');
-                        if (fsCurr) fsCurr.textContent = utils.formatTime(audio.currentTime || 0);
-                        if (fsDur) fsDur.textContent = utils.formatTime(audio.duration || 0);
-                        if (Number.isFinite(audio.duration) && audio.duration > 0) {
-                            const pct = (audio.currentTime / audio.duration) * 100;
-                            if (fsSeekEdge) fsSeekEdge.style.left = `${pct}%`;
-                            if (fsVisualizer) fsVisualizer.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
-                            if (fsSeekOld) fsSeekOld.style.width = `${pct}%`;
-                        }
+                        if (fsCurr) fsCurr.textContent = utils.formatTime(cur);
+                        if (fsDur) fsDur.textContent = utils.formatTime(dur);
+                        const pct = (cur / dur) * 100;
+                        if (fsSeekEdge) fsSeekEdge.style.left = `${pct}%`;
+                        if (fsVisualizer) fsVisualizer.style.clipPath = `inset(0 ${100 - pct}% 0 0)`;
+                        if (fsSeekOld) fsSeekOld.style.width = `${pct}%`;
                     }
-                    if (durTimeEl) durTimeEl.textContent = utils.formatTime(audio.duration || 0);
 
                     if ('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function' && state.currentTrack) {
                         updateMediaPosition();
                     }
-                    if (currentProgress >= 0.9 && state.currentTrack && recommendationEvents.completedSongId !== state.currentTrack.id) {
+                    if ((cur / dur) >= 0.9 && state.currentTrack && recommendationEvents.completedSongId !== state.currentTrack.id) {
                         recommendationEvents.completedSongId = state.currentTrack.id;
                         recommendationEvents.record('play_complete', state.currentTrack, {
-                            playDurationSeconds: Math.floor(audio.currentTime),
-                            songDurationSeconds: Math.floor(audio.duration),
+                            playDurationSeconds: Math.floor(cur),
+                            songDurationSeconds: Math.floor(dur),
                         });
                     }
 

@@ -3,6 +3,7 @@
         // ============================================
         const API_V2_BASE = '/api-v2';
         const clientSearchCache = new Map();
+        let activeSearchAbortController = null;
 
         const isNetworkOffline = () => {
             if (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function') {
@@ -12,7 +13,7 @@
         };
 
         const mediaAPI = {
-            fetchWithRetry: async (url, retries = 3) => {
+            fetchWithRetry: async (url, retries = 2, customSignal = null) => {
                 if (typeof navigator !== 'undefined' && !navigator.onLine) {
                     throw new Error('Offline');
                 }
@@ -25,21 +26,26 @@
                     }
                     let timeoutId = null;
                     try {
-                        let fetchSignal;
-                        if (typeof AbortController !== 'undefined') {
-                            const controller = new AbortController();
-                            timeoutId = setTimeout(() => controller.abort(), 4000);
-                            fetchSignal = controller.signal;
+                        const controller = new AbortController();
+                        timeoutId = setTimeout(() => controller.abort(), 10000);
+                        
+                        // Combine customSignal with timeout controller if provided
+                        let fetchSignal = controller.signal;
+                        if (customSignal) {
+                            if (customSignal.aborted) throw new DOMException('Aborted', 'AbortError');
+                            customSignal.addEventListener('abort', () => controller.abort(), { once: true });
                         }
-                        const response = await fetch(url, fetchSignal ? { signal: fetchSignal } : undefined);
+
+                        const response = await fetch(url, { signal: fetchSignal });
                         if (timeoutId) clearTimeout(timeoutId);
                         if (!response.ok) throw new Error(`HTTP ${response.status}`);
                         return await response.json();
                     } catch (error) {
                         if (timeoutId) clearTimeout(timeoutId);
+                        if (error && error.name === 'AbortError') throw error;
                         if (isNetworkOffline()) throw error;
                         if (i === retries - 1) throw error;
-                        await new Promise(r => setTimeout(r, 600));
+                        await new Promise(r => setTimeout(r, 400));
                     }
                 }
             },
@@ -51,8 +57,15 @@
                 const cacheKey = `${normalizedQ}:${limit}`;
                 if (clientSearchCache.has(cacheKey)) return clientSearchCache.get(cacheKey);
 
+                // Cancel any previous in-flight quick-search
+                if (activeSearchAbortController) {
+                    try { activeSearchAbortController.abort(); } catch (_) {}
+                }
+                activeSearchAbortController = new AbortController();
+                const signal = activeSearchAbortController.signal;
+
                 try {
-                    const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/search?q=${encodeURIComponent(query)}&limit=${limit}`);
+                    const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/search?q=${encodeURIComponent(query)}&limit=${limit}`, 2, signal);
                     const results = (data.results || []).map(r => mediaAPI.normalizeTrack(r)).filter(Boolean);
                     const deduped = (typeof utils !== 'undefined' && utils.deduplicateSongs) ? utils.deduplicateSongs(results) : results;
                     clientSearchCache.set(cacheKey, deduped);
@@ -62,6 +75,7 @@
                     }
                     return deduped;
                 } catch (e) {
+                    if (e && e.name === 'AbortError') return [];
                     console.warn('[API-v2 Search] Error:', e);
                     return [];
                 }
