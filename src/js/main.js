@@ -1096,6 +1096,21 @@
                 });
             }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
 
+            // Song cards: the hover icon is Play, or Pause on the card whose song is playing right now.
+            const syncCardPlayState = () => {
+                const cur = state.currentTrack ? String(state.currentTrack.id) : '';
+                document.querySelectorAll('.sc-card[data-sc-id]').forEach((card) => {
+                    const isCur = !!cur && card.dataset.scId === cur;
+                    card.classList.toggle('is-current', isCur);
+                    card.classList.toggle('is-playing', isCur && !!state.playing);
+                });
+            };
+            const cardAudio = document.getElementById('audio-el');
+            if (cardAudio) {
+                ['play', 'pause', 'loadstart', 'emptied'].forEach((evt) =>
+                    cardAudio.addEventListener(evt, () => setTimeout(syncCardPlayState, 0)));
+            }
+
             // Edge blurs maintain constant GPU composite cache without per-frame reflow
 
             // iOS Platform Optimizations (Hardware Volume & AudioContext Unlock)

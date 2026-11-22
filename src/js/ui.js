@@ -1698,11 +1698,15 @@
                 const fallbackArt = typeof FALLBACK_ART !== 'undefined' ? FALLBACK_ART : 'DTunes.svg';
                 const rawImg = item.img || fallbackArt;
                 const safeImg = typeof sanitizeImageUrl === 'function' ? sanitizeImageUrl(rawImg) : (typeof utils !== 'undefined' && typeof utils.sanitizeImageUrl === 'function' ? utils.sanitizeImageUrl(rawImg) : rawImg);
+                // Blur field = 4 copies of the art at falling sharpness (see "SONG CARD" in styles.css).
+                // The flipped half mirrors the art's last rows below it, so colours match exactly where the art ends.
+                const scImg = (cls) => `<img src="${safeImg}" class="${cls}" alt="" loading="lazy" decoding="async" onerror="this.onerror=null;this.src='${fallbackArt}'">`;
+                const bgLayers = `${scImg('sc-l0')}<div class="sc-comp sc-l1">${scImg('sc-ci')}${scImg('sc-ci sc-flip')}</div><div class="sc-comp sc-l2">${scImg('sc-ci')}${scImg('sc-ci sc-flip')}</div>`;
                 if (offlineBlocked) {
                     const blockedArtist = utils.escapeHtml(item.artist);
                     return `
                     <div class="scroll-card sc-card opacity-45 grayscale cursor-not-allowed select-none relative flex flex-col overflow-hidden" aria-disabled="true" title="Not downloaded — unavailable offline">
-                        <div class="sc-bg" aria-hidden="true"><img src="${safeImg}" class="sc-bg-img" alt="" loading="lazy" decoding="async" onerror="this.src='${FALLBACK_ART}'"></div>
+                        <div class="sc-bg" aria-hidden="true">${bgLayers}</div>
                         <div class="sc-art">
                             <img src="${safeImg}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover" loading="lazy" decoding="async" alt="">
                             <div class="absolute inset-0 bg-black/55 flex flex-col items-center justify-center gap-1.5">
@@ -1731,12 +1735,16 @@
                         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
                     </button>`;
 
+                // Lets the hover icon show Pause on the card whose song is playing right now (kept in sync by main.js)
+                const isCurrentCard = !isContext && !!state.currentTrack && String(state.currentTrack.id) === String(item.id);
+                const scIdAttr = isContext ? '' : `data-sc-id="${utils.escapeHtml(String(item.id))}"`;
+
                 return `
-                <div class="scroll-card sc-card hover-pause group relative flex flex-col overflow-hidden" ${dblClickHandler}>
-                    <div class="sc-bg" aria-hidden="true"><img src="${safeImg}" class="sc-bg-img" alt="" loading="lazy" decoding="async" onerror="this.src='${FALLBACK_ART}'"></div>
+                <div class="scroll-card sc-card hover-pause group relative flex flex-col overflow-hidden${isCurrentCard ? ' is-current' + (state.playing ? ' is-playing' : '') : ''}" ${scIdAttr} ${dblClickHandler}>
+                    <div class="sc-bg" aria-hidden="true">${bgLayers}</div>
                     <div class="sc-art cursor-pointer" onclick="${clickHandler}">
                         <img src="${safeImg}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover sc-art-img" loading="lazy" decoding="async" alt="">
-                        <span class="sc-play" aria-hidden="true"><svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
+                        <span class="sc-play" aria-hidden="true"></span>
                     </div>
                     <div class="sc-meta">
                         <div class="min-w-0 flex-1">
