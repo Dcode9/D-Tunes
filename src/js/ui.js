@@ -1701,18 +1701,20 @@
                 if (offlineBlocked) {
                     const blockedArtist = utils.escapeHtml(item.artist);
                     return `
-                    <div class="scroll-card glass-panel p-3 rounded-2xl flex flex-col w-40 opacity-45 grayscale cursor-not-allowed select-none relative overflow-hidden" aria-disabled="true" title="Not downloaded — unavailable offline">
-                        <div class="scroll-card-ambient" aria-hidden="true"><img src="${safeImg}" class="scroll-card-ambient-img" alt="" onerror="this.src='${FALLBACK_ART}'"></div>
-                        <div class="relative aspect-square rounded-xl overflow-hidden mb-2.5 bg-zinc-900 shadow-md z-10">
-                            <img src="${safeImg}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover" decoding="async">
+                    <div class="scroll-card sc-card opacity-45 grayscale cursor-not-allowed select-none relative flex flex-col overflow-hidden" aria-disabled="true" title="Not downloaded — unavailable offline">
+                        <div class="sc-bg" aria-hidden="true"><img src="${safeImg}" class="sc-bg-img" alt="" loading="lazy" decoding="async" onerror="this.src='${FALLBACK_ART}'"></div>
+                        <div class="sc-art">
+                            <img src="${safeImg}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover" loading="lazy" decoding="async" alt="">
                             <div class="absolute inset-0 bg-black/55 flex flex-col items-center justify-center gap-1.5">
                                 <svg class="w-5 h-5 text-white/80" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>
                                 <span class="text-[9px] font-bold text-white/85 uppercase tracking-wide">Not downloaded</span>
                             </div>
                         </div>
-                        <div class="w-full min-w-0 flex-1 z-10 relative">
-                            <div class="marquee-container w-full"><h3 class="font-bold text-gray-400 text-sm marquee-text">${utils.escapeHtml(item.name)}</h3></div>
-                            <div class="marquee-container w-full mt-0.5"><p class="text-xs text-gray-500 marquee-text">${blockedArtist}</p></div>
+                        <div class="sc-meta">
+                            <div class="min-w-0 flex-1">
+                                <div class="marquee-container w-full"><h3 class="sc-title marquee-text">${utils.escapeHtml(item.name)}</h3></div>
+                                <div class="marquee-container w-full mt-0.5"><p class="sc-artist marquee-text">${blockedArtist}</p></div>
+                            </div>
                         </div>
                     </div>`;
                 }
@@ -1722,26 +1724,24 @@
                 
                 // Three-dot menu button at bottom-right corner beside song name, ONLY appears on hover
                 const bottomMenuBtn = isContext && item.type === 'artist' ? `
-                    <button class="scroll-card-menu-btn opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1.5 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white flex-shrink-0" onclick="event.stopPropagation(); ui.toggleArtistLike({ id: '${utils.escapeJs(item.id)}', name: '${utils.escapeJs(item.name)}', artist: '${utils.escapeJs(item.artist || 'Artist')}', img: '${utils.escapeJs(item.img || FALLBACK_ART)}', type: 'artist' })" title="${artistLiked ? 'Unlike artist' : 'Like artist'}" aria-label="Like artist">
+                    <button class="scroll-card-menu-btn sc-menu-btn" onclick="event.stopPropagation(); ui.toggleArtistLike({ id: '${utils.escapeJs(item.id)}', name: '${utils.escapeJs(item.name)}', artist: '${utils.escapeJs(item.artist || 'Artist')}', img: '${utils.escapeJs(item.img || FALLBACK_ART)}', type: 'artist' })" title="${artistLiked ? 'Unlike artist' : 'Like artist'}" aria-label="Like artist">
                         <svg class="w-4 h-4 ${artistLiked ? 'text-red-500 fill-current' : ''}" viewBox="0 0 24 24" fill="${artistLiked ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54z"/></svg>
                     </button>` : `
-                    <button type="button" class="scroll-card-menu-btn opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1.5 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white flex-shrink-0" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${storeId}')" title="More Options" aria-label="More Options">
+                    <button type="button" class="scroll-card-menu-btn sc-menu-btn" onclick="event.stopPropagation(); ctxMenu.showSong(event, '${storeId}')" title="More Options" aria-label="More Options">
                         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
                     </button>`;
 
                 return `
-                <div class="scroll-card glass-panel p-3 rounded-2xl transition hover-pause group relative flex flex-col w-40 overflow-hidden" ${dblClickHandler}>
-                    <div class="scroll-card-ambient" aria-hidden="true"><img src="${safeImg}" class="scroll-card-ambient-img" alt="" onerror="this.src='${FALLBACK_ART}'"></div>
-                    <div class="relative aspect-square rounded-xl overflow-hidden mb-2.5 bg-zinc-900 shadow-md cursor-pointer z-10" onclick="${clickHandler}">
-                        <img src="${safeImg}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" decoding="async">
-                        <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                            <span class="bg-white text-black font-bold p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
-                        </div>
+                <div class="scroll-card sc-card hover-pause group relative flex flex-col overflow-hidden" ${dblClickHandler}>
+                    <div class="sc-bg" aria-hidden="true"><img src="${safeImg}" class="sc-bg-img" alt="" loading="lazy" decoding="async" onerror="this.src='${FALLBACK_ART}'"></div>
+                    <div class="sc-art cursor-pointer" onclick="${clickHandler}">
+                        <img src="${safeImg}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover sc-art-img" loading="lazy" decoding="async" alt="">
+                        <span class="sc-play" aria-hidden="true"><svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
                     </div>
-                    <div class="w-full min-w-0 flex items-center justify-between gap-1.5 z-10 relative mt-0.5">
+                    <div class="sc-meta">
                         <div class="min-w-0 flex-1">
-                            <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">${utils.escapeHtml(item.name)}</h3></div>
-                            <div class="marquee-container w-full mt-0.5"><p class="text-xs text-zinc-400 marquee-text">${utils.escapeHtml(item.artist)}</p></div>
+                            <div class="marquee-container w-full"><h3 class="sc-title marquee-text">${utils.escapeHtml(item.name)}</h3></div>
+                            <div class="marquee-container w-full mt-0.5"><p class="sc-artist marquee-text">${utils.escapeHtml(item.artist)}</p></div>
                         </div>
                         ${bottomMenuBtn}
                     </div>

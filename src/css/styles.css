@@ -848,17 +848,21 @@
 
         /* --- Desktop Shelf Navigation Buttons --- */
         .shelf-nav-btn {
+            --nav-shift: 0px;
+            --nav-scale: 1;
             position: absolute;
             top: 42%;
-            transform: translateY(-50%);
-            width: 38px;
-            height: 38px;
-            border-radius: 9999px;
-            background: rgba(10, 10, 14, 0.88);
-            backdrop-filter: var(--dtunes-optical-filter);
-            -webkit-backdrop-filter: var(--dtunes-optical-filter);
+            transform: translateY(-50%) translateX(var(--nav-shift)) scale(var(--nav-scale));
+            width: 42px;
+            height: 42px;
+            border-radius: 1.1rem; /* squircle: same family as the redesigned cards, not a circle */
+            background-color: rgba(10, 10, 14, 0.78);
+            background-image: var(--mezzotint-grain-overlay);
+            background-size: 160px 160px;
+            -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);
             border: 1px solid var(--mezzotint-border);
-            box-shadow: 0 10px 24px -4px rgba(0, 0, 0, 0.7), inset 0 1px 0 var(--mezzotint-ridge);
+            box-shadow: 0 10px 24px -6px rgba(0, 0, 0, 0.7), inset 0 1px 0 var(--mezzotint-ridge);
             color: #ffffff;
             display: flex;
             align-items: center;
@@ -867,34 +871,24 @@
             cursor: pointer;
             opacity: 0;
             pointer-events: none;
+            /* 0.42s / same easing as the Sign-in button's slide, so they travel together */
             transition: opacity 0.22s ease, transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.2s ease, border-color 0.2s ease;
         }
-        .shelf-nav-btn:hover {
-            background: rgba(28, 28, 38, 0.95);
-            border-color: rgba(255, 255, 255, 0.35);
-            color: #ffffff;
-            transform: translateY(-50%) scale(1.08);
-        }
-        .shelf-nav-btn:active {
-            transform: translateY(-50%) scale(0.92);
-        }
+        .shelf-nav-btn:hover { --nav-scale: 1.08; background-color: rgba(28, 28, 38, 0.9); border-color: rgba(255, 255, 255, 0.32); }
+        .shelf-nav-btn:active { --nav-scale: 0.92; }
         .shelf-nav-prev { left: 0.5rem; }
         .shelf-nav-next { right: 0.5rem; }
 
-        /* When Queue Sidebar is active, .shelf-nav-next shifts left just like the sign-in button */
+        /* Queue sidebar open: ONLY the right arrow travels left (like the Sign-in button). The edge blur stays put. */
         body.queue-sidebar-active .shelf-nav-next {
-            transform: translateY(-50%) translateX(calc(-1 * (var(--queue-sidebar-width, 384px) + 0.75rem)));
-        }
-        body.queue-sidebar-active .shelf-nav-next:hover {
-            transform: translateY(-50%) translateX(calc(-1 * (var(--queue-sidebar-width, 384px) + 0.75rem))) scale(1.08);
-        }
-        body.queue-sidebar-active .shelf-nav-next:active {
-            transform: translateY(-50%) translateX(calc(-1 * (var(--queue-sidebar-width, 384px) + 0.75rem))) scale(0.92);
+            --nav-shift: calc(-1 * (var(--queue-sidebar-width, 24rem) + 0.75rem));
         }
 
-        /* Clearance for shelf rows so items can scroll without being hidden behind sidebar */
-        body.queue-sidebar-active .horizontal-scroll {
-            padding-right: calc(var(--queue-sidebar-width, 384px) + 2rem) !important;
+        /* Clearance so the last cards can scroll out from behind the queue sidebar.
+           A trailing spacer (NOT padding) so the card width, a % of the content box, never changes. */
+        body.queue-sidebar-active .horizontal-scroll::after {
+            content: "";
+            flex: 0 0 calc(var(--queue-sidebar-width, 24rem) + 1rem);
         }
 
         @media (hover: hover) and (pointer: fine) {
@@ -909,30 +903,31 @@
 
         /* --- Horizontal Scrolling Localized Edge Blurs (Always Visible, Melt to Black) --- */
         .row-blur-left {
-            position: absolute; left: 0; top: -16px; bottom: -12px; width: 52px; z-index: 10; pointer-events: none;
-            background: linear-gradient(to right, rgba(5, 5, 5, 0.94) 0%, rgba(5, 5, 5, 0.45) 50%, transparent 100%);
-            mask-image: linear-gradient(to right, black 25%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 14px), transparent 100%);
-            -webkit-mask-image: linear-gradient(to right, black 25%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 14px), transparent 100%);
+            position: absolute; left: 0; top: -16px; bottom: -12px; width: 72px; z-index: 10; pointer-events: none;
+            background-image: var(--mezzotint-grain-overlay), linear-gradient(to right, rgba(5, 5, 5, 0.96) 0%, rgba(5, 5, 5, 0.55) 50%, transparent 100%);
+            background-size: 160px 160px, 100% 100%;
+            mask-image: linear-gradient(to right, black 30%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 14px), transparent 100%);
+            -webkit-mask-image: linear-gradient(to right, black 30%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 14px), transparent 100%);
             mask-composite: intersect;
             -webkit-mask-composite: source-in;
             opacity: 1;
-            backdrop-filter: var(--dtunes-optical-filter);
-            -webkit-backdrop-filter: var(--dtunes-optical-filter);
+            /* Plain gaussian, NOT the SVG optical filter: that filter re-ran on every row edge and wrecked scroll FPS. */
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
             transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1);
-            transform: translateZ(0);
         }
         .row-blur-right {
-            position: absolute; right: 0; top: -16px; bottom: -12px; width: 52px; z-index: 10; pointer-events: none;
-            background: linear-gradient(to left, rgba(5, 5, 5, 0.94) 0%, rgba(5, 5, 5, 0.45) 50%, transparent 100%);
-            mask-image: linear-gradient(to left, black 25%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 14px), transparent 100%);
-            -webkit-mask-image: linear-gradient(to left, black 25%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 14px), transparent 100%);
+            position: absolute; right: 0; top: -16px; bottom: -12px; width: 72px; z-index: 10; pointer-events: none;
+            background-image: var(--mezzotint-grain-overlay), linear-gradient(to left, rgba(5, 5, 5, 0.96) 0%, rgba(5, 5, 5, 0.55) 50%, transparent 100%);
+            background-size: 160px 160px, 100% 100%;
+            mask-image: linear-gradient(to left, black 30%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 14px), transparent 100%);
+            -webkit-mask-image: linear-gradient(to left, black 30%, transparent 100%), linear-gradient(to bottom, transparent 0%, black 14px, black calc(100% - 14px), transparent 100%);
             mask-composite: intersect;
             -webkit-mask-composite: source-in;
             opacity: 1;
-            backdrop-filter: var(--dtunes-optical-filter);
-            -webkit-backdrop-filter: var(--dtunes-optical-filter);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
             transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1);
-            transform: translateZ(0);
         }
         .row-blur-left.edge-hidden,
         .row-blur-right.edge-hidden {
@@ -4071,3 +4066,80 @@ body.queue-sidebar-active #ai-hub-container div.md\:p-8 > button {
     border-color: #ffffff !important;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
+
+
+/* ==========================================================================
+   SONG CARD — bezel-less, full-bleed Mezzotint  (ui.createCard)
+   The art is not boxed: it runs edge to edge across the top of the card and
+   dissolves into a Mezzotint-blurred copy of itself that colours the WHOLE card.
+   Performance rules: no backdrop-filter, no SVG filters, no animated blur,
+   no per-card compositing layers. Everything here is static after first paint.
+   ========================================================================== */
+:root { --dtunes-card-radius: 1.75rem; } /* point this at your shared radius token */
+
+.scroll-card.sc-card {
+    padding: 0 !important;
+    border-radius: var(--dtunes-card-radius) !important;
+    background: #0a0a0e !important;
+    border: 1px solid rgba(255, 255, 255, 0.10) !important;
+    box-shadow: 0 12px 28px -12px rgba(0, 0, 0, 0.7) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transform: none !important;
+    backface-visibility: visible;
+    isolation: isolate;
+    contain: layout paint style;
+    transition: border-color 0.24s ease;
+}
+.scroll-card.sc-card:hover { border-color: rgba(255, 255, 255, 0.24) !important; }
+.scroll-card.sc-card::before, .scroll-card.sc-card::after { content: none; }
+
+/* Mezzotint-blurred art covering the entire card */
+.sc-bg { position: absolute; inset: 0; z-index: 0; overflow: hidden; border-radius: inherit; pointer-events: none; }
+.sc-bg-img {
+    width: 100%; height: 100%; object-fit: cover;
+    filter: blur(18px) saturate(1.5) brightness(0.62); /* static: never transition this */
+    transform: scale(1.25);
+}
+.sc-bg::before { /* ink grain = the Mezzotint texture */
+    content: ""; position: absolute; inset: 0; z-index: 1;
+    background-image: var(--mezzotint-grain-overlay);
+    background-size: 160px 160px;
+    opacity: 0.55;
+}
+.sc-bg::after { /* readability scrim behind the text */
+    content: ""; position: absolute; inset: 0; z-index: 2;
+    background: linear-gradient(to bottom, transparent 38%, rgba(5, 5, 8, 0.7) 100%);
+}
+
+/* Sharp art: flush to the card's top and sides (no bezel), fading into the blur below */
+.sc-art {
+    position: relative; z-index: 1; width: 100%; aspect-ratio: 1 / 1; overflow: hidden;
+    -webkit-mask-image: linear-gradient(to bottom, #000 66%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 66%, transparent 100%);
+}
+.sc-art-img { display: block; transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.sc-card:hover .sc-art-img { transform: scale(1.05); }
+.sc-play {
+    position: absolute; left: 50%; top: 42%; width: 44px; height: 44px; border-radius: 9999px;
+    display: grid; place-items: center; background: rgba(255, 255, 255, 0.94); color: #000;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+    opacity: 0; transform: translate(-50%, -50%) scale(0.8);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.sc-card:hover .sc-play { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+
+/* Text sits over the dissolve; three-dots at the bottom-right, beside the song name */
+.sc-meta {
+    position: relative; z-index: 2; display: flex; align-items: flex-end; gap: 0.375rem;
+    margin-top: -1.5rem; padding: 0 0.7rem 0.85rem 1rem;
+}
+.sc-title { font-weight: 700; font-size: 0.875rem; color: #fff; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6); }
+.sc-artist { font-size: 0.75rem; color: rgba(228, 228, 231, 0.78); }
+.sc-menu-btn {
+    flex-shrink: 0; padding: 0.375rem; border-radius: 9999px; color: #e4e4e7;
+    opacity: 0; transition: opacity 0.18s ease, background-color 0.18s ease;
+}
+.sc-card:hover .sc-menu-btn, .sc-menu-btn:focus-visible { opacity: 1; }
+.sc-menu-btn:hover { background: rgba(255, 255, 255, 0.16); color: #fff; }
+@media (hover: none) { .sc-menu-btn { opacity: 0.85; } } /* touch screens have no hover, keep the menu reachable */

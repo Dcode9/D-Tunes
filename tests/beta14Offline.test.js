@@ -98,7 +98,7 @@ test('Beta 1.4 Bug 3: Made For You Caching with Expiry tracking', (t) => {
     // Expiry check and "if expired then not" logic
     assert.ok(aiHubContent.includes('isCacheValid'), 'ai-hub.js must check whether local cache is valid and not expired');
     assert.ok(aiHubContent.includes('activeExpiryTs'), 'ai-hub.js must track activeExpiryTs');
-    assert.ok(aiHubContent.includes('Expires at') || aiHubContent.includes('Valid till'), 'ai-hub.js must render expiry time in UI');
+    assert.ok(!aiHubContent.includes('Expires at') && !aiHubContent.includes('Valid till'), 'ai-hub.js must NOT show the cache expiry time to listeners (removed in the home redesign)');
 
     // Expired offline handling: clears container ("if expired then not")
     assert.ok(aiHubContent.includes("container.innerHTML = '';") && aiHubContent.includes("_isRenderingAIHome = false;"), 'Expired cache in offline mode must not show');
