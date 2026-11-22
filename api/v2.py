@@ -266,14 +266,28 @@ def search_ytmusic(query: str, limit: int = 10) -> list[Track]:
         return []
 
 
-def search_sync(query: str, limit: int = 10) -> list[Track]:
-    # Primary: ytmusicapi for fast, rich music search
-    ytm_results = search_ytmusic(query, limit=limit)
-    if ytm_results:
-        return ytm_results
+_DERIVATIVE_RE = re.compile(
+    r"\b(x|vs|mashup|remix|mix|flip|edit|slowed|reverb|lofi|cover|live|acoustic|bootleg|version|extended|bgm|theme)\b",
+    re.IGNORECASE,
+)
 
-    # Secondary: fallback to yt-dlp across client candidates
-    last_err: Optional[Exception] = None
+def _query_keyword_tokens(text: str) -> set[str]:
+    """Extract significant lowercase keyword tokens from search query or title."""
+    words = re.findall(r"[a-z0-9]+", str(text).lower())
+    stop_words = {"the", "a", "an", "and", "by", "of", "in", "to", "for", "with", "feat", "ft", "official", "video", "audio"}
+    return {w for w in words if len(w) > 1 and w not in stop_words}
+
+def _calculate_token_coverage(query: str, title: str, artist: str = "") -> float:
+    """Calculate the ratio of query keywords found in the candidate track title and artist."""
+    q_tokens = _query_keyword_tokens(query)
+    if not q_tokens:
+        return 1.0
+    candidate_tokens = _query_keyword_tokens(f"{title} {artist}")
+    matched = q_tokens.intersection(candidate_tokens)
+    return len(matched) / len(q_tokens)
+
+def search_ytdlp(query: str, limit: int = 10) -> list[Track]:
+    """Search full YouTube catalog via yt-dlp across client candidates."""
     for client_list in CLIENT_CANDIDATES:
         try:
             opts = _base_opts(player_client=client_list)
@@ -292,11 +306,81 @@ def search_sync(query: str, limit: int = 10) -> list[Track]:
                     track = _normalize_entry(entry)
                     if track:
                         results.append(track)
-            return results
-        except Exception as exc:
-            last_err = exc
+            if results:
+                return results
+        except Exception:
             continue
-    raise RuntimeError(f"Search failed: {last_err}")
+    return []
+
+def search_sync(query: str, limit: int = 10) -> list[Track]:
+    """Intelligent hybrid search combining YouTube Music (API 1) and full YouTube yt-dlp (API 2).
+    
+    Detects crossover queries (e.g. 'Levitating X Woh ladki joh'), mashups, or low-coverage
+    results from YouTube Music, seamlessly blending and ranking full YouTube results.
+    """
+    query_str = (query or "").strip()
+    if not query_str:
+        return []
+
+    q_lower = query_str.lower()
+    has_derivative_marker = (
+        bool(_DERIVATIVE_RE.search(query_str))
+        or " x " in q_lower
+        or " vs " in q_lower
+        or " + " in q_lower
+    )
+
+    # 1. Primary: YouTube Music API
+    ytm_results = search_ytmusic(query_str, limit=limit)
+
+    top_coverage = 0.0
+    if ytm_results:
+        top_coverage = _calculate_token_coverage(query_str, ytm_results[0].title, ytm_results[0].artist)
+
+    # If YouTube Music matched well and it's not a crossover/mashup query, return fast
+    needs_api2 = (
+        has_derivative_marker
+        or not ytm_results
+        or top_coverage < 0.60
+        or len(ytm_results) < min(3, limit)
+    )
+
+    if not needs_api2 and ytm_results:
+        return ytm_results
+
+    # 2. Secondary: Query Full YouTube (yt-dlp) for video/mashup catalog
+    ytdlp_results = search_ytdlp(query_str, limit=limit)
+
+    if not ytdlp_results:
+        return ytm_results or []
+    if not ytm_results:
+        return ytdlp_results
+
+    # 3. Hybrid Merge & Relevance Ranking
+    seen_ids: set[str] = set()
+    scored_candidates: list[tuple[float, Track]] = []
+
+    # Score yt-dlp candidates (full YouTube)
+    for track in ytdlp_results:
+        if track.id not in seen_ids:
+            seen_ids.add(track.id)
+            cov = _calculate_token_coverage(query_str, track.title, track.artist)
+            # Give boost to yt-dlp when user searched for a mashup/crossover
+            boost = 0.35 if has_derivative_marker else 0.0
+            scored_candidates.append((cov + boost, track))
+
+    # Score YouTube Music candidates
+    for track in ytm_results:
+        if track.id not in seen_ids:
+            seen_ids.add(track.id)
+            cov = _calculate_token_coverage(query_str, track.title, track.artist)
+            # Official songs get slight boost for standard searches, but not for mashups
+            boost = 0.20 if not has_derivative_marker else -0.10
+            scored_candidates.append((cov + boost, track))
+
+    # Sort descending by composite relevance score
+    scored_candidates.sort(key=lambda item: item[0], reverse=True)
+    return [item[1] for item in scored_candidates[:limit]]
 
 
 class StreamInfo:

@@ -7,17 +7,34 @@
             isLoading: false,
             cache: new Map(),
 
+            CONTAINER_IDS: ['sidebar-lyrics-scroll', 'fullscreen-lyrics-scroll', 'mobile-lyrics-scroll'],
+
             cleanTitle: (title = '') => {
-                return String(title)
-                    .replace(/\s*[\(\[](?:from|feat\.?|featuring|with|prod\.?|official|video|audio|remix|version|deluxe|soundtrack|ost)[^\)\]]*[\)\]]/gi, '')
-                    .replace(/\s*-\s*(?:from|feat\.?|featuring|with|prod\.?|remix|version|soundtrack|ost).*$/gi, '')
-                    .replace(/\s*-\s*[^-]+$/g, '')
+                let cleaned = String(title || '')
+                    .replace(/\s*[\(\[](?:from|feat\.?|featuring|with|prod\.?|official|video|music video|audio|remix|version|deluxe|soundtrack|ost|mashup|edit|slowed|reverb|4k|hd|lyrics)[^\)\]]*[\)\]]/gi, '')
+                    .replace(/\s*\|\s*.*$/g, '')
+                    .replace(/\s*-\s*(?:from|feat\.?|featuring|with|prod\.?|remix|version|soundtrack|ost|mashup).*$/gi, '')
                     .trim();
+
+                // If "Artist - Song", extract the song part
+                if (cleaned.includes(' - ')) {
+                    const parts = cleaned.split(' - ');
+                    if (parts.length >= 2 && parts[1].trim()) {
+                        cleaned = parts.slice(1).join(' - ').trim();
+                    }
+                }
+                return cleaned.trim();
             },
 
-            cleanArtist: (artist = '') => {
-                const first = String(artist).split(/[,/&|]/)[0];
-                return (first || artist).trim();
+            cleanArtist: (artist = '', fullTitle = '') => {
+                let art = String(artist || '').trim();
+                // If artist is generic or YouTube channel, check if title had "Artist - Title"
+                if ((!art || art.toLowerCase().includes('vevo') || art.toLowerCase().includes('records') || art.toLowerCase().includes('topic')) && fullTitle.includes(' - ')) {
+                    const parts = fullTitle.split(' - ');
+                    if (parts[0].trim()) art = parts[0].trim();
+                }
+                const first = art.split(/[,/&|]/)[0];
+                return (first || art).trim();
             },
 
             parseLrc: (lrcString = '') => {
@@ -49,11 +66,12 @@
                 if (!track || (!track.title && !track.name)) return null;
                 const trackTitle = track.title || track.name;
                 const trackArtist = track.artist || track.primary_artists || '';
-                const cacheKey = `${trackTitle}:::${trackArtist}`.toLowerCase();
+                const videoId = track.id || track.videoId || '';
+                const cacheKey = `${trackTitle}:::${trackArtist}:::${videoId}`.toLowerCase();
 
                 if (lyricsManager.cache.has(cacheKey)) {
                     lyricsManager.currentLyrics = lyricsManager.cache.get(cacheKey);
-                    lyricsManager.setIndicator(Boolean(lyricsManager.currentLyrics && (lyricsManager.currentLyrics.syncedLyrics || lyricsManager.currentLyrics.plainLyrics)));
+                    lyricsManager.setIndicator(Boolean(lyricsManager.currentLyrics && (lyricsManager.currentLyrics.syncedLyrics || lyricsManager.currentLyrics.plainLyrics || lyricsManager.currentLyrics.parsedLines)));
                     lyricsManager.updateUI();
                     return lyricsManager.currentLyrics;
                 }
@@ -65,23 +83,53 @@
                 lyricsManager.renderLoading();
 
                 try {
-                    const queryParams = new URLSearchParams({
-                        track: trackTitle,
-                        artist: trackArtist,
-                        album: track.album || '',
-                        duration: String(track.duration || 0)
-                    });
-                    let res = await fetch(`/api/music/lyrics?${queryParams.toString()}`).catch(() => null);
                     let data = null;
-                    if (res && res.ok) {
-                        const json = await res.json();
-                        if (json.success && json.lyrics) data = json.lyrics;
+
+                    // 1. Primary: YouTube Music Lyrics by video ID (/api-v2/lyrics/:id)
+                    if (videoId && (typeof mediaAPI !== 'undefined' || videoId.length === 11)) {
+                        try {
+                            const ytmRes = await fetch(`/api-v2/lyrics/${encodeURIComponent(videoId)}`).catch(() => null);
+                            if (ytmRes && ytmRes.ok) {
+                                const ytmJson = await ytmRes.json();
+                                if (ytmJson && ytmJson.lyrics) {
+                                    const parsed = lyricsManager.parseLrc(ytmJson.lyrics);
+                                    data = {
+                                        track: trackTitle,
+                                        artist: trackArtist,
+                                        syncedLyrics: parsed.length > 0 ? ytmJson.lyrics : null,
+                                        plainLyrics: ytmJson.lyrics,
+                                        instrumental: false,
+                                        parsedLines: parsed.length > 0 ? parsed : null,
+                                        source: 'YouTube Music'
+                                    };
+                                }
+                            }
+                        } catch (_) {}
                     }
 
-                    // Fallback to direct LRCLIB fetch if backend didn't find lyrics
+                    // 2. Secondary: D'Tunes LRCLIB backend proxy (/api/music/lyrics)
+                    if (!data) {
+                        try {
+                            const cleanT = lyricsManager.cleanTitle(trackTitle);
+                            const cleanA = lyricsManager.cleanArtist(trackArtist, trackTitle);
+                            const queryParams = new URLSearchParams({
+                                track: cleanT,
+                                artist: cleanA,
+                                album: track.album || '',
+                                duration: String(track.duration || 0)
+                            });
+                            const res = await fetch(`/api/music/lyrics?${queryParams.toString()}`).catch(() => null);
+                            if (res && res.ok) {
+                                const json = await res.json();
+                                if (json.success && json.lyrics) data = json.lyrics;
+                            }
+                        } catch (_) {}
+                    }
+
+                    // 3. Tertiary: Direct LRCLIB client fallback
                     if (!data) {
                         const cleanT = lyricsManager.cleanTitle(trackTitle);
-                        const cleanA = lyricsManager.cleanArtist(trackArtist);
+                        const cleanA = lyricsManager.cleanArtist(trackArtist, trackTitle);
                         const directRes = await fetch(`https://lrclib.net/api/get?track_name=${encodeURIComponent(cleanT)}&artist_name=${encodeURIComponent(cleanA)}`).catch(() => null);
                         if (directRes && directRes.ok) {
                             const lrcJson = await directRes.json();
@@ -92,8 +140,35 @@
                                     syncedLyrics: lrcJson.syncedLyrics || null,
                                     plainLyrics: lrcJson.plainLyrics || null,
                                     instrumental: Boolean(lrcJson.instrumental),
-                                    parsedLines: lrcJson.syncedLyrics ? lyricsManager.parseLrc(lrcJson.syncedLyrics) : null
+                                    parsedLines: lrcJson.syncedLyrics ? lyricsManager.parseLrc(lrcJson.syncedLyrics) : null,
+                                    source: 'LRCLIB'
                                 };
+                            }
+                        }
+                    }
+
+                    // 4. Quaternary: Mashup / Crossover deconstruction (e.g. "Levitating X Woh Ladki Jo")
+                    if (!data && (trackTitle.includes(' X ') || trackTitle.includes(' x ') || trackTitle.includes(' vs ') || trackTitle.includes(' VS '))) {
+                        const parts = trackTitle.split(/\s+(?:[xX]|vs\.?|VS)\s+/);
+                        if (parts.length >= 2) {
+                            const firstSong = lyricsManager.cleanTitle(parts[0]);
+                            const mashupRes = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(firstSong)}`).catch(() => null);
+                            if (mashupRes && mashupRes.ok) {
+                                const list = await mashupRes.json();
+                                if (Array.isArray(list) && list.length > 0) {
+                                    const best = list[0];
+                                    if (best.syncedLyrics || best.plainLyrics) {
+                                        data = {
+                                            track: `${firstSong} (Mashup Lead Track)`,
+                                            artist: best.artistName || trackArtist,
+                                            syncedLyrics: best.syncedLyrics || null,
+                                            plainLyrics: best.plainLyrics || null,
+                                            instrumental: false,
+                                            parsedLines: best.syncedLyrics ? lyricsManager.parseLrc(best.syncedLyrics) : null,
+                                            source: 'LRCLIB'
+                                        };
+                                    }
+                                }
                             }
                         }
                     }
@@ -101,7 +176,7 @@
                     lyricsManager.currentLyrics = data;
                     if (data) {
                         lyricsManager.cache.set(cacheKey, data);
-                        lyricsManager.setIndicator(Boolean(data.syncedLyrics || data.plainLyrics));
+                        lyricsManager.setIndicator(Boolean(data.syncedLyrics || data.plainLyrics || data.parsedLines));
                     } else {
                         lyricsManager.setIndicator(false);
                     }
@@ -119,68 +194,78 @@
             },
 
             setIndicator: (hasLyrics) => {
-                const dot = document.getElementById('lyrics-indicator-dot');
-                if (dot) {
-                    dot.style.opacity = hasLyrics ? '1' : '0';
+                // Toggle availability on desktop lyrics button
+                const btnLyrics = document.getElementById('btn-lyrics');
+                if (btnLyrics) {
+                    btnLyrics.classList.toggle('lyrics-unavailable', !hasLyrics);
                 }
-                const badge = document.getElementById('lyrics-sync-badge');
-                if (badge) {
-                    const isSynced = Boolean(lyricsManager.currentLyrics?.syncedLyrics);
-                    badge.classList.toggle('hidden', !isSynced);
+                // Toggle availability on mobile tab
+                const mobileTab = document.getElementById('m-tab-lyrics');
+                if (mobileTab) {
+                    mobileTab.classList.toggle('lyrics-unavailable', !hasLyrics);
+                }
+                // Update sync status badge
+                const syncBadge = document.getElementById('sidebar-lyrics-sync-badge');
+                if (syncBadge) {
+                    const isSynced = Boolean(lyricsManager.currentLyrics?.parsedLines?.length);
+                    syncBadge.textContent = isSynced ? 'SYNCED' : 'PLAIN';
+                    syncBadge.classList.toggle('hidden', !hasLyrics);
                 }
             },
 
             renderLoading: () => {
-                const placeholder = '<div class="text-gray-400 my-auto text-sm flex flex-col items-center gap-3 py-10"><svg class="w-8 h-8 text-gray-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg><span>Searching synchronized lyrics...</span></div>';
-                const desktopCont = document.getElementById('lyrics-scroll-container');
-                if (desktopCont) desktopCont.innerHTML = placeholder;
-                const mobileCont = document.getElementById('mobile-lyrics-scroll');
-                if (mobileCont) mobileCont.innerHTML = placeholder;
+                const placeholder = '<div class="text-zinc-400 my-auto text-sm flex flex-col items-center gap-3 py-12"><svg class="w-8 h-8 text-zinc-500 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"/></svg><span>Searching synchronized lyrics...</span></div>';
+                lyricsManager.CONTAINER_IDS.forEach(id => {
+                    const el = document.getElementById(id);
+                    if (el) el.innerHTML = placeholder;
+                });
             },
 
             updateUI: () => {
                 const lyrics = lyricsManager.currentLyrics;
-                const desktopCont = document.getElementById('lyrics-scroll-container');
-                const mobileCont = document.getElementById('mobile-lyrics-scroll');
-
-                const titleEl = document.getElementById('lyrics-modal-title');
-                const artistEl = document.getElementById('lyrics-modal-artist');
-                const artImg = document.getElementById('lyrics-modal-art-img');
-                if (titleEl && state.currentTrack) titleEl.textContent = state.currentTrack.name || state.currentTrack.title || 'Unknown';
-                if (artistEl && state.currentTrack) artistEl.textContent = state.currentTrack.artist || 'Unknown';
-                if (artImg && state.currentTrack) artImg.src = state.currentTrack.img || 'DTunes.svg';
 
                 if (!lyrics) {
-                    const emptyHtml = '<div class="text-gray-400 my-auto text-sm py-16 flex flex-col items-center gap-3"><svg class="w-10 h-10 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span class="font-semibold text-gray-300">No lyrics available for this track</span><span class="text-xs text-gray-500">Lyrics match based on track title and artist name</span></div>';
-                    if (desktopCont) desktopCont.innerHTML = emptyHtml;
-                    if (mobileCont) mobileCont.innerHTML = emptyHtml;
+                    const emptyHtml = '<div class="text-zinc-400 my-auto text-sm py-16 flex flex-col items-center gap-3"><svg class="w-10 h-10 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span class="font-semibold text-zinc-300">No lyrics available for this track</span><span class="text-xs text-zinc-500">Lyrics match based on track title and artist</span></div>';
+                    lyricsManager.CONTAINER_IDS.forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.innerHTML = emptyHtml;
+                    });
                     return;
                 }
 
                 if (lyrics.instrumental) {
-                    const instHtml = '<div class="text-gray-400 my-auto text-sm py-16 flex flex-col items-center gap-3"><svg class="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 19V6l12-2v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"/></svg><span class="font-bold text-white text-base">Instrumental Piece</span><span class="text-xs text-gray-400">This track has no vocal lyrics. Enjoy the music!</span></div>';
-                    if (desktopCont) desktopCont.innerHTML = instHtml;
-                    if (mobileCont) mobileCont.innerHTML = instHtml;
+                    const instHtml = '<div class="text-zinc-400 my-auto text-sm py-16 flex flex-col items-center gap-3"><svg class="w-8 h-8 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 19V6l12-2v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"/></svg><span class="font-bold text-white text-base">Instrumental Piece</span><span class="text-xs text-zinc-400">This track has no vocal lyrics. Enjoy the music!</span></div>';
+                    lyricsManager.CONTAINER_IDS.forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.innerHTML = instHtml;
+                    });
                     return;
                 }
 
                 if (lyrics.parsedLines && lyrics.parsedLines.length > 0) {
                     const markup = lyrics.parsedLines.map((line, idx) => `
-                        <div class="lyric-line" data-index="${idx}" data-time="${line.time}" onclick="player.seek(${line.time})">
-                            ${utils.escapeHtml(line.text)}
+                        <div class="lyric-line cursor-pointer" data-index="${idx}" data-time="${line.time}" onclick="player.seek(${line.time})">
+                            ${(typeof utils !== 'undefined' && utils.escapeHtml) ? utils.escapeHtml(line.text) : line.text}
                         </div>
                     `).join('');
-                    if (desktopCont) desktopCont.innerHTML = markup;
-                    if (mobileCont) mobileCont.innerHTML = markup;
+
+                    lyricsManager.CONTAINER_IDS.forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.innerHTML = markup;
+                    });
+
                     lyricsManager.activeLineIndex = -1;
-                    lyricsManager.syncTime(audio.currentTime || 0, true);
+                    const audioEl = document.getElementById('audio');
+                    lyricsManager.syncTime(audioEl?.currentTime || 0, true);
                     return;
                 }
 
                 if (lyrics.plainLyrics) {
-                    const plainHtml = `<div class="plain-lyrics-text">${utils.escapeHtml(lyrics.plainLyrics)}</div>`;
-                    if (desktopCont) desktopCont.innerHTML = plainHtml;
-                    if (mobileCont) mobileCont.innerHTML = plainHtml;
+                    const plainHtml = `<div class="plain-lyrics-text px-4 py-6">${(typeof utils !== 'undefined' && utils.escapeHtml) ? utils.escapeHtml(lyrics.plainLyrics) : lyrics.plainLyrics}</div>`;
+                    lyricsManager.CONTAINER_IDS.forEach(id => {
+                        const el = document.getElementById(id);
+                        if (el) el.innerHTML = plainHtml;
+                    });
                 }
             },
 
@@ -202,15 +287,17 @@
                 if (newIndex === lyricsManager.activeLineIndex && !forceScroll) return;
                 lyricsManager.activeLineIndex = newIndex;
 
-                const updateContainer = (containerId) => {
+                lyricsManager.CONTAINER_IDS.forEach(containerId => {
                     const container = document.getElementById(containerId);
                     if (!container) return;
+
                     const lineElements = container.querySelectorAll('.lyric-line');
                     lineElements.forEach((el, idx) => {
                         const isActive = idx === newIndex;
                         const isPast = idx < newIndex;
                         el.classList.toggle('active', isActive);
                         el.classList.toggle('past', isPast);
+
                         if (isActive && (forceScroll || document.visibilityState === 'visible')) {
                             const containerRect = container.getBoundingClientRect();
                             const lineRect = el.getBoundingClientRect();
@@ -223,10 +310,7 @@
                             }
                         }
                     });
-                };
-
-                updateContainer('lyrics-scroll-container');
-                updateContainer('mobile-lyrics-container');
+                });
             }
         };
 
