@@ -1076,6 +1076,41 @@
                 });
             };
 
+            // Queue sidebar opening: shelves stay exactly where they are, EXCEPT a shelf that was scrolled
+            // fully to the right. That one glides left so its last card is not left under the sidebar.
+            // (The sidebar clearance padding itself comes from CSS: body.queue-sidebar-active .horizontal-scroll.)
+            let sidebarWasActive = document.body.classList.contains('queue-sidebar-active');
+            new MutationObserver(() => {
+                const active = document.body.classList.contains('queue-sidebar-active');
+                if (active === sidebarWasActive) return;
+                sidebarWasActive = active;
+                if (!active) return;
+                document.querySelectorAll('.relative.group\\/track .horizontal-scroll').forEach((shelf) => {
+                    const cs = getComputedStyle(shelf);
+                    // width the CSS spacer just added (spacer + the flex gap in front of it)
+                    const extraPad = (parseFloat(getComputedStyle(shelf, '::after').width) || 0) + (parseFloat(cs.columnGap) || 0);
+                    const maxNow = shelf.scrollWidth - shelf.clientWidth;
+                    const maxBefore = maxNow - extraPad;
+                    const wasFullyRight = maxBefore > 4 && shelf.scrollLeft >= maxBefore - 4;
+                    if (wasFullyRight) shelf.scrollTo({ left: maxNow, behavior: 'smooth' });
+                });
+            }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+            // Song cards: the hover icon is Play, or Pause on the card whose song is playing right now.
+            const syncCardPlayState = () => {
+                const cur = state.currentTrack ? String(state.currentTrack.id) : '';
+                document.querySelectorAll('.sc-card[data-sc-id]').forEach((card) => {
+                    const isCur = !!cur && card.dataset.scId === cur;
+                    card.classList.toggle('is-current', isCur);
+                    card.classList.toggle('is-playing', isCur && !!state.playing);
+                });
+            };
+            const cardAudio = document.getElementById('audio-el');
+            if (cardAudio) {
+                ['play', 'pause', 'loadstart', 'emptied'].forEach((evt) =>
+                    cardAudio.addEventListener(evt, () => setTimeout(syncCardPlayState, 0)));
+            }
+
             // Edge blurs maintain constant GPU composite cache without per-frame reflow
 
             // iOS Platform Optimizations (Hardware Volume & AudioContext Unlock)

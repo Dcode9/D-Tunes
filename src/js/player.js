@@ -388,9 +388,9 @@
                 if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
             },
             triggerUpNextHandoff: () => {
-                const previewSlot = document.getElementById('queue-preview-slot');
-                if (!previewSlot || !state.nextTrack) return;
-                player.next(true);
+                // Desktop Next button entry point. It used to bail out unless `state.nextTrack` was
+                // truthy, but nothing in the app ever sets that field, so Next silently did nothing.
+                player.next();
             },
             smoothGlideToStart: () => {
                 audio.currentTime = 0;
