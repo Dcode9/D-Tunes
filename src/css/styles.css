@@ -4155,16 +4155,16 @@ body.queue-sidebar-active #ai-hub-container div.md\:p-8 > button {
 .sc-card:hover .sc-play { display: block; }
 
 /* Details extend below the art, on the blur; three-dots bottom-right beside the song name */
-.sc-meta { position: relative; z-index: 2; display: flex; align-items: flex-end; gap: 0.375rem; padding: 0.7rem 0.6rem 0.85rem 1rem; }
+.sc-meta { position: relative; z-index: 2; display: flex; padding: 0.7rem 1rem 0.85rem 1rem; } /* text runs the full width */
 .sc-title { font-weight: 700; font-size: 0.875rem; color: #fff; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.6); }
 .sc-artist { font-size: 0.75rem; color: rgba(228, 228, 231, 0.8); }
-.sc-menu-btn {
-    flex-shrink: 0; padding: 0.375rem; border-radius: 9999px; color: #e4e4e7;
-    opacity: 0; transition: opacity 0.18s ease, background-color 0.18s ease;
+/* Three-dots: floats over the bottom-right of the text on hover. It is out of the flex flow,
+   so the text never shrinks to make room. Visibility/look come from .scroll-card-menu-btn. */
+.sc-menu-btn { position: absolute; right: 0.6rem; bottom: 0.6rem; z-index: 3; }
+.sc-card:hover .sc-menu-btn, .sc-menu-btn:focus-visible {
+    -webkit-backdrop-filter: var(--dtunes-optical-filter); backdrop-filter: var(--dtunes-optical-filter); /* blurs the text under it, only while shown */
 }
-.sc-card:hover .sc-menu-btn, .sc-menu-btn:focus-visible { opacity: 1; }
-.sc-menu-btn:hover { background: rgba(255, 255, 255, 0.16); color: #fff; }
-@media (hover: none) { .sc-menu-btn { opacity: 0.85; } } /* touch screens have no hover, keep the menu reachable */
+@media (hover: none) { .sc-menu-btn { opacity: 0.9; pointer-events: auto; } } /* touch screens have no hover, keep the menu reachable */
 
 /* Hidden edge blurs skip rendering entirely (the real optical filter is not free) */
 .row-blur-left.edge-hidden, .row-blur-right.edge-hidden { visibility: hidden; transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear 0.22s; }
