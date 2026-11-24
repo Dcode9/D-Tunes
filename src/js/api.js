@@ -165,10 +165,17 @@
                 }
             },
 
-            getTrending: async (limit = 25) => {
+            getTrending: async (limit = 25, country = 'IN') => {
                 if (typeof navigator !== 'undefined' && !navigator.onLine) return [];
                 if (isNetworkOffline()) return [];
-                return await mediaAPI.searchSongs('trending music hits', limit);
+                try {
+                    const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/trending?country=${encodeURIComponent(country)}&limit=${limit}`);
+                    const results = (data.results || []).map(r => mediaAPI.normalizeTrack(r)).filter(Boolean);
+                    if (results.length > 0) {
+                        return (typeof utils !== 'undefined' && utils.deduplicateSongs) ? utils.deduplicateSongs(results).slice(0, limit) : results.slice(0, limit);
+                    }
+                } catch (_) {}
+                return await mediaAPI.searchSongs('Bollywood and global pop hits', limit);
             },
 
             getSongSuggestions: async (id, limit = 20) => {

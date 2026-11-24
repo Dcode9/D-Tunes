@@ -281,3 +281,22 @@ def test_legacy_saavn_migration_route():
             r2 = client.get("/api-v2/migrate/saavn/8MT-L-7w")
             assert r2.status_code == 200
             assert mock_mig.call_count == 1
+
+
+def test_trending_filters_spotify_charts():
+    fake_charts = {
+        "songs": {
+            "items": [
+                {"videoId": "11111111111", "title": "Spotify Top 50 Global Chart", "artists": [{"name": "Chart Mix"}]},
+                {"videoId": "4NRXx6U8ABQ", "title": "Blinding Lights", "artists": [{"name": "The Weeknd"}], "duration": "3:20"},
+            ]
+        }
+    }
+    fake_ytm = types.SimpleNamespace(get_charts=lambda country="IN": fake_charts)
+    with patch.object(v2, "get_ytmusic", return_value=fake_ytm):
+        with TestClient(v2.app) as client:
+            res = client.get("/api-v2/trending?country=IN&limit=10")
+            assert res.status_code == 200
+            items = res.json()["results"]
+            assert len(items) == 1
+            assert items[0]["id"] == "4NRXx6U8ABQ"

@@ -22,11 +22,31 @@
         let ytPlayer = null;
         let ytPlayerReady = false;
         let ytProgressTimer = null;
+        if (typeof window !== 'undefined') {
+            window._dtunesActiveEngine = 'audio';
+            window.getActivePlaybackClock = () => {
+                const isYTActive = window._dtunesActiveEngine === 'yt'
+                    && ytPlayer
+                    && typeof ytPlayer.getCurrentTime === 'function';
+                if (isYTActive) {
+                    const cur = Number(ytPlayer.getCurrentTime() || 0);
+                    const ytDur = typeof ytPlayer.getDuration === 'function' ? Number(ytPlayer.getDuration() || 0) : 0;
+                    const dur = ytDur > 0 ? ytDur : Number(state.currentTrack?.duration || state.currentTrack?.duration_seconds || 0);
+                    return { currentTime: Number.isFinite(cur) ? cur : 0, duration: Number.isFinite(dur) ? dur : 0, engine: 'yt' };
+                }
+                const cur = Number(audio?.currentTime || 0);
+                const audioDur = Number(audio?.duration || 0);
+                const dur = (Number.isFinite(audioDur) && audioDur > 0)
+                    ? audioDur
+                    : Number(state.currentTrack?.duration || state.currentTrack?.duration_seconds || 0);
+                return { currentTime: Number.isFinite(cur) ? cur : 0, duration: Number.isFinite(dur) ? dur : 0, engine: 'audio' };
+            };
+        }
 
         const startYTProgressTimer = () => {
             if (ytProgressTimer) clearInterval(ytProgressTimer);
             ytProgressTimer = setInterval(() => {
-                if (!ytPlayer || typeof ytPlayer.getCurrentTime !== 'function' || !state.playing) return;
+                if (window._dtunesActiveEngine !== 'yt' || !ytPlayer || typeof ytPlayer.getCurrentTime !== 'function' || !state.playing) return;
                 const cur = ytPlayer.getCurrentTime() || 0;
                 const ytDur = typeof ytPlayer.getDuration === 'function' ? ytPlayer.getDuration() : 0;
                 const dur = (ytDur > 0) ? ytDur : (state.currentTrack?.duration || state.currentTrack?.duration_seconds || 0);
@@ -148,6 +168,7 @@
                         onError: (err) => {
                             console.warn('[DTunes] YouTube Player error:', err);
                             stopYTProgressTimer();
+                            window._dtunesActiveEngine = 'audio';
                             if (state.currentTrack?.url) {
                                 audio.crossOrigin = 'anonymous';
                                 audio.src = state.currentTrack.url;
@@ -288,7 +309,7 @@
         const requestPlay = async () => {
             if (!state.loaded && !state.currentTrack) return;
             state.userPaused = false;
-            const isYT = state.currentTrack?.source === 'youtube' && !state.currentTrack?.isOffline && ytPlayerReady && ytPlayer && typeof ytPlayer.playVideo === 'function';
+            const isYT = window._dtunesActiveEngine === 'yt' && ytPlayerReady && ytPlayer && typeof ytPlayer.playVideo === 'function';
             if (isYT) {
                 try {
                     ytPlayer.playVideo();
@@ -324,7 +345,7 @@
 
         const requestPause = () => {
             state.userPaused = true;
-            const isYT = state.currentTrack?.source === 'youtube' && !state.currentTrack?.isOffline && ytPlayerReady && ytPlayer && typeof ytPlayer.pauseVideo === 'function';
+            const isYT = window._dtunesActiveEngine === 'yt' && ytPlayerReady && ytPlayer && typeof ytPlayer.pauseVideo === 'function';
             if (isYT) {
                 try {
                     ytPlayer.pauseVideo();
@@ -615,6 +636,11 @@
                 }, 8000);
 
                 const setupAndStartPlayback = async (urlToPlay) => {
+                    stopYTProgressTimer();
+                    if (typeof window !== 'undefined') window._dtunesActiveEngine = 'audio';
+                    if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+                        try { ytPlayer.pauseVideo(); } catch (_) {}
+                    }
                     audio.crossOrigin = 'anonymous';
                     audio.preload = 'auto';
                     audio.src = urlToPlay;
@@ -741,6 +767,7 @@
 
                     // YouTube Client-Side Direct Playback
                     if (track.source === 'youtube' && !track.isOffline && ytPlayerReady && ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+                        window._dtunesActiveEngine = 'yt';
                         audio.pause();
                         audio.removeAttribute('src');
                         state.loaded = true;
@@ -752,6 +779,7 @@
                         ui.updatePlayBtn();
                         ui.updateMetadata(state.currentTrack);
                         ui.renderQueue();
+                        startYTProgressTimer();
                         primeNextTrack();
                         if (typeof lyricsManager !== 'undefined') lyricsManager.fetchLyricsForTrack(state.currentTrack);
                         if (typeof viz !== 'undefined') viz.start();
@@ -826,15 +854,19 @@
             },
             seek: (time) => {
                 if (!state.loaded || !Number.isFinite(time)) return;
-                const isYT = state.currentTrack?.source === 'youtube' && !state.currentTrack?.isOffline && ytPlayerReady && ytPlayer && typeof ytPlayer.seekTo === 'function';
+                const isYT = window._dtunesActiveEngine === 'yt' && ytPlayerReady && ytPlayer && typeof ytPlayer.seekTo === 'function';
                 if (isYT) {
                     try {
-                        ytPlayer.seekTo(time, true);
-                        const dur = ytPlayer.getDuration() || state.currentTrack?.duration || 1;
-                        currentProgress = dur ? time / dur : 0;
+                        const dur = (typeof ytPlayer.getDuration === 'function' && ytPlayer.getDuration() > 0)
+                            ? ytPlayer.getDuration()
+                            : (state.currentTrack?.duration || state.currentTrack?.duration_seconds || 1);
+                        const clamped = Math.max(0, Math.min(time, dur));
+                        ytPlayer.seekTo(clamped, true);
+                        currentProgress = dur ? clamped / dur : 0;
+                        if (typeof paintPlayhead === 'function') paintPlayhead(currentProgress);
                         const sb = document.getElementById('seek-bar');
-                        if (sb) sb.value = time;
-                        if (typeof lyricsManager !== 'undefined') lyricsManager.syncTime(time, true);
+                        if (sb) { sb.max = dur; sb.value = clamped; }
+                        if (typeof lyricsManager !== 'undefined') lyricsManager.syncTime(clamped, true);
                         if (typeof viz !== 'undefined') viz.start();
                         return;
                     } catch (_) {}

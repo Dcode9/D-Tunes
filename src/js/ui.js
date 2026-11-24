@@ -2348,53 +2348,25 @@ const mPlayBtn = document.getElementById('m-icon-play');
                 const first = ui._ppPlaying === undefined;
                 ui._ppPlaying = playing;
 
-                // 36 coordinate values per shape (18 points for 6 cubic bezier segments each)
-                // In Pause: two rounded vertical pill capsules
+                // Clean 2-polygon split morph (8 vertices = 16 coords): buttery smooth with zero kinks
                 const PAUSE = [
-                    // Subpath 1: Left pill
-                    5.8, 6.6,
-                    5.8, 5.5, 6.7, 4.6, 7.8, 4.6,
-                    8.9, 4.6, 9.8, 5.5, 9.8, 6.6,
-                    9.8, 10.0, 9.8, 14.0, 9.8, 17.4,
-                    9.8, 18.5, 8.9, 19.4, 7.8, 19.4,
-                    6.7, 19.4, 5.8, 18.5, 5.8, 17.4,
-                    5.8, 14.0, 5.8, 10.0,
-                    // Subpath 2: Right pill
-                    14.2, 6.6,
-                    14.2, 5.5, 15.1, 4.6, 16.2, 4.6,
-                    17.3, 4.6, 18.2, 5.5, 18.2, 6.6,
-                    18.2, 10.0, 18.2, 14.0, 18.2, 17.4,
-                    18.2, 18.5, 17.3, 19.4, 16.2, 19.4,
-                    15.1, 19.4, 14.2, 18.5, 14.2, 17.4,
-                    14.2, 14.0, 14.2, 10.0
+                    6.2, 5.2,  10.2, 5.2,  10.2, 18.8,  6.2, 18.8,
+                    13.8, 5.2, 17.8, 5.2,  17.8, 18.8,  13.8, 18.8
                 ];
-
-                // In Play: the two shapes melt together to form the rounded play triangle
                 const PLAY = [
-                    // Subpath 1: Left base & shoulders of play triangle
-                    7.0, 7.4,
-                    7.0, 6.2, 7.8, 5.3, 8.9, 6.0,
-                    10.2, 6.8, 11.5, 7.6, 12.0, 8.0,
-                    12.0, 10.5, 12.0, 13.5, 12.0, 16.0,
-                    11.5, 16.4, 10.2, 17.2, 8.9, 18.0,
-                    7.8, 18.7, 7.0, 17.8, 7.0, 16.6,
-                    7.0, 13.5, 7.0, 10.5,
-                    // Subpath 2: Right apex tip of play triangle
-                    12.0, 8.0,
-                    13.2, 8.8, 15.6, 10.2, 17.5, 11.2,
-                    18.8, 11.8, 18.8, 12.2, 17.5, 12.8,
-                    15.6, 13.8, 13.2, 15.2, 12.0, 16.0,
-                    12.0, 16.0, 12.0, 16.0, 12.0, 16.0,
-                    12.0, 12.0, 12.0, 12.0, 12.0, 8.0,
-                    12.0, 8.0, 12.0, 8.0
+                    7.4, 5.2,  13.2, 8.6,  13.2, 15.4,  7.4, 18.8,
+                    13.0, 8.5, 19.0, 12.0, 19.0, 12.0,  13.0, 15.5
                 ];
+                const toPolyPath = (v) =>
+                    `M ${v[0].toFixed(2)} ${v[1].toFixed(2)} L ${v[2].toFixed(2)} ${v[3].toFixed(2)} L ${v[4].toFixed(2)} ${v[5].toFixed(2)} L ${v[6].toFixed(2)} ${v[7].toFixed(2)} Z ` +
+                    `M ${v[8].toFixed(2)} ${v[9].toFixed(2)} L ${v[10].toFixed(2)} ${v[11].toFixed(2)} L ${v[12].toFixed(2)} ${v[13].toFixed(2)} L ${v[14].toFixed(2)} ${v[15].toFixed(2)} Z`;
 
                 const target = playing ? PAUSE : PLAY;
-                if (!ui._ppFrom) ui._ppFrom = (first ? (playing ? PAUSE : PLAY) : target).slice();
+                if (!ui._ppFrom || ui._ppFrom.length !== 16) ui._ppFrom = target.slice();
 
                 if (first) {
                     ui._ppFrom = target.slice();
-                    const d = ui._ppPath(ui._ppFrom);
+                    const d = toPolyPath(ui._ppFrom);
                     paths.forEach(p => p.setAttribute('d', d));
                     return;
                 }
@@ -2403,16 +2375,15 @@ const mPlayBtn = document.getElementById('m-icon-play');
                 const t0 = performance.now();
                 if (ui._ppFrame) cancelAnimationFrame(ui._ppFrame);
 
-                // Smooth organic spring easing
-                const ease = (t) => 1 - Math.pow(1 - t, 3.2);
+                const ease = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 
                 const step = (now) => {
-                    const p = Math.min(1, (now - t0) / 280);
+                    const p = Math.min(1, (now - t0) / 220);
                     const e = ease(p);
                     for (let i = 0; i < start.length; i++) {
                         ui._ppFrom[i] = start[i] + (target[i] - start[i]) * e;
                     }
-                    const d = ui._ppPath(ui._ppFrom);
+                    const d = toPolyPath(ui._ppFrom);
                     paths.forEach(pathEl => pathEl.setAttribute('d', d));
                     if (p < 1) ui._ppFrame = requestAnimationFrame(step);
                 };

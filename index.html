@@ -196,131 +196,135 @@
         </div>
     </div>
 
-    <!-- Playlist Creator Modal -->
-    <div id="playlist-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm hidden">
-        <div class="glass-panel p-6 rounded-2xl w-full max-w-lg shadow-2xl border border-white/10 transform transition-transform flex flex-col max-h-[90vh]">
-            <div class="flex items-center justify-between mb-4 flex-shrink-0">
-                <h3 class="text-xl font-medium text-white">Create Playlist</h3>
-                <button type="button" onclick="ui.toggleModal(false); ui.toggleVibeMixModal(true);" class="text-xs text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 transition cursor-pointer">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                    Try Vibe Mix
-                </button>
-            </div>
-            <input type="text" id="new-playlist-name" placeholder="My Awesome Mix" class="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-3 text-white mb-4 focus:outline-none focus:border-white/40 transition flex-shrink-0" autocomplete="off">
-
-            <div class="mb-4 flex-shrink-0 space-y-3">
-                <div class="flex items-center justify-between gap-3">
-                    <p class="text-xs font-bold uppercase tracking-wider text-gray-400">Cover</p>
-                    <div id="pl-cover-preview" class="w-14 h-14 rounded-xl flex items-center justify-center text-white shadow-lg overflow-hidden" style="background:#0ea5e9"></div>
-                </div>
+    <!-- Playlist Creator Modal (D'UI Mezzotint Redesign) -->
+    <div id="playlist-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 backdrop-blur-md hidden p-4" onclick="if(event.target === this) ui.toggleModal(false)">
+        <div class="w-full max-w-xl rounded-[1.75rem] bg-[#0a0a0e]/95 border border-white/12 shadow-[0_28px_70px_-16px_rgba(0,0,0,0.9)] flex flex-col max-h-[90vh] overflow-hidden">
+            <div class="flex items-center justify-between px-6 pt-6 pb-4 border-b border-white/8 flex-shrink-0">
                 <div>
-                    <p class="text-[11px] text-gray-400 mb-2">Background color</p>
-                    <div id="pl-color-picker" class="flex flex-wrap gap-2"></div>
+                    <span class="dt-hero-kicker mb-1.5">Library</span>
+                    <h3 class="text-xl font-bold text-white tracking-tight">Create Playlist</h3>
                 </div>
-                <div>
-                    <p class="text-[11px] text-gray-400 mb-2">Icon</p>
-                    <div id="pl-icon-picker" class="flex flex-wrap gap-2"></div>
+                <div class="flex items-center gap-2">
+                    <button type="button" onclick="ui.toggleModal(false); ui.toggleVibeMixModal(true);" class="px-3.5 py-1.5 rounded-full bg-white/8 hover:bg-white/15 border border-white/12 text-xs text-zinc-200 hover:text-white font-semibold flex items-center gap-1.5 transition cursor-pointer">
+                        <span class="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-white/15 text-white">AI</span>
+                        <span>Vibe Mix</span>
+                    </button>
+                    <button type="button" onclick="ui.toggleModal(false)" class="p-2 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition cursor-pointer" aria-label="Close Playlist Modal">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
                 </div>
-                <div>
-                    <p class="text-[11px] text-gray-400 mb-2">Shape style</p>
-                    <div id="pl-shape-picker" class="flex flex-wrap gap-2"></div>
-                </div>
-                <div id="pl-shape-params" class="hidden space-y-2">
-                    <label id="pl-corner-label" class="hidden text-[11px] text-gray-400">Corner radius <span id="pl-corner-value">20</span>
-                        <input id="pl-corner-radius" type="range" min="0" max="50" value="20" class="w-full accent-white">
-                    </label>
-                    <label id="pl-sides-label" class="hidden text-[11px] text-gray-400">Sides <span id="pl-sides-value">5</span>
-                        <input id="pl-star-sides" type="range" min="3" max="20" value="5" class="w-full accent-white">
-                    </label>
-                </div>
-            </div>
-            
-            <div class="relative mb-4 flex-shrink-0">
-                <input type="text" id="pl-song-search" placeholder="Search songs to add..." class="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-white/30 transition" autocomplete="off">
-                <div id="pl-search-results" class="max-h-40 overflow-y-auto mt-2 flex flex-col gap-1 custom-scrollbar"></div>
             </div>
 
-            <div id="pl-staged-area" class="hidden mb-6 flex-1 overflow-hidden flex flex-col">
-                <p class="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2 flex-shrink-0">Added Songs</p>
-                <div id="pl-staged-songs" class="overflow-y-auto custom-scrollbar flex flex-col gap-1 border border-white/5 rounded-xl p-2 bg-black/20 flex-1"></div>
+            <div class="overflow-y-auto custom-scrollbar px-6 py-5 flex flex-col gap-5 flex-1">
+                <div class="flex flex-col sm:flex-row gap-4 items-center sm:items-start">
+                    <div id="pl-cover-preview" class="w-24 h-24 rounded-2xl flex items-center justify-center text-white shadow-xl border border-white/12 overflow-hidden flex-shrink-0" style="background:#0ea5e9"></div>
+                    <div class="flex-1 w-full min-w-0">
+                        <label for="new-playlist-name" class="block text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Playlist Name</label>
+                        <input type="text" id="new-playlist-name" placeholder="Midnight Essentials" class="w-full bg-white/[0.06] border border-white/12 rounded-2xl px-4 py-3 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-white/35 focus:bg-white/[0.09] transition" autocomplete="off">
+                    </div>
+                </div>
+
+                <div class="p-4 rounded-2xl bg-white/[0.03] border border-white/8 space-y-3.5">
+                    <div>
+                        <p class="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Cover Color</p>
+                        <div id="pl-color-picker" class="flex flex-wrap gap-2"></div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-1">
+                        <div>
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Icon</p>
+                            <div id="pl-icon-picker" class="flex flex-wrap gap-2"></div>
+                        </div>
+                        <div>
+                            <p class="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Shape</p>
+                            <div id="pl-shape-picker" class="flex flex-wrap gap-1.5"></div>
+                        </div>
+                    </div>
+                    <div id="pl-shape-params" class="hidden space-y-2 pt-1">
+                        <label id="pl-corner-label" class="hidden text-[11px] text-zinc-400 block">Corner radius <span id="pl-corner-value" class="text-white font-semibold">20</span>
+                            <input id="pl-corner-radius" type="range" min="0" max="50" value="20" class="w-full accent-white mt-1">
+                        </label>
+                        <label id="pl-sides-label" class="hidden text-[11px] text-zinc-400 block">Sides <span id="pl-sides-value" class="text-white font-semibold">5</span>
+                            <input id="pl-star-sides" type="range" min="3" max="20" value="5" class="w-full accent-white mt-1">
+                        </label>
+                    </div>
+                </div>
+
+                <div>
+                    <label for="pl-song-search" class="block text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Add Tracks</label>
+                    <input type="text" id="pl-song-search" placeholder="Search YouTube Music songs to add..." class="w-full bg-white/[0.06] border border-white/12 rounded-2xl px-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-white/35 transition" autocomplete="off">
+                    <div id="pl-search-results" class="max-h-40 overflow-y-auto mt-2 flex flex-col gap-1 custom-scrollbar"></div>
+                </div>
+
+                <div id="pl-staged-area" class="hidden flex-col">
+                    <p class="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Added Songs</p>
+                    <div id="pl-staged-songs" class="max-h-36 overflow-y-auto custom-scrollbar flex flex-col gap-1 border border-white/8 rounded-2xl p-2 bg-black/30"></div>
+                </div>
             </div>
 
-            <div class="flex justify-end gap-3 border-t border-white/5 pt-4 flex-shrink-0">
-                <button onclick="ui.toggleModal(false)" class="px-4 py-2 rounded-lg text-gray-400 hover:text-white hover:bg-white/10 transition font-medium">Cancel</button>
-                <button onclick="ui.createPlaylist()" class="px-6 py-2 rounded-lg bg-white text-black font-bold hover:scale-105 transition shadow-lg shadow-black/40">Create</button>
+            <div class="flex items-center justify-end gap-2.5 px-6 py-4 border-t border-white/8 bg-black/30 flex-shrink-0">
+                <button type="button" onclick="ui.toggleModal(false)" class="px-5 py-2.5 rounded-full bg-white/8 hover:bg-white/15 text-zinc-200 text-xs font-bold transition cursor-pointer">Cancel</button>
+                <button type="button" onclick="ui.createPlaylist()" class="px-6 py-2.5 rounded-full bg-white text-black text-xs font-extrabold hover:bg-zinc-200 active:scale-95 transition shadow-lg cursor-pointer">Create Playlist</button>
             </div>
         </div>
     </div>
 
-    <!-- VIBE MIX MODAL -->
-    <div id="vibe-mix-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 backdrop-blur-md hidden" onclick="if(event.target === this) ui.toggleVibeMixModal(false)">
-        <div class="glass-panel p-6 rounded-3xl w-full max-w-lg shadow-2xl border border-white/10 transform transition-all flex flex-col max-h-[92vh] overflow-hidden mx-4">
-            <!-- Modal Header -->
-            <div class="flex items-center justify-between gap-3 mb-4 flex-shrink-0">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-black/40">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+    <!-- VIBE MIX MODAL (D'UI Mezzotint Redesign) -->
+    <div id="vibe-mix-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 backdrop-blur-md hidden p-4" onclick="if(event.target === this) ui.toggleVibeMixModal(false)">
+        <div class="w-full max-w-lg rounded-[1.75rem] bg-[#0a0a0e]/95 border border-white/12 shadow-[0_28px_70px_-16px_rgba(0,0,0,0.9)] flex flex-col max-h-[92vh] overflow-hidden">
+            <div class="flex items-start justify-between gap-3 px-6 pt-6 pb-4 border-b border-white/8 flex-shrink-0">
+                <div>
+                    <div class="flex items-center gap-2 mb-1">
+                        <h3 class="text-xl font-bold text-white tracking-tight">Vibe Mix</h3>
+                        <span class="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/12 border border-white/15 text-zinc-200">AI</span>
                     </div>
-                    <div>
-                        <h3 class="text-xl font-semibold text-white">Vibe Mix</h3>
-                        <p class="text-xs text-gray-400">Tell us a feeling, mood, or moment. We'll craft the soundtrack.</p>
-                    </div>
+                    <p class="text-xs text-zinc-400">Describe a mood, scene, or genre to generate a custom playlist.</p>
                 </div>
-                <button onclick="ui.toggleVibeMixModal(false)" class="text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition" aria-label="Close Vibe Mix Modal">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                <button type="button" onclick="ui.toggleVibeMixModal(false)" class="text-zinc-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition cursor-pointer" aria-label="Close Vibe Mix Modal">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
             </div>
 
-            <!-- Scrollable Body -->
-            <div class="overflow-y-auto custom-scrollbar flex flex-col gap-4 flex-1 pr-1">
-                <!-- Prompt Input -->
+            <div class="overflow-y-auto custom-scrollbar px-6 py-5 flex flex-col gap-5 flex-1">
                 <div>
-                    <label for="vibe-input" class="text-xs font-bold text-gray-300 mb-1.5 block">What vibe are you feeling?</label>
-                    <textarea id="vibe-input" rows="2" placeholder="e.g. Rainy midnight drive through the neon city, 90s acoustic chill, high-energy gym cardio..." class="w-full bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-white/40 transition resize-none text-sm"></textarea>
+                    <label for="vibe-input" class="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2 block">Your Vibe Prompt</label>
+                    <textarea id="vibe-input" rows="3" placeholder="e.g. Rainy midnight highway drive, warm 90s acoustic coffee shop, high-energy gym sprint..." class="w-full bg-white/[0.06] border border-white/12 rounded-2xl px-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:border-white/35 focus:bg-white/[0.09] transition resize-none text-sm leading-relaxed"></textarea>
                 </div>
 
-                <!-- Quick Vibe Pills -->
                 <div>
-                    <span class="text-[11px] font-bold uppercase tracking-wider text-gray-400 mb-2 block">Quick Vibes & Moods</span>
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-2 block">Quick Prompts</span>
                     <div class="flex flex-wrap gap-2">
-                        <button type="button" onclick="ui.selectVibeChip('Cozy acoustic afternoon coffee', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">Cozy Chill</button>
-                        <button type="button" onclick="ui.selectVibeChip('High energy workout motivation', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">High Energy</button>
-                        <button type="button" onclick="ui.selectVibeChip('Late night neon highway cruise', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">Late Night</button>
-                        <button type="button" onclick="ui.selectVibeChip('Deep focus flow and ambient beats', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">Deep Focus</button>
-                        <button type="button" onclick="ui.selectVibeChip('Musical Time Capsule: Forgotten favorites & deep cuts', true)" class="vibe-chip px-3 py-1.5 rounded-full bg-cyan-950/40 hover:bg-cyan-900/50 border border-cyan-500/40 text-xs text-cyan-300 font-semibold transition cursor-pointer">Time Capsule</button>
-                        <button type="button" onclick="ui.selectVibeChip('Sunny coastal road trip anthems', false)" class="vibe-chip px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/15 border border-white/10 text-xs text-gray-300 hover:text-white transition cursor-pointer">Road Trip</button>
+                        <button type="button" onclick="ui.selectVibeChip('Cozy acoustic afternoon coffee', false)" class="vibe-chip px-3.5 py-1.5 rounded-full bg-white/[0.06] hover:bg-white/14 border border-white/10 text-xs text-zinc-200 hover:text-white font-medium transition cursor-pointer">Cozy Chill</button>
+                        <button type="button" onclick="ui.selectVibeChip('High energy workout motivation', false)" class="vibe-chip px-3.5 py-1.5 rounded-full bg-white/[0.06] hover:bg-white/14 border border-white/10 text-xs text-zinc-200 hover:text-white font-medium transition cursor-pointer">High Energy</button>
+                        <button type="button" onclick="ui.selectVibeChip('Late night neon highway cruise', false)" class="vibe-chip px-3.5 py-1.5 rounded-full bg-white/[0.06] hover:bg-white/14 border border-white/10 text-xs text-zinc-200 hover:text-white font-medium transition cursor-pointer">Late Night</button>
+                        <button type="button" onclick="ui.selectVibeChip('Deep focus flow and ambient beats', false)" class="vibe-chip px-3.5 py-1.5 rounded-full bg-white/[0.06] hover:bg-white/14 border border-white/10 text-xs text-zinc-200 hover:text-white font-medium transition cursor-pointer">Deep Focus</button>
+                        <button type="button" onclick="ui.selectVibeChip('Musical Time Capsule: Forgotten favorites & deep cuts', true)" class="vibe-chip px-3.5 py-1.5 rounded-full bg-white/12 hover:bg-white/20 border border-white/20 text-xs text-white font-semibold transition cursor-pointer">Time Capsule</button>
+                        <button type="button" onclick="ui.selectVibeChip('Sunny coastal road trip anthems', false)" class="vibe-chip px-3.5 py-1.5 rounded-full bg-white/[0.06] hover:bg-white/14 border border-white/10 text-xs text-zinc-200 hover:text-white font-medium transition cursor-pointer">Road Trip</button>
                     </div>
                 </div>
 
-                <!-- Taste Infusion Toggle -->
-                <div class="p-3 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between">
+                <div class="p-4 rounded-2xl bg-white/[0.03] border border-white/8 flex items-center justify-between gap-4">
                     <div>
-                        <p class="text-xs font-bold text-white">Tune to my musical taste</p>
-                        <p class="text-[11px] text-gray-400">Infuses your favorite artists & history while obeying exclusions</p>
+                        <p class="text-xs font-bold text-white">Tune to my listening taste</p>
+                        <p class="text-[11px] text-zinc-400 mt-0.5">Blends your favorite artists & history while respecting exclusions</p>
                     </div>
-                    <label class="relative inline-flex items-center cursor-pointer">
+                    <label class="relative inline-flex items-center cursor-pointer flex-shrink-0">
                         <input type="checkbox" id="vibe-infuse-taste" checked class="sr-only peer">
                         <div class="w-11 h-6 bg-white/20 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-white"></div>
                     </label>
                 </div>
 
-                <!-- Generation Status & Spinner -->
-                <div id="vibe-loading-status" class="hidden flex-col items-center justify-center p-4 rounded-2xl bg-white/5 border border-white/10 text-center gap-2">
-                    <div class="w-8 h-8 border-3 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
-                    <p id="vibe-loading-text" class="text-xs font-semibold text-gray-200">Curating the perfect soundtrack...</p>
-                    <p class="text-[10px] text-gray-400">Matching verified audio streams and artwork</p>
+                <div id="vibe-loading-status" class="hidden flex-col items-center justify-center p-4 rounded-2xl bg-white/[0.04] border border-white/10 text-center gap-2">
+                    <div class="w-7 h-7 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <p id="vibe-loading-text" class="text-xs font-semibold text-zinc-200">Curating your soundtrack...</p>
+                    <p class="text-[10px] text-zinc-400">Matching YouTube Music tracks and artwork</p>
                 </div>
             </div>
 
-            <div class="flex items-center justify-between border-t border-white/10 pt-4 mt-3 flex-shrink-0">
-                <div class="flex items-center gap-2">
-                    <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-zinc-200">AI</span>
-                    <span class="text-[11px] text-gray-400">8–10 tracks curated</span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <button type="button" onclick="ui.toggleVibeMixModal(false)" class="px-4 py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition">Cancel</button>
-                    <button type="button" id="btn-create-vibe-mix" onclick="ui.submitVibeMix()" class="px-6 py-2.5 rounded-xl bg-white text-black text-xs font-black hover:scale-105 transition shadow-lg shadow-black/40 flex items-center gap-2 cursor-pointer">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            <div class="flex items-center justify-between px-6 py-4 border-t border-white/8 bg-black/30 flex-shrink-0">
+                <span class="text-[11px] text-zinc-400">8–10 tracks curated</span>
+                <div class="flex items-center gap-2.5">
+                    <button type="button" onclick="ui.toggleVibeMixModal(false)" class="px-5 py-2.5 rounded-full bg-white/8 hover:bg-white/15 text-zinc-200 text-xs font-bold transition cursor-pointer">Cancel</button>
+                    <button type="button" id="btn-create-vibe-mix" onclick="ui.submitVibeMix()" class="px-6 py-2.5 rounded-full bg-white text-black text-xs font-extrabold hover:bg-zinc-200 active:scale-95 transition shadow-lg flex items-center gap-1.5 cursor-pointer">
                         <span>Curate Vibe</span>
                     </button>
                 </div>

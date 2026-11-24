@@ -255,14 +255,11 @@
                     });
 
                     lyricsManager.activeLineIndex = -1;
-                    const isYTActive = typeof state !== 'undefined'
-                        && state.currentTrack?.source === 'youtube'
-                        && !state.currentTrack?.isOffline
-                        && window._ytPlayerInstance
-                        && typeof window._ytPlayerInstance.getCurrentTime === 'function';
-                    const currentPlaybackTime = isYTActive
-                        ? (window._ytPlayerInstance.getCurrentTime() || 0)
-                        : (document.getElementById('audio-el')?.currentTime || 0);
+                    const currentPlaybackTime = (typeof window.getActivePlaybackClock === 'function')
+                        ? (window.getActivePlaybackClock().currentTime || 0)
+                        : ((window._dtunesActiveEngine === 'yt' && window._ytPlayerInstance && typeof window._ytPlayerInstance.getCurrentTime === 'function')
+                            ? (window._ytPlayerInstance.getCurrentTime() || 0)
+                            : (document.getElementById('audio-el')?.currentTime || 0));
                     lyricsManager.syncTime(currentPlaybackTime, true);
                     return;
                 }

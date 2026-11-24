@@ -1169,6 +1169,69 @@ def migrate_saavn_id_sync(saavn_id: str) -> Optional[Track]:
         return None
 
 
+_SPOTIFY_CHART_NOISE_RE = re.compile(r"\b(spotify|top\s*50|billboard\s*chart|playlist\s*mix|jukebox)\b", re.IGNORECASE)
+
+
+def get_trending_sync(country: str = "IN", limit: int = 25) -> list[Track]:
+    """Fetch real YouTube Music trending & top songs (avoiding Spotify chart compilations)."""
+    tracks: list[Track] = []
+    seen: set[str] = set()
+
+    def _add(t: Optional[Track]) -> None:
+        if not t or t.id in seen:
+            return
+        if _SPOTIFY_CHART_NOISE_RE.search(f"{t.title} {t.artist}"):
+            return
+        seen.add(t.id)
+        tracks.append(t)
+
+    if get_ytmusic:
+        try:
+            ytm = get_ytmusic()
+            charts = ytm.get_charts(country=country) or {}
+            for section_key in ("songs", "trending", "videos"):
+                sec = charts.get(section_key)
+                items = sec.get("items") if isinstance(sec, dict) else (sec if isinstance(sec, list) else [])
+                for item in items or []:
+                    if not isinstance(item, dict):
+                        continue
+                    _add(_normalize_ytm_track(item))
+                    if len(tracks) >= limit:
+                        return tracks[:limit]
+        except Exception as exc:
+            logger.warning("YTMusic get_charts(%s) failed: %s", country, exc)
+
+        # Fallback: official YouTube Music songs across popular current queries (never 'trending music hits' -> Spotify charts)
+        fallback_queries = [
+            "Bollywood new songs 2026",
+            "Arijit Singh latest songs",
+            "Global pop hits official",
+            "Punjabi hit songs",
+        ]
+        for q in fallback_queries:
+            if len(tracks) >= limit:
+                break
+            for t in search_ytmusic(q, limit=10):
+                _add(t)
+                if len(tracks) >= limit:
+                    break
+
+    return tracks[:limit]
+
+
+@router.get("/trending", response_model=SearchResponse)
+async def trending_endpoint(country: str = "IN", limit: int = 25) -> SearchResponse:
+    c_code = re.sub(r"[^A-Za-z]", "", country or "IN").upper()[:2] or "IN"
+    limit_val = max(1, min(limit, 50))
+    cache_key = f"trending:{c_code}:{limit_val}"
+    cached = await search_cache.get(cache_key)
+    if cached is not None:
+        return SearchResponse(results=cached, query=f"trending:{c_code}", cached=True)
+    results = await asyncio.to_thread(get_trending_sync, c_code, limit_val)
+    await search_cache.set(cache_key, results, SEARCH_TTL)
+    return SearchResponse(results=results, query=f"trending:{c_code}", cached=False)
+
+
 @router.get("/migrate/saavn/{saavn_id}", response_model=Track)
 async def migrate_saavn_endpoint(saavn_id: str) -> Track:
     if not _SAAVN_ID_RE.match(saavn_id):

@@ -163,17 +163,15 @@
 
             const tickPlayhead = () => {
                 const isTransitioning = (typeof trackTransition !== 'undefined' && trackTransition.active);
-                const isYT = state.currentTrack?.source === 'youtube' && !state.currentTrack?.isOffline && window._ytPlayerInstance && typeof window._ytPlayerInstance.getCurrentTime === 'function';
-                if (isYT && state.playing && !state.isDragging && !state.isGlidingToStart && !isTransitioning) {
+                if (state.playing && !state.isDragging && !state.isGlidingToStart && !isTransitioning) {
                     try {
-                        const cur = window._ytPlayerInstance.getCurrentTime() || 0;
-                        const dur = window._ytPlayerInstance.getDuration() || state.currentTrack?.duration || 0;
-                        if (dur > 0) {
-                            paintPlayhead(cur / dur);
+                        const clock = typeof window.getActivePlaybackClock === 'function'
+                            ? window.getActivePlaybackClock()
+                            : { currentTime: audio.currentTime || 0, duration: (Number.isFinite(audio.duration) && audio.duration > 0) ? audio.duration : (state.currentTrack?.duration || 0) };
+                        if (clock.duration > 0) {
+                            paintPlayhead(clock.currentTime / clock.duration);
                         }
                     } catch (_) {}
-                } else if (state.playing && !state.isDragging && !state.isGlidingToStart && !isTransitioning && Number.isFinite(audio.duration) && audio.duration > 0) {
-                    paintPlayhead(audio.currentTime / audio.duration);
                 }
                 requestAnimationFrame(tickPlayhead);
             };
@@ -219,11 +217,18 @@
             }, { passive: true });
 
             seekBar.addEventListener('input', () => {
-                if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
+                const clock = typeof window.getActivePlaybackClock === 'function'
+                    ? window.getActivePlaybackClock()
+                    : { duration: (Number.isFinite(audio.duration) && audio.duration > 0) ? audio.duration : (state.currentTrack?.duration || 0), engine: 'audio' };
+                if (!Number.isFinite(clock.duration) || clock.duration <= 0) return;
                 const nextTime = parseFloat(seekBar.value);
                 if (!Number.isFinite(nextTime)) return;
-                paintPlayhead(nextTime / audio.duration);
-                audio.currentTime = nextTime;
+                paintPlayhead(nextTime / clock.duration);
+                if (typeof player !== 'undefined' && player.seek) {
+                    player.seek(nextTime);
+                } else {
+                    audio.currentTime = nextTime;
+                }
                 updateMediaPosition();
                 if (typeof lyricsManager !== 'undefined' && lyricsManager.syncTime) {
                     lyricsManager.syncTime(nextTime, true);
@@ -232,12 +237,19 @@
             });
 
             seekBar.addEventListener('change', () => {
-                if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
+                const clock = typeof window.getActivePlaybackClock === 'function'
+                    ? window.getActivePlaybackClock()
+                    : { duration: (Number.isFinite(audio.duration) && audio.duration > 0) ? audio.duration : (state.currentTrack?.duration || 0), engine: 'audio' };
+                if (!Number.isFinite(clock.duration) || clock.duration <= 0) { setDragging(false); return; }
                 const nextTime = parseFloat(seekBar.value);
-                if (!Number.isFinite(nextTime)) return;
-                audio.currentTime = nextTime;
+                if (!Number.isFinite(nextTime)) { setDragging(false); return; }
+                if (typeof player !== 'undefined' && player.seek) {
+                    player.seek(nextTime);
+                } else {
+                    audio.currentTime = nextTime;
+                }
                 updateMediaPosition();
-                paintPlayhead(nextTime / audio.duration);
+                paintPlayhead(nextTime / clock.duration);
                 if (typeof lyricsManager !== 'undefined' && lyricsManager.syncTime) {
                     lyricsManager.syncTime(nextTime, true);
                 }
@@ -258,15 +270,17 @@
             const applyHover = () => {
                 hoverFrame = 0;
                 const point = hoverPoint;
-                if (!point || !state.loaded || !audio.duration) return;
+                const activeDur = typeof window.getActivePlaybackClock === 'function' ? window.getActivePlaybackClock().duration : (audio.duration || 0);
+                if (!point || !state.loaded || !activeDur) return;
                 const rect = container.getBoundingClientRect();
                 if (point.y - rect.top < rect.height / 2) { state.hoverProgress = -1; tooltip.classList.remove('visible'); return; }
                 const progress = Math.max(0, Math.min(1, (point.x - rect.left) / rect.width)); state.hoverProgress = progress; state.lastHoverProgress = progress;
-                const hoverTime = progress * audio.duration; tooltip.textContent = `${Math.floor(hoverTime / 60)}:${Math.floor(hoverTime % 60).toString().padStart(2, '0')}`;
+                const hoverTime = progress * activeDur; tooltip.textContent = `${Math.floor(hoverTime / 60)}:${Math.floor(hoverTime % 60).toString().padStart(2, '0')}`;
                 tooltip.style.left = `${(point.x - rect.left)}px`; tooltip.classList.add('visible');
             };
             container.addEventListener('mousemove', (e) => {
-                if (!state.loaded || !audio.duration) return;
+                const activeDur = typeof window.getActivePlaybackClock === 'function' ? window.getActivePlaybackClock().duration : (audio.duration || 0);
+                if (!state.loaded || !activeDur) return;
                 hoverPoint = { x: e.clientX, y: e.clientY };
                 if (!hoverFrame) hoverFrame = requestAnimationFrame(applyHover);
             });
