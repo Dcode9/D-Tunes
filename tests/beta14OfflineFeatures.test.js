@@ -32,7 +32,7 @@ test('Beta 1.4: Offline Home - Downloaded songs on top, cached items below with 
     assert.match(aiHubCode, /buildLibraryShelf\(\)/, 'Cached library shelf is rendered');
 
     // Verify expiry timestamp is shown in header
-    assert.match(aiHubCode, /Expires at \$\{formatDailyExpiry\(expiresAt\)\}/, 'Expiry timestamp is displayed in Made For You header');
+    assert.doesNotMatch(aiHubCode, /Expires at \$\{formatDailyExpiry\(expiresAt\)\}/, 'Expiry timestamp is no longer displayed in the Made For You header');
 
     // Verify expired cache is rejected
     assert.match(aiHubCode, /expiresAt > Date\.now\(\)/, 'Cache validator rejects expired Made For You cache');

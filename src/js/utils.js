@@ -170,6 +170,18 @@
             }, true);
         };
 
+        // The scroll animation in CSS only runs on `.is-overflowing.is-in-view`, so off-screen titles cost nothing.
+        // Nothing ever added .is-in-view (since the Beta 1.4.5 rewrite), which froze every scrolling title. This does.
+        const marqueeViewObserver = ('IntersectionObserver' in window) ? new IntersectionObserver((entries) => {
+            entries.forEach((entry) => {
+                const box = entry.target;
+                if (!box.isConnected) { marqueeViewObserver.unobserve(box); return; }
+                box.classList.toggle('is-in-view', entry.isIntersecting);
+                const t = box.querySelector('.marquee-text');
+                if (t) t.classList.toggle('is-in-view', entry.isIntersecting);
+            });
+        }) : null;
+
         let marqueeUpdateScheduled = false;
         const updateMarquees = () => {
             if (marqueeUpdateScheduled) return;
@@ -185,6 +197,9 @@
                     if (container.offsetParent === null) continue;
                     const text = container.querySelector('.marquee-text');
                     if (!text) continue;
+                    if (marqueeViewObserver) {
+                        if (!container._marqueeObserved) { container._marqueeObserved = true; marqueeViewObserver.observe(container); }
+                    } else { container.classList.add('is-in-view'); text.classList.add('is-in-view'); }
 
                     const scrollW = text.scrollWidth;
                     const clientW = container.clientWidth;

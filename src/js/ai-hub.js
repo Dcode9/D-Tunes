@@ -654,8 +654,8 @@
             const songCardsHtml = validSongs.map(song => {
                 let cardHtml = ui.createCard(song);
                 cardHtml = cardHtml.replace(
-                    'class="w-full h-full object-cover',
-                    'class="w-full h-full object-cover reveal-blur-img" onload="this.classList.add(\'revealed\'); const p=this.closest(\'.scroll-card\'); if(p) p.querySelectorAll(\'.reveal-text\').forEach(el=>el.classList.add(\'revealed\'));"'
+                    'class="w-full h-full object-cover sc-art-img"',
+                    'class="w-full h-full object-cover sc-art-img reveal-blur-img" onload="this.classList.add(\'revealed\'); const p=this.closest(\'.scroll-card\'); if(p) p.querySelectorAll(\'.reveal-text\').forEach(el=>el.classList.add(\'revealed\'));"'
                 );
                 cardHtml = cardHtml.replace(
                     /<div class="marquee-container w-full">/g,
@@ -751,7 +751,7 @@
                 <div class="flex flex-col items-start gap-3 md:flex-row md:items-center md:justify-between md:gap-4 px-4 md:px-8 mb-6 pb-2 border-b border-white/10">
                     <div class="min-w-0">
                         <h2 class="text-2xl md:text-3xl font-bold font-display text-white tracking-tight">Made For You</h2>
-                        <p class="text-xs md:text-sm text-neutral-400 mt-1">${utils.escapeHtml(description)}${expiresAt ? ` <span class="text-xs text-brand-primary font-medium ml-2 bg-brand-primary/10 border border-brand-primary/20 px-2 py-0.5 rounded-full">Expires at ${formatDailyExpiry(expiresAt)}</span>` : ""}</p>
+                        <p class="text-xs md:text-sm text-neutral-400 mt-1">${utils.escapeHtml(description)}</p>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
                         <button onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Made For You (Daily Recommendations)' })" class="text-xs text-amber-400/90 hover:text-amber-300 flex items-center gap-1.5 whitespace-nowrap min-h-[44px] md:min-h-0 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 transition hover:bg-amber-500/20 cursor-pointer" title="Report issue with AI-generated recommendations (Policy 11.16)">
