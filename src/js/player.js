@@ -25,12 +25,13 @@
         if (typeof window !== 'undefined') {
             window._dtunesActiveEngine = 'audio';
             window.getActivePlaybackClock = () => {
+                const activeYT = ytPlayer || window._ytPlayerInstance;
                 const isYTActive = window._dtunesActiveEngine === 'yt'
-                    && ytPlayer
-                    && typeof ytPlayer.getCurrentTime === 'function';
+                    && activeYT
+                    && typeof activeYT.getCurrentTime === 'function';
                 if (isYTActive) {
-                    const cur = Number(ytPlayer.getCurrentTime() || 0);
-                    const ytDur = typeof ytPlayer.getDuration === 'function' ? Number(ytPlayer.getDuration() || 0) : 0;
+                    const cur = Number(activeYT.getCurrentTime() || 0);
+                    const ytDur = typeof activeYT.getDuration === 'function' ? Number(activeYT.getDuration() || 0) : 0;
                     const dur = ytDur > 0 ? ytDur : Number(state.currentTrack?.duration || state.currentTrack?.duration_seconds || 0);
                     return { currentTime: Number.isFinite(cur) ? cur : 0, duration: Number.isFinite(dur) ? dur : 0, engine: 'yt' };
                 }
