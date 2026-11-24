@@ -1082,8 +1082,9 @@
                     plArtEl.className = `w-full h-full flex items-center justify-center text-6xl font-bold text-white overflow-hidden ${style.bg}`;
                     plArtEl.innerHTML = style.customHtml || style.icon;
                 }
+                const isAiPlaylist = /vibe|capsule|daily|mix|ai|generated/i.test(name) || (state.playlistStyles && (state.playlistStyles[name]?.icon === 'sparkles' || state.playlistStyles[name]?.icon === 'history'));
                 const plKicker = document.getElementById('playlist-view-kicker');
-                if (plKicker) plKicker.textContent = name === 'Liked Songs' ? 'Liked Songs' : 'Playlist';
+                if (plKicker) plKicker.textContent = name === 'Liked Songs' ? 'Liked Songs' : (isAiPlaylist ? 'AI Playlist' : 'Playlist');
                 const plSummary = document.getElementById('playlist-tracklist-summary');
                 if (plSummary) plSummary.textContent = `${songs.length} ${songs.length === 1 ? 'track' : 'tracks'} • ${durationStr}`;
 
@@ -1107,7 +1108,7 @@
 
                 const listEl = document.getElementById('playlist-songs-list');
                 if (songs.length === 0) { listEl.innerHTML = '<p class="text-gray-400 py-4">No songs in this playlist yet.</p>'; } 
-                else { listEl.innerHTML = songs.map(song => ui.createListRow(song, name)).join(''); }
+                else { listEl.innerHTML = songs.map(song => ui.createListRow(isAiPlaylist ? { ...song, _aiGenerated: true } : song, name)).join(''); }
                 
                 document.getElementById('playlist-play-all').onclick = () => ui.playPlaylist(name);
                 const plPlayNext = document.getElementById('playlist-play-next');
@@ -1118,28 +1119,28 @@
                 if (plBtnEdit) plBtnEdit.onclick = () => ui.openPlaylistEditor(name);
                 const plBtnDelete = document.getElementById('playlist-btn-delete');
                 if (plBtnDelete) plBtnDelete.onclick = () => ui.deletePlaylist(name);
-                const aiReportBtn = document.getElementById('playlist-ai-report-btn');
-                const isAiPlaylist = /vibe|capsule|daily|mix|ai|generated/i.test(name) || (state.playlistStyles && (state.playlistStyles[name]?.icon === 'sparkles' || state.playlistStyles[name]?.icon === 'history'));
-                if (aiReportBtn) {
+                const aiFeedbackBar = document.getElementById('playlist-ai-feedback-bar');
+                if (aiFeedbackBar) {
                     if (isAiPlaylist) {
-                        aiReportBtn.classList.remove('hidden');
-                        aiReportBtn.classList.add('flex');
-                        aiReportBtn.onclick = () => {
-                            if (window.aiReportManager) {
-                                window.aiReportManager.openReportModal({
-                                    feature: 'AI Vibe / Mix Playlist',
-                                    contentSummary: `Playlist: "${name}" (${songs.length} tracks)`,
-                                    context: {
-                                        title: name,
-                                        trackCount: songs.length,
-                                        sampleTracks: songs.slice(0, 5).map(s => `${s.name || s.title} - ${s.artist || ''}`)
-                                    }
+                        aiFeedbackBar.classList.remove('hidden');
+                        aiFeedbackBar.classList.add('flex');
+                        const likeBtn = document.getElementById('playlist-ai-like');
+                        const dislikeBtn = document.getElementById('playlist-ai-dislike');
+                        const openPlFeedback = (sentiment) => {
+                            if (window.mixFeedbackManager && window.mixFeedbackManager.openFeedbackModal) {
+                                window.mixFeedbackManager.openFeedbackModal({
+                                    sentiment,
+                                    feature: 'AI Playlist',
+                                    mixTitle: name,
+                                    context: { title: name, trackCount: songs.length }
                                 });
                             }
                         };
+                        if (likeBtn) likeBtn.onclick = () => openPlFeedback('like');
+                        if (dislikeBtn) dislikeBtn.onclick = () => openPlFeedback('dislike');
                     } else {
-                        aiReportBtn.classList.add('hidden');
-                        aiReportBtn.classList.remove('flex');
+                        aiFeedbackBar.classList.add('hidden');
+                        aiFeedbackBar.classList.remove('flex');
                     }
                 }
 
@@ -2139,26 +2140,19 @@
                 const customActions = document.getElementById('playlist-custom-actions');
                 if (customActions) customActions.classList.add('hidden');
 
-                const aiReportBtn = document.getElementById('playlist-ai-report-btn');
-                if (aiReportBtn) {
-                    aiReportBtn.classList.remove('hidden');
-                    aiReportBtn.classList.add('flex');
-                    aiReportBtn.onclick = () => {
-                        if (window.aiReportManager) {
-                            window.aiReportManager.openReportModal({
-                                feature: 'AI Generated Mix / Playlist',
-                                contentSummary: `Playlist: "${title}" (${songs.length} tracks)`,
-                                context: {
-                                    title,
-                                    trackCount: songs.length,
-                                    sampleTracks: songs.slice(0, 5).map(s => `${s.name || s.title} - ${s.artist || ''}`)
-                                }
-                            });
-                        }
-                    };
+                const plKickerGen = document.getElementById('playlist-view-kicker');
+                if (plKickerGen) plKickerGen.textContent = 'AI Playlist';
+                const aiFeedbackBarGen = document.getElementById('playlist-ai-feedback-bar');
+                if (aiFeedbackBarGen) {
+                    aiFeedbackBarGen.classList.remove('hidden');
+                    aiFeedbackBarGen.classList.add('flex');
+                    const likeBtn = document.getElementById('playlist-ai-like');
+                    const dislikeBtn = document.getElementById('playlist-ai-dislike');
+                    if (likeBtn) likeBtn.onclick = () => window.mixFeedbackManager?.openFeedbackModal({ sentiment: 'like', feature: 'AI Playlist', mixTitle: title, context: { title, trackCount: songs.length } });
+                    if (dislikeBtn) dislikeBtn.onclick = () => window.mixFeedbackManager?.openFeedbackModal({ sentiment: 'dislike', feature: 'AI Playlist', mixTitle: title, context: { title, trackCount: songs.length } });
                 }
 
-                document.getElementById('playlist-songs-list').innerHTML = songs.map(song => ui.createListRow(song)).join('');
+                document.getElementById('playlist-songs-list').innerHTML = songs.map(song => ui.createListRow({ ...song, _aiGenerated: true })).join('');
                 document.getElementById('playlist-play-all').onclick = () => {
                     if(songs.length > 0) { state.queue = [...songs]; state.userQueue = []; state.idx = 0; player.playDirect(songs[0]); }
                 };
@@ -3301,14 +3295,24 @@ const mPlayBtn = document.getElementById('m-icon-play');
 
         const mixFeedbackManager = {
             MODAL_ID: 'dtunes-mix-feedback-modal',
+            SUPABASE_FEEDBACK_ENDPOINT: 'https://gmwieijbrrztukqpfwkg.supabase.co/rest/v1/dtunes_feedback',
+            SUPABASE_ANON_KEY: 'sb_publishable_KX3MYtV84QJJdy9bPDuMEA_V99sLKSE',
             REASONS: [
                 'Not interested in this kind of mix',
                 'Too few songs in this mix',
                 "Tracks don't match the vibe of this playlist",
+                'Inappropriate or off-topic AI output',
+                'Other'
+            ],
+            LIKE_REASONS: [
+                'Great song selection',
+                'Matches my mood & vibe',
+                'Discovered new tracks I love',
                 'Other'
             ],
             _overlay: null,
             _selectedReason: -1,
+            _activeReasons: [],
             _escapeHandler: null,
             currentContext: null,
 
@@ -3324,6 +3328,14 @@ const mPlayBtn = document.getElementById('m-icon-play');
                 this.closeFeedbackModal();
                 this.currentContext = options;
                 this._selectedReason = -1;
+                const isLike = options.sentiment === 'like';
+                const reasons = isLike ? this.LIKE_REASONS : this.REASONS;
+                this._activeReasons = reasons;
+                const heading = isLike ? 'Glad you liked it!' : 'Share AI feedback';
+                const subtext = isLike
+                    ? `What stood out about <span class="text-white/80">${this.escapeHtml(options.mixTitle || 'this AI pick')}</span>?`
+                    : `Tell us what to improve or report for <span class="text-white/80">${this.escapeHtml(options.mixTitle || 'this AI pick')}</span>.`;
+                const promptLabel = isLike ? 'What worked well?' : 'What should we change or review?';
 
                 const overlay = document.createElement('div');
                 overlay.id = this.MODAL_ID;
@@ -3333,8 +3345,11 @@ const mPlayBtn = document.getElementById('m-icon-play');
                         <div class="px-5 pt-5 pb-4 border-b border-white/10">
                             <div class="flex items-start justify-between gap-3">
                                 <div class="min-w-0">
-                                    <h3 class="text-lg font-bold text-white tracking-tight">Help us improve this mix</h3>
-                                    <p class="text-xs text-neutral-400 mt-1">Tell us what didn't work for <span class="text-white/80">${this.escapeHtml(options.mixTitle || 'this mix')}</span>.</p>
+                                    <div class="flex items-center gap-2">
+                                        <h3 class="text-lg font-bold text-white tracking-tight">${heading}</h3>
+                                        <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-zinc-200">AI</span>
+                                    </div>
+                                    <p class="text-xs text-neutral-400 mt-1">${subtext}</p>
                                 </div>
                                 <button type="button" data-mix-feedback-close class="p-1 rounded-full text-neutral-400 hover:text-white hover:bg-white/10 transition flex-shrink-0" aria-label="Close feedback">
                                     <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg>
@@ -3342,9 +3357,9 @@ const mPlayBtn = document.getElementById('m-icon-play');
                             </div>
                         </div>
                         <div class="px-5 py-4">
-                            <p class="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold mb-2">What should we change?</p>
+                            <p class="text-[11px] uppercase tracking-wider text-neutral-500 font-semibold mb-2">${promptLabel}</p>
                             <div class="space-y-2">
-                                ${this.REASONS.map((reason, index) => `
+                                ${reasons.map((reason, index) => `
                                     <button type="button" data-mix-reason="${index}" class="mix-reason-option w-full text-left px-3.5 py-2.5 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] text-sm text-neutral-200 transition flex items-center gap-3">
                                         <span class="mix-reason-dot w-3.5 h-3.5 rounded-full border border-neutral-500 flex-shrink-0"></span>
                                         <span>${this.escapeHtml(reason)}</span>
@@ -3425,17 +3440,16 @@ const mPlayBtn = document.getElementById('m-icon-play');
             },
 
             submitFeedback: async function() {
-                const context = this.currentContext;
-                if (!context || typeof context.onSubmit !== 'function') return;
-
+                const context = this.currentContext || {};
                 let customFeedback = '';
                 if (this._overlay && this._overlay.querySelector) {
                     const review = this._overlay.querySelector('#mix-feedback-review');
                     if (review) customFeedback = String(review.value || '').trim();
                 }
-                const reason = this._selectedReason >= 0 ? this.REASONS[this._selectedReason] : '';
+                const reasonList = (this._activeReasons && this._activeReasons.length) ? this._activeReasons : this.REASONS;
+                const reason = this._selectedReason >= 0 ? reasonList[this._selectedReason] : '';
                 if (!reason && !customFeedback) {
-                    this.showError('Choose a reason or write a short note.');
+                    this.showError('Choose an option or write a short note.');
                     return;
                 }
 
@@ -3446,8 +3460,34 @@ const mPlayBtn = document.getElementById('m-icon-play');
                 }
 
                 try {
-                    await context.onSubmit({ reason, customFeedback });
+                    if (typeof context.onSubmit === 'function') {
+                        await context.onSubmit({ reason, customFeedback });
+                    }
+                    if (typeof fetch === 'function') {
+                        const isLike = context.sentiment === 'like';
+                        const payload = {
+                            name: (typeof state !== 'undefined' && state.username && state.username !== 'Guest User') ? state.username : 'Anonymous Listener',
+                            email: null,
+                            category: 'ai',
+                            rating: isLike ? 5 : 1,
+                            message: `[AI Feedback - ${isLike ? 'Like' : 'Dislike'}]\nFeature: ${context.feature || 'AI Mix'}\nItem: ${context.mixTitle || 'Unknown'}\nReason: ${reason || 'Note'}\nDetails: ${customFeedback || '(none)'}`,
+                            user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : 'DTunes-Client',
+                            app_version: (typeof window !== 'undefined' && window.electronAPI) ? '1.4.5-win-desktop' : '1.4.5-web'
+                        };
+                        await fetch(this.SUPABASE_FEEDBACK_ENDPOINT, {
+                            method: 'POST',
+                            headers: {
+                                'apikey': this.SUPABASE_ANON_KEY,
+                                'Content-Type': 'application/json',
+                                'Prefer': 'return=minimal'
+                            },
+                            body: JSON.stringify(payload)
+                        }).catch(() => {});
+                    }
                     this.closeFeedbackModal();
+                    if (typeof ui !== 'undefined' && ui.showToast) {
+                        ui.showToast('Thanks for your feedback!', 'success');
+                    }
                 } catch (err) {
                     this.showError('Could not send feedback. Please try again.');
                 } finally {

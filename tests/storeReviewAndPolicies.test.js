@@ -31,46 +31,29 @@ test('Policy 10.1.2.10: Spotify Playlist URL Parsing and Guard against URL Fallb
     assert.ok(spotifyContent.includes('Could not extract tracks from this Spotify link'), 'Must show clear error if playlist cannot be parsed');
 });
 
-test('Policy 11.16: Live Generative AI Content Report Modal and UI Entry Points', (t) => {
+test('AI Feedback UX: Clean AI marks, Like/Dislike Supabase feedback modal, and AI-only song menu gating', () => {
     const indexContent = fs.readFileSync(indexPath, 'utf8');
     const uiContent = fs.readFileSync(uiPath, 'utf8');
     const aiHubContent = fs.readFileSync(aiHubPath, 'utf8');
     const contextMenuContent = fs.readFileSync(contextMenuPath, 'utf8');
 
-    // 1. ai-report-modal structure in index.html
-    assert.ok(indexContent.includes('id="ai-report-modal"'), 'index.html must include #ai-report-modal');
-    assert.ok(indexContent.includes('Policy 11.16'), 'Modal must prominently cite Policy 11.16');
-    assert.ok(indexContent.includes('id="ai-report-feature-badge"'), 'Modal must have feature badge');
-    assert.ok(indexContent.includes('id="ai-report-issue-type"'), 'Modal must have issue category selector');
-    assert.ok(indexContent.includes('id="ai-report-details"'), 'Modal must have details textarea');
-    assert.ok(indexContent.includes('id="btn-submit-ai-report"'), 'Modal must have submit button');
+    // 1. Cluttered standalone Report AI Output buttons & modal are removed
+    assert.ok(!indexContent.includes('id="ai-report-modal"'), 'index.html must not contain cluttered #ai-report-modal');
+    assert.ok(!indexContent.includes('id="playlist-ai-report-btn"'), 'Playlist view must replace Report AI Playlist with Like/Dislike');
+    assert.ok(!indexContent.includes('id="btn-report-search"'), 'Search view must not have standalone Report button');
+    assert.ok(!aiHubContent.includes('Report AI Content'), 'Made For You must not have Report AI Content button');
 
-    // 2. aiReportManager logic in ui.js
-    assert.ok(uiContent.includes('aiReportManager = {'), 'ui.js must define aiReportManager');
-    assert.ok(uiContent.includes('openReportModal:'), 'aiReportManager must implement openReportModal');
-    assert.ok(uiContent.includes('closeReportModal:'), 'aiReportManager must implement closeReportModal');
-    assert.ok(uiContent.includes('submitReport:'), 'aiReportManager must implement submitReport');
-    assert.ok(uiContent.includes('window.aiReportManager = aiReportManager'), 'Must expose window.aiReportManager');
-    assert.ok(uiContent.includes('category: \'ai_safety\''), 'Reports must be submitted with category ai_safety');
+    // 2. AI playlists & Made For You have AI mark + Like/Dislike connected to Supabase dtunes_feedback
+    assert.ok(indexContent.includes('id="playlist-ai-feedback-bar"'), 'Playlist view must include #playlist-ai-feedback-bar');
+    assert.ok(indexContent.includes('id="playlist-ai-like"'), 'Playlist view must include #playlist-ai-like');
+    assert.ok(indexContent.includes('id="playlist-ai-dislike"'), 'Playlist view must include #playlist-ai-dislike');
+    assert.ok(uiContent.includes('SUPABASE_FEEDBACK_ENDPOINT'), 'mixFeedbackManager must connect to Supabase dtunes_feedback');
+    assert.ok(aiHubContent.includes("mixFeedbackManager.openFeedbackModal({ sentiment: 'like'"), 'Made For You must wire Like to mixFeedbackManager');
 
-    // 3. AI reporting entry points across all generative features:
-    // a) Vibe Mix Modal footer
-    assert.ok(indexContent.includes('Report AI Output'), 'Vibe Mix modal must include Report AI Output button');
-    // b) Made For You AI Hub Header and Shelf rows
-    assert.ok(aiHubContent.includes("feature: 'Made For You (Daily Recommendations)'"), 'AI Hub header must have report button');
-    assert.ok(aiHubContent.includes("feature: 'Daily AI Mix'"), 'AI Hub shelves must have report button');
-    // c) Search View Header
-    assert.ok(indexContent.includes('id="btn-report-search"'), 'Search view must have report button');
-    // d) Playlist View for AI-generated playlists
-    assert.ok(indexContent.includes('id="playlist-ai-report-btn"'), 'Playlist view must have #playlist-ai-report-btn');
-    assert.ok(uiContent.includes("feature: 'AI Generated Mix / Playlist'"), 'openGeneratedPlaylist must wire report button');
-    // e) Profile Dropdown
-    assert.ok(indexContent.includes('Report AI Output'), 'Profile dropdown must include Report AI Output option');
-    // f) Settings View
-    assert.ok(indexContent.includes('Report Inappropriate AI Content'), 'Settings view must have report button');
-    // g) Context Menu
-    assert.ok(indexContent.includes('id="cm-report-ai"'), 'Context menu must include #cm-report-ai option');
-    assert.ok(contextMenuContent.includes('cmReportAi.onclick'), 'context-menu.js must handle cmReportAi click');
+    // 3. Song context menu gates Don't recommend & AI feedback strictly to AI-generated tracks
+    assert.ok(contextMenuContent.includes('const isAiSong = Boolean'), 'context-menu.js must gate AI options with isAiSong');
+    assert.ok(contextMenuContent.includes("dislikeBtn.classList.toggle('hidden', !isAiSong)"), "Don't recommend must be hidden for non-AI songs");
+    assert.ok(contextMenuContent.includes("reportAiBtn.classList.toggle('hidden', !isAiSong)"), 'AI feedback must be hidden for non-AI songs');
 });
 
 test('Reviews & Feedback: Dedicated View, Supabase Integration, and Filters', (t) => {

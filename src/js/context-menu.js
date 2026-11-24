@@ -42,10 +42,11 @@
                     cmReportAi.onclick = () => {
                         const s = songStore.get(ctxMenu.activeStoreId);
                         menu.classList.add('hidden');
-                        if (window.aiReportManager) {
-                            window.aiReportManager.openReportModal({
-                                feature: 'Song Recommendation / Track Output',
-                                contentSummary: s ? `Track: "${s.name || s.title}" by ${s.artist || 'Unknown'}` : 'Track output',
+                        if (window.mixFeedbackManager && window.mixFeedbackManager.openFeedbackModal) {
+                            window.mixFeedbackManager.openFeedbackModal({
+                                sentiment: 'dislike',
+                                feature: 'AI Song Recommendation',
+                                mixTitle: s ? `${s.name || s.title} — ${s.artist || 'Unknown'}` : 'AI Track',
                                 context: s || {}
                             });
                         }
@@ -78,6 +79,13 @@
                             : 'Download for offline';
                     }
                 }
+                const isAiSong = Boolean(song && (song._aiGenerated || song.aiGenerated || song.playlistType || song.source === 'recommendation'));
+                const recDivider = document.getElementById('cm-rec-divider');
+                const dislikeBtn = document.getElementById('cm-dislike-song');
+                const reportAiBtn = document.getElementById('cm-report-ai');
+                if (recDivider) recDivider.classList.toggle('hidden', !isAiSong);
+                if (dislikeBtn) dislikeBtn.classList.toggle('hidden', !isAiSong);
+                if (reportAiBtn) reportAiBtn.classList.toggle('hidden', !isAiSong);
                 const dislikeLabel = document.getElementById('cm-dislike-song-label');
                 if (dislikeLabel && song) {
                     dislikeLabel.textContent = (player.isDisliked && player.isDisliked(song.id)) ? 'Remove from hidden' : "Don't recommend this";

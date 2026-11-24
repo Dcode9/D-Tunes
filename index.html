@@ -313,12 +313,9 @@
             </div>
 
             <div class="flex items-center justify-between border-t border-white/10 pt-4 mt-3 flex-shrink-0">
-                <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2">
+                    <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-zinc-200">AI</span>
                     <span class="text-[11px] text-gray-400">8–10 tracks curated</span>
-                    <button type="button" onclick="ui.toggleVibeMixModal(false); if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Vibe Mix Generator', contentSummary: 'Vibe Mix Prompt: ' + (document.getElementById('vibe-input')?.value || 'Prompt') })" class="text-[11px] text-amber-400/90 hover:text-amber-300 underline flex items-center gap-1 cursor-pointer" title="Report inappropriate AI-generated content (Policy 11.16)">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                        <span>Report AI Output</span>
-                    </button>
                 </div>
                 <div class="flex items-center gap-2">
                     <button type="button" onclick="ui.toggleVibeMixModal(false)" class="px-4 py-2.5 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition">Cancel</button>
@@ -737,14 +734,14 @@
                 <span id="cm-download-label">Download for offline</span>
                 <span id="cm-download-progress" class="ml-auto text-[10px] font-mono text-zinc-400"></span>
             </button>
-            <div id="cm-rec-divider" class="h-px bg-white/10 my-1"></div>
-            <button id="cm-dislike-song" class="group text-zinc-400 hover:text-red-400 hover:bg-red-500/10">
+            <div id="cm-rec-divider" class="h-px bg-white/10 my-1 hidden"></div>
+            <button id="cm-dislike-song" class="group text-zinc-400 hover:text-red-400 hover:bg-red-500/10 hidden">
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
                 <span id="cm-dislike-song-label">Don't recommend this</span>
             </button>
-            <button id="cm-report-ai" class="group text-amber-300 hover:text-amber-200 hover:bg-amber-500/10">
-                <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                <span id="cm-report-ai-label">Report AI output</span>
+            <button id="cm-report-ai" class="group text-zinc-300 hover:text-white hover:bg-white/10 hidden">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                <span id="cm-report-ai-label">AI feedback</span>
             </button>
         </div>
         <div id="cm-playlist-options" class="hidden flex flex-col gap-0.5">
@@ -860,12 +857,7 @@
                         </div>
                         <span>Stats</span>
                     </button>
-                    <button class="w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium text-amber-300 hover:text-amber-200 hover:bg-amber-500/10 flex items-center gap-2.5 transition group active:scale-[0.98]" onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'General AI Output' }); ui.closeProfileDropdown();">
-                        <div class="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center text-amber-400 transition">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                        </div>
-                        <span>Report AI Output</span>
-                    </button>
+
                     <div class="h-px bg-white/10 my-1"></div>
                     <button class="w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-medium text-red-400 hover:bg-red-500/15 flex items-center gap-2.5 transition group active:scale-[0.98]" onclick="cloudLibrary.signOutAndPurgeAll(); ui.closeProfileDropdown();">
                         <div class="w-7 h-7 rounded-lg bg-red-500/15 flex items-center justify-center text-red-400 transition">
@@ -1207,10 +1199,7 @@
             <div class="flex items-center justify-between px-4 md:px-8 mb-4">
                 <h2 class="text-2xl md:text-3xl font-medium text-white" id="search-title">Search</h2>
                 <div class="flex items-center gap-3">
-                    <button id="btn-report-search" onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Search & AI Autocomplete' })" class="text-xs text-zinc-400 hover:text-white flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 transition hover:bg-white/10 cursor-pointer" title="Report issue with search output">
-                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                        <span>Report</span>
-                    </button>
+
                     <button id="btn-clear-search-history" onclick="searchManager.clearSearchHistory()" class="text-xs font-medium text-zinc-400 hover:text-white active:scale-95 transition hidden">Clear History</button>
                 </div>
             </div>
@@ -1311,10 +1300,16 @@
                                         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
                                     </button>
                                 </div>
-                                <button id="playlist-ai-report-btn" class="w-full py-2 px-3 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-300 text-xs font-bold hover:bg-amber-500/20 transition items-center justify-center gap-1.5 hidden cursor-pointer" title="Report inappropriate AI content or songs (Policy 11.16)">
-                                    <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                                    <span>Report AI Playlist</span>
-                                </button>
+                                <div id="playlist-ai-feedback-bar" class="hidden items-center gap-2">
+                                    <button id="playlist-ai-like" type="button" class="dt-pill-glass" title="Like this AI playlist" aria-label="Like this AI playlist">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/></svg>
+                                        <span>Like</span>
+                                    </button>
+                                    <button id="playlist-ai-dislike" type="button" class="dt-pill-glass" title="Dislike this AI playlist" aria-label="Dislike this AI playlist">
+                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 15V19a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zM17 2h3a2 2 0 012 2v7a2 2 0 01-2 2h-3"/></svg>
+                                        <span>Dislike</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1431,7 +1426,7 @@
         </div>
 
         <!-- ================= SETTINGS VIEW ================= -->
-        <button id="btn-report-settings" onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Settings' })" class="hidden">Report Inappropriate AI Content</button>
+
         <div id="view-settings" class="hidden pb-12 px-4 md:px-8">
             <h2 class="text-2xl md:text-3xl font-bold text-white mb-8 tracking-tight relative z-20">Settings</h2>
             <div class="changelog-glass-card p-6 md:p-8 rounded-3xl max-w-2xl relative z-10 border border-white/10 flex flex-col gap-6">
@@ -1494,13 +1489,9 @@
 
                 <!-- Safety & Community -->
                 <div class="border-t border-white/10 pt-6">
-                    <h3 class="text-sm font-semibold text-white mb-1">Feedback & Compliance</h3>
-                    <p class="text-xs text-zinc-400 mb-4">Report inappropriate AI-generated content or submit listener impressions.</p>
+                    <h3 class="text-sm font-semibold text-white mb-1">Feedback</h3>
+                    <p class="text-xs text-zinc-400 mb-4">Share listener impressions or suggestions with the D'Tunes team.</p>
                     <div class="flex flex-wrap gap-3">
-                        <button onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Settings / App General' })" class="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition flex items-center gap-2 cursor-pointer active:scale-95">
-                            <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                            <span>Report Inappropriate Content</span>
-                        </button>
                         <button onclick="if(window.reviewsManager) window.reviewsManager.openSubmitModal()" class="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-xs font-semibold text-white hover:bg-white/10 hover:border-white/30 transition flex items-center gap-2 cursor-pointer active:scale-95">
                             <svg class="w-4 h-4 text-zinc-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
                             <span>Send Feedback</span>
@@ -1525,10 +1516,7 @@
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                         <span>Write a Review</span>
                     </button>
-                    <button onclick="if(window.aiReportManager) aiReportManager.openReportModal({ feature: 'Community Hub' })" class="px-4 py-2.5 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-300 text-sm font-semibold hover:bg-amber-500/20 active:scale-95 transition flex items-center gap-2 cursor-pointer" title="Report inappropriate AI-generated content (Policy 11.16)">
-                        <svg class="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                        <span>Report AI Output</span>
-                    </button>
+
                     <button onclick="if(window.reviewsManager) reviewsManager.fetchReviews(true)" class="p-2.5 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white transition" title="Refresh Reviews">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
                     </button>
@@ -1905,87 +1893,6 @@
         </button>
     </nav>
 
-    <!-- AI SAFETY REPORT MODAL (Microsoft Store Policy 11.16) -->
-    <div id="ai-report-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md hidden" onclick="if(event.target === this) aiReportManager.closeReportModal()">
-        <div class="glass-panel p-6 md:p-8 rounded-3xl w-full max-w-lg shadow-2xl border border-amber-500/30 transform transition-all flex flex-col max-h-[92vh] overflow-hidden mx-4 relative">
-            <!-- Modal Header -->
-            <div class="flex items-center justify-between gap-3 mb-4 flex-shrink-0">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30 flex items-center justify-center flex-shrink-0">
-                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                    </div>
-                    <div>
-                        <h3 class="text-xl font-bold text-white flex items-center gap-2">
-                            <span>Report AI Content</span>
-                            <span class="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">Policy 11.16</span>
-                        </h3>
-                        <p class="text-xs text-gray-400">Report inappropriate, harmful, or problematic AI output for review.</p>
-                    </div>
-                </div>
-                <button onclick="aiReportManager.closeReportModal()" class="text-gray-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition cursor-pointer" aria-label="Close Report Modal">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
-                </button>
-            </div>
-
-            <!-- Error Banner -->
-            <div id="ai-report-error" class="hidden p-3 rounded-xl bg-red-500/15 border border-red-500/30 text-xs text-red-300 mb-3"></div>
-
-            <!-- Scrollable Content -->
-            <div class="overflow-y-auto custom-scrollbar flex flex-col gap-4 flex-1 pr-1">
-                <!-- Target Feature / Summary Info -->
-                <div class="p-3 rounded-2xl bg-white/5 border border-white/10">
-                    <div class="flex items-center justify-between text-xs mb-1">
-                        <span class="text-gray-400">Target Feature</span>
-                        <span id="ai-report-feature-badge" class="font-bold text-white">Vibe Mix</span>
-                    </div>
-                    <div class="text-xs text-gray-300 truncate" id="ai-report-summary">User-initiated AI music curation</div>
-                </div>
-
-                <!-- Issue Category Dropdown -->
-                <div>
-                    <label for="ai-report-issue-type" class="text-xs font-bold text-gray-300 mb-1.5 block">Reason for Report <span class="text-red-400">*</span></label>
-                    <select id="ai-report-issue-type" class="w-full bg-white/10 border border-white/20 rounded-xl px-3.5 py-2.5 text-white text-xs focus:outline-none focus:border-white/40 transition appearance-none cursor-pointer">
-                        <option value="Inappropriate Content" class="bg-gray-900">Inappropriate / Harmful Content</option>
-                        <option value="Offensive / Hate Speech" class="bg-gray-900">Offensive / Hate Speech / Profanity</option>
-                        <option value="Hallucinated or Misleading" class="bg-gray-900">Incorrect / Misleading / Hallucinated Song</option>
-                        <option value="Copyright or Licensing Issue" class="bg-gray-900">Copyright / IP Concern</option>
-                        <option value="Broken Audio / Poor Quality" class="bg-gray-900">Broken Stream / Audio Quality Defect</option>
-                        <option value="Other Safety Issue" class="bg-gray-900">Other Issue</option>
-                    </select>
-                </div>
-
-                <!-- Detailed Explanation Textarea -->
-                <div>
-                    <label for="ai-report-details" class="text-xs font-bold text-gray-300 mb-1.5 block">Details <span class="text-red-400">*</span></label>
-                    <textarea id="ai-report-details" rows="3" placeholder="Please describe specifically why this AI-generated result is inappropriate or problematic..." class="w-full bg-white/10 border border-white/20 rounded-xl px-3.5 py-2.5 text-white placeholder-gray-500 focus:outline-none focus:border-white/40 transition resize-none text-xs" maxlength="1500"></textarea>
-                </div>
-
-                <!-- Optional Reporter Info -->
-                <div class="grid grid-cols-2 gap-3">
-                    <div>
-                        <label for="ai-report-name" class="text-[11px] font-semibold text-gray-400 mb-1 block">Your Name (Optional)</label>
-                        <input type="text" id="ai-report-name" placeholder="Listener" class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white placeholder-gray-500 text-xs focus:outline-none focus:border-white/40">
-                    </div>
-                    <div>
-                        <label for="ai-report-email" class="text-[11px] font-semibold text-gray-400 mb-1 block">Your Email (Optional)</label>
-                        <input type="email" id="ai-report-email" placeholder="listener@example.com" class="w-full bg-white/10 border border-white/20 rounded-xl px-3 py-2 text-white placeholder-gray-500 text-xs focus:outline-none focus:border-white/40">
-                    </div>
-                </div>
-            </div>
-
-            <!-- Modal Footer -->
-            <div class="flex items-center justify-between border-t border-white/10 pt-4 mt-3 flex-shrink-0">
-                <span class="text-[10px] text-gray-400">Reports are reviewed promptly by safety engineers.</span>
-                <div class="flex items-center gap-2">
-                    <button type="button" onclick="aiReportManager.closeReportModal()" class="px-4 py-2 rounded-xl bg-white/10 text-white text-xs font-bold hover:bg-white/20 transition cursor-pointer">Cancel</button>
-                    <button type="button" id="btn-submit-ai-report" onclick="aiReportManager.submitReport()" class="px-5 py-2 rounded-xl bg-amber-500 text-black text-xs font-black hover:scale-105 active:scale-95 transition shadow-lg shadow-amber-500/25 flex items-center gap-1.5 cursor-pointer">
-                        <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v-2h-2v2zm0-4h2V7h-2v6z"/></svg>
-                        <span>Submit Safety Report</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <!-- SUBMIT REVIEW / FEEDBACK MODAL -->
     <div id="review-submit-modal" class="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-md hidden" onclick="if(event.target === this) reviewsManager.closeSubmitModal()">

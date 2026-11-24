@@ -652,7 +652,7 @@
 
             // Render native D-Tunes song cards with progressive unblur & fade-in animation
             const songCardsHtml = validSongs.map(song => {
-                let cardHtml = ui.createCard(song);
+                let cardHtml = ui.createCard({ ...song, _aiGenerated: true });
                 cardHtml = cardHtml.replace(
                     'class="w-full h-full object-cover sc-art-img"',
                     'class="w-full h-full object-cover sc-art-img reveal-blur-img" onload="this.classList.add(\'revealed\'); const p=this.closest(\'.scroll-card\'); if(p) p.querySelectorAll(\'.reveal-text\').forEach(el=>el.classList.add(\'revealed\'));"'
@@ -671,6 +671,7 @@
                         <div>
                             <h3 class="text-xl font-bold text-white tracking-tight flex items-center gap-2">
                                 <span>${utils.escapeHtml(playlist.categoryTitle || playlist.title)}</span>
+                                <span class="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-white/10 border border-white/15 text-zinc-300">AI</span>
                             </h3>
                         </div>
                         <div class="flex items-center gap-2">
@@ -691,9 +692,7 @@
                             <button onclick="window.aiHome.savePlaylistToLibrary('${playlistId}')" class="p-1.5 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white active:scale-95 transition shadow-sm" title="Save to Your Library">
                                 <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z"/></svg>
                             </button>
-                            <button onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Daily AI Mix', contentSummary: 'Playlist: ${utils.escapeHtml(playlist.categoryTitle || playlist.title)}' })" class="p-1.5 rounded-full bg-white/10 hover:bg-amber-500/20 text-gray-400 hover:text-amber-300 active:scale-95 transition shadow-sm cursor-pointer" title="Report inappropriate AI output (Policy 11.16)">
-                                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                            </button>
+
                         </div>
                     </div>
 
@@ -750,13 +749,18 @@
                 <!-- Keep recommendation controls on their own row on small screens. -->
                 <div class="flex flex-col items-start gap-3 md:flex-row md:items-center md:justify-between md:gap-4 px-4 md:px-8 mb-6 pb-2 border-b border-white/10">
                     <div class="min-w-0">
-                        <h2 class="text-2xl md:text-3xl font-bold font-display text-white tracking-tight">Made For You</h2>
+                        <div class="flex items-center gap-2.5">
+                            <h2 class="text-2xl md:text-3xl font-bold font-display text-white tracking-tight">Made For You</h2>
+                            <span class="text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full bg-white/10 border border-white/15 text-zinc-200">AI</span>
+                        </div>
                         <p class="text-xs md:text-sm text-neutral-400 mt-1">${utils.escapeHtml(description)}</p>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
-                        <button onclick="if(window.aiReportManager) window.aiReportManager.openReportModal({ feature: 'Made For You (Daily Recommendations)' })" class="text-xs text-amber-400/90 hover:text-amber-300 flex items-center gap-1.5 whitespace-nowrap min-h-[44px] md:min-h-0 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 transition hover:bg-amber-500/20 cursor-pointer" title="Report issue with AI-generated recommendations (Policy 11.16)">
-                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                            <span>Report AI Content</span>
+                        <button onclick="if(window.mixFeedbackManager) window.mixFeedbackManager.openFeedbackModal({ sentiment: 'like', feature: 'Made For You', mixTitle: 'Made For You' })" class="p-2 min-h-[40px] min-w-[40px] md:min-h-0 md:min-w-0 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white active:scale-95 transition cursor-pointer" title="Like Made For You" aria-label="Like Made For You">
+                            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 9V5a3 3 0 00-3-3l-4 9v11h11.28a2 2 0 002-1.7l1.38-9a2 2 0 00-2-2.3zM7 22H4a2 2 0 01-2-2v-7a2 2 0 012-2h3"/></svg>
+                        </button>
+                        <button onclick="if(window.mixFeedbackManager) window.mixFeedbackManager.openFeedbackModal({ sentiment: 'dislike', feature: 'Made For You', mixTitle: 'Made For You' })" class="p-2 min-h-[40px] min-w-[40px] md:min-h-0 md:min-w-0 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-zinc-300 hover:text-white active:scale-95 transition cursor-pointer" title="Dislike Made For You" aria-label="Dislike Made For You">
+                            <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 15V19a3 3 0 003 3l4-9V2H5.72a2 2 0 00-2 1.7l-1.38 9a2 2 0 002 2.3zM17 2h3a2 2 0 012 2v7a2 2 0 01-2 2h-3"/></svg>
                         </button>
                         ${offline ? '' : `<button onclick="window.aiHome.renderAIHome(true)" title="Refresh Daily Mixes" class="p-2 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 text-white transition hover:rotate-180 duration-500 shadow-md">
                             <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
