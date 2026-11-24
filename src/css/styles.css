@@ -1859,26 +1859,7 @@ html[data-ui-mode="mobile"] #player-footer {
     50% { opacity: 0.75; transform: scale(0.98); }
 }
 
-#seek-bar-container.is-buffering #seek-bar-track,
-#fs-seek-bar-container.is-buffering #fs-seek-bar-track {
-    background: linear-gradient(90deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.65) 50%, rgba(255,255,255,0.15) 100%) !important;
-    background-size: 200% 100% !important;
-    animation: seekbar-buffering-shimmer 1.2s ease-in-out infinite !important;
-}
-
-@keyframes seekbar-buffering-shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-}
-
-.btn-mezzotint-play.is-loading {
-    position: relative !important;
-}
-
-.btn-mezzotint-play.is-loading .pp-glyph {
-    opacity: 0.7;
-    transition: opacity 0.2s ease;
-}
+/* Seekbar and Play/Pause button stay crisp and immediately responsive (no buffering shimmer/dim overlay) */
 
 @keyframes play-btn-spin {
     to { transform: rotate(360deg); }
@@ -3945,9 +3926,10 @@ body.queue-sidebar-active #ai-hub-container div.md\:p-8 > button {
 #context-menu {
     position: fixed;
     z-index: 300;
-    width: 220px;
-    backdrop-filter: var(--dtunes-optical-filter);
-    -webkit-backdrop-filter: var(--dtunes-optical-filter);
+    width: 224px;
+    max-width: calc(100vw - 24px);
+    backdrop-filter: blur(24px) saturate(1.4);
+    -webkit-backdrop-filter: blur(24px) saturate(1.4);
     background: rgba(12, 12, 16, 0.94);
     border: 1px solid var(--mezzotint-border);
     box-shadow: 0 24px 50px -10px rgba(0, 0, 0, 0.85);

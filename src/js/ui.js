@@ -2170,10 +2170,11 @@
                 const activeLoading = !!loading && (state.playing || isPlaybackPending || state.loading);
                 island?.classList.toggle('is-loading', activeLoading);
                 document.getElementById('album-art-wrapper')?.classList.toggle('is-loading', activeLoading);
-                document.getElementById('seek-bar-container')?.classList.toggle('is-buffering', activeLoading);
-                document.getElementById('fs-seek-bar-container')?.classList.toggle('is-buffering', activeLoading);
-                document.getElementById('btn-play')?.classList.toggle('is-loading', activeLoading);
-                document.getElementById('fs-btn-play')?.classList.toggle('is-loading', activeLoading);
+                // Never dim/shimmer the seekbar or play/pause button — keep visual progress & morph crisp
+                document.getElementById('seek-bar-container')?.classList.remove('is-buffering');
+                document.getElementById('fs-seek-bar-container')?.classList.remove('is-buffering');
+                document.getElementById('btn-play')?.classList.remove('is-loading');
+                document.getElementById('fs-btn-play')?.classList.remove('is-loading');
 
                 if (state.currentTrack) {
                     if (state.currentTrack.name && (!title.textContent || title.textContent === 'Not Playing')) {
@@ -2436,8 +2437,9 @@ const mPlayBtn = document.getElementById('m-icon-play');
                 }
             },
             updatePlayBtn: () => {
-                // Audio element is the source of truth: if not paused and not ended, it IS playing.
-                if (state.loaded && !isPlaybackPending) {
+                // Only reconcile against <audio> when <audio> is the active engine (never override YouTube IFrame playback!)
+                const isYTEngine = typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt';
+                if (state.loaded && !isPlaybackPending && !isYTEngine) {
                     const isAudioRunning = !audio.paused && !audio.ended;
                     if (isAudioRunning && !state.playing) {
                         state.playing = true;
@@ -2445,10 +2447,9 @@ const mPlayBtn = document.getElementById('m-icon-play');
                         state.playing = false;
                     }
                 }
-                const playing = state.playing;
-                const isLoading = !!(state.loading || isPlaybackPending);
-                document.getElementById('btn-play')?.classList.toggle('is-loading', isLoading);
-                document.getElementById('fs-btn-play')?.classList.toggle('is-loading', isLoading);
+                const playing = Boolean(state.playing);
+                document.getElementById('btn-play')?.classList.remove('is-loading');
+                document.getElementById('fs-btn-play')?.classList.remove('is-loading');
                 ui.morphPlayIcon(playing);
                 const mPlayBtn = document.getElementById('m-icon-play');
                 const mPauseBtn = document.getElementById('m-icon-pause');
