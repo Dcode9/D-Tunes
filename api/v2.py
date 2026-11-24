@@ -1127,6 +1127,63 @@ async def artist_endpoint(artist_id: str) -> dict[str, Any]:
     return data
 
 
+_LEGACY_SAAVN_API = os.environ.get("LEGACY_JIOSAAVN_API", "https://jiosaavn-api-taupe-phi.vercel.app/api").rstrip("/")
+_SAAVN_ID_RE = re.compile(r"^[A-Za-z0-9_-]{4,32}$")
+
+
+def migrate_saavn_id_sync(saavn_id: str) -> Optional[Track]:
+    """Resolve a bare legacy JioSaavn song ID by fetching its metadata and matching on YouTube Music."""
+    try:
+        with httpx.Client(timeout=5.0, follow_redirects=True) as client:
+            res = client.get(f"{_LEGACY_SAAVN_API}/songs/{saavn_id}")
+            if res.status_code != 200:
+                return None
+            payload = res.json()
+            items = payload.get("data") if isinstance(payload, dict) else None
+            if not isinstance(items, list) or not items:
+                return None
+            song = items[0]
+            title = (song.get("name") or song.get("title") or "").strip()
+            artists_obj = song.get("artists") or {}
+            primary = artists_obj.get("primary") if isinstance(artists_obj, dict) else None
+            if isinstance(primary, list) and primary:
+                artist = ", ".join(a.get("name", "") for a in primary if isinstance(a, dict) and a.get("name"))
+            else:
+                artist = str(song.get("primaryArtists") or "").strip()
+            if not title:
+                return None
+            query = f"{title} {artist}".strip()
+            candidates = search_sync(query, limit=5)
+            if not candidates:
+                return None
+            target_dur = int(song.get("duration") or 0)
+            if target_dur > 0:
+                best = min(
+                    candidates,
+                    key=lambda c: abs((c.duration or target_dur) - target_dur) if c.duration else 9999,
+                )
+                return best
+            return candidates[0]
+    except Exception as exc:
+        logger.warning("Legacy JioSaavn migration failed for %s: %s", saavn_id, exc)
+        return None
+
+
+@router.get("/migrate/saavn/{saavn_id}", response_model=Track)
+async def migrate_saavn_endpoint(saavn_id: str) -> Track:
+    if not _SAAVN_ID_RE.match(saavn_id):
+        raise HTTPException(status_code=400, detail={"error": "Invalid legacy song ID", "code": "invalid_id"})
+    cache_key = f"migrate_saavn:{saavn_id}"
+    cached = await search_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    track = await asyncio.to_thread(migrate_saavn_id_sync, saavn_id)
+    if not track:
+        raise HTTPException(status_code=404, detail={"error": "Legacy track could not be matched", "code": "migration_not_found"})
+    await search_cache.set(cache_key, track, STREAM_TTL)
+    return track
+
+
 # ---------------------------------------------------------------------------
 # App initialization & Multi-prefix mounting
 # ---------------------------------------------------------------------------

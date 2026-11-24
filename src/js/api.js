@@ -3,6 +3,41 @@
         // ============================================
         const API_V2_BASE = '/api-v2';
         const clientSearchCache = new Map();
+        const LEGACY_MIGRATION_STORAGE_KEY = 'dtunes_yt_migration_map_v1';
+        const YT_VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
+
+        const _loadMigrationMap = () => {
+            try {
+                const raw = localStorage.getItem(LEGACY_MIGRATION_STORAGE_KEY);
+                const parsed = raw ? JSON.parse(raw) : {};
+                return (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) ? parsed : {};
+            } catch (_) {
+                return {};
+            }
+        };
+
+        const _saveMigrationEntry = (legacyId, resolvedTrack) => {
+            if (!legacyId || !resolvedTrack || !resolvedTrack.id) return;
+            try {
+                const map = _loadMigrationMap();
+                map[String(legacyId)] = {
+                    id: resolvedTrack.id,
+                    title: resolvedTrack.title || resolvedTrack.name || 'Unknown',
+                    artist: resolvedTrack.artist || 'Unknown Artist',
+                    album: resolvedTrack.album || '',
+                    artwork: resolvedTrack.artwork || resolvedTrack.img || '',
+                    duration: Number(resolvedTrack.duration) || 0,
+                    source: 'youtube',
+                    legacy_id: String(legacyId),
+                    saavn_id: String(legacyId),
+                };
+                const keys = Object.keys(map);
+                if (keys.length > 1000) {
+                    keys.slice(0, keys.length - 1000).forEach(k => delete map[k]);
+                }
+                localStorage.setItem(LEGACY_MIGRATION_STORAGE_KEY, JSON.stringify(map));
+            } catch (_) {}
+        };
 
         const isNetworkOffline = () => {
             if (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function') {
@@ -159,10 +194,133 @@
                 }
             },
 
+            isYouTubeVideoId: (id) => {
+                return YT_VIDEO_ID_RE.test(String(id || '').trim());
+            },
+
+            isLegacyJioSaavnTrack: (track) => {
+                if (!track) return false;
+                if (typeof track === 'string') return !mediaAPI.isYouTubeVideoId(track);
+                const id = String(track.id || '').trim();
+                const url = String(track.url || track.play_url || '');
+                const src = String(track.source || '').toLowerCase();
+                if (url.includes('saavncdn.com') || url.includes('jiosaavn')) return true;
+                if (src === 'jiosaavn') return true;
+                if (id && !mediaAPI.isYouTubeVideoId(id)) return true;
+                return false;
+            },
+
+            getCachedMigration: (legacyId) => {
+                if (!legacyId) return null;
+                const map = _loadMigrationMap();
+                const entry = map[String(legacyId)];
+                if (!entry || !mediaAPI.isYouTubeVideoId(entry.id)) return null;
+                const normalized = mediaAPI.normalizeTrack(entry);
+                if (normalized) {
+                    normalized.legacy_id = String(legacyId);
+                    normalized.saavn_id = String(legacyId);
+                }
+                return normalized;
+            },
+
+            resolveLegacyTrack: async (track) => {
+                if (!track) return null;
+                if (typeof track === 'string') {
+                    return await mediaAPI.getSong(track);
+                }
+                if (!mediaAPI.isLegacyJioSaavnTrack(track)) {
+                    return track;
+                }
+                const legacyId = String(track.saavn_id || track.legacy_id || track.id || '').trim();
+                if (legacyId) {
+                    const cached = mediaAPI.getCachedMigration(legacyId);
+                    if (cached) {
+                        return {
+                            ...track,
+                            ...cached,
+                            id: cached.id,
+                            url: cached.url,
+                            play_url: cached.url,
+                            source: 'youtube',
+                            legacy_id: legacyId,
+                            saavn_id: legacyId,
+                            img: cached.img || track.img,
+                            artwork: cached.artwork || track.artwork || track.img,
+                        };
+                    }
+                }
+
+                // Match on YouTube Music using cleaned title + artist + closest duration
+                const rawTitle = String(track.title || track.name || '').trim();
+                const rawArtist = String(track.artist || track.primaryArtists || '').trim();
+                const cleanTitle = (typeof lyricsManager !== 'undefined' && lyricsManager.cleanTitle)
+                    ? lyricsManager.cleanTitle(rawTitle)
+                    : rawTitle;
+                const query = `${cleanTitle || rawTitle} ${rawArtist}`.trim();
+
+                let matched = null;
+                if (query) {
+                    const candidates = await mediaAPI.searchSongs(query, 5);
+                    if (candidates && candidates.length > 0) {
+                        const targetDur = Number(track.duration || track.duration_seconds || 0);
+                        if (targetDur > 0) {
+                            matched = candidates.reduce((best, cand) => {
+                                const bestDiff = best.duration ? Math.abs(best.duration - targetDur) : 9999;
+                                const candDiff = cand.duration ? Math.abs(cand.duration - targetDur) : 9999;
+                                return candDiff < bestDiff ? cand : best;
+                            }, candidates[0]);
+                        } else {
+                            matched = candidates[0];
+                        }
+                    }
+                }
+
+                // Last resort for bare legacy IDs with no title/artist: ask backend migration bridge
+                if (!matched && legacyId && !mediaAPI.isYouTubeVideoId(legacyId)) {
+                    try {
+                        const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/migrate/saavn/${encodeURIComponent(legacyId)}`);
+                        if (data && data.id) matched = mediaAPI.normalizeTrack(data);
+                    } catch (_) {}
+                }
+
+                if (!matched) return null;
+                const migrated = {
+                    ...track,
+                    ...matched,
+                    id: matched.id,
+                    url: matched.url,
+                    play_url: matched.url,
+                    source: 'youtube',
+                    legacy_id: legacyId || undefined,
+                    saavn_id: legacyId || undefined,
+                    img: matched.img || track.img,
+                    artwork: matched.artwork || track.artwork || track.img,
+                };
+                if (legacyId) _saveMigrationEntry(legacyId, migrated);
+                return migrated;
+            },
+
             getSong: async (id) => {
                 if (!id) return null;
+                const strId = String(id).trim();
+                if (!mediaAPI.isYouTubeVideoId(strId)) {
+                    const cached = mediaAPI.getCachedMigration(strId);
+                    if (cached) return cached;
+                    try {
+                        const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/migrate/saavn/${encodeURIComponent(strId)}`);
+                        const normalized = mediaAPI.normalizeTrack(data);
+                        if (normalized) {
+                            normalized.legacy_id = strId;
+                            normalized.saavn_id = strId;
+                            _saveMigrationEntry(strId, normalized);
+                        }
+                        return normalized;
+                    } catch (_) {
+                        return null;
+                    }
+                }
                 try {
-                    const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/resolve/${encodeURIComponent(id)}`);
+                    const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/resolve/${encodeURIComponent(strId)}`);
                     return mediaAPI.normalizeTrack(data);
                 } catch (e) {
                     return null;

@@ -999,7 +999,7 @@
       album: song?.album || song?.album_name || null,
       duration_ms: durationMs,
       artwork_url: song?.img || song?.artwork_url || song?.artworkUrl || song?.image || null,
-      source: song?.source || 'jiosaavn',
+      source: song?.source || (/^[A-Za-z0-9_-]{11}$/.test(id) ? 'youtube' : 'jiosaavn'),
       metadata: typeof song === 'object' ? song : {}
     };
   }
@@ -1019,7 +1019,8 @@
         source: 'jiosaavn'
       };
     }
-    return {
+    const baseSong = {
+      ...(t.metadata || {}),
       id: effectiveId,
       name: t.metadata?.name || t.metadata?.title || t.title || t.name || 'Unknown Track',
       title: t.metadata?.title || t.title || t.name || 'Unknown Track',
@@ -1027,9 +1028,29 @@
       album: t.metadata?.album || t.album || '',
       duration: t.metadata?.duration || (t.duration_ms ? Math.round(t.duration_ms / 1000) : (t.duration || undefined)),
       img: t.metadata?.img || t.artwork_url || t.img || 'DTunes.svg',
-      source: t.source || t.metadata?.source || 'jiosaavn',
-      ...(t.metadata || {})
+      source: t.source || t.metadata?.source || (/^[A-Za-z0-9_-]{11}$/.test(effectiveId) ? 'youtube' : 'jiosaavn'),
     };
+    if (baseSong.source === 'jiosaavn' || !/^[A-Za-z0-9_-]{11}$/.test(effectiveId)) {
+      baseSong.saavn_id = baseSong.saavn_id || effectiveId;
+      baseSong.legacy_id = baseSong.legacy_id || effectiveId;
+      if (typeof window !== 'undefined' && window.mediaAPI && typeof window.mediaAPI.getCachedMigration === 'function') {
+        const migrated = window.mediaAPI.getCachedMigration(effectiveId);
+        if (migrated) {
+          return {
+            ...baseSong,
+            ...migrated,
+            id: migrated.id,
+            url: migrated.url,
+            play_url: migrated.url,
+            source: 'youtube',
+            saavn_id: effectiveId,
+            legacy_id: effectiveId,
+            img: migrated.img || baseSong.img,
+          };
+        }
+      }
+    }
+    return baseSong;
   }
 
   async function upsertTrack(song) {

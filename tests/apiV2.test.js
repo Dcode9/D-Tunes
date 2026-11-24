@@ -104,3 +104,31 @@ test('D-Tunes API v2: lyrics, playhead, timer, and YT player adapter stay in syn
   assert.ok(playerContent.includes('sleepTimer.onTrackEnded'), 'YT player ENDED handler must honor sleepTimer.onTrackEnded');
   assert.ok(playerContent.includes("recommendationEvents.record('play_complete'"), 'YT progress timer must record play_complete');
 });
+
+test('D-Tunes API v2: legacy JioSaavn migration layer is wired across api, player, dverseClient, and v2.py', () => {
+  const apiContent = fs.readFileSync(path.join(__dirname, '../src/js/api.js'), 'utf8');
+  assert.ok(apiContent.includes('isLegacyJioSaavnTrack'), 'api.js must detect legacy JioSaavn tracks');
+  assert.ok(apiContent.includes('resolveLegacyTrack'), 'api.js must resolve legacy tracks to YouTube');
+  assert.ok(apiContent.includes('dtunes_yt_migration_map_v1'), 'api.js must persist migration map in localStorage');
+
+  const playerContent = fs.readFileSync(path.join(__dirname, '../src/js/player.js'), 'utf8');
+  assert.ok(playerContent.includes('resolveLegacyTrack'), 'player.js playDirect must migrate legacy tracks');
+  assert.ok(playerContent.includes('item.saavn_id === songId'), 'isLiked must match legacy saavn_id');
+
+  const dverseContent = fs.readFileSync(path.join(__dirname, '../src/js/dverseClient.js'), 'utf8');
+  assert.ok(dverseContent.includes('getCachedMigration'), 'dverseClient.js must hydrate cached migrations');
+
+  const v2Content = fs.readFileSync(path.join(__dirname, '../api/v2.py'), 'utf8');
+  assert.ok(v2Content.includes('/migrate/saavn/{saavn_id}'), 'api/v2.py must expose /migrate/saavn/{saavn_id}');
+});
+
+test('D-Tunes API v2: Album and Playlist views use Mezzotint detail hero layout', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  assert.ok(html.includes('id="album-hero-bg"'), 'index.html Album view must include #album-hero-bg');
+  assert.ok(html.includes('id="playlist-hero-bg"'), 'index.html Playlist view must include #playlist-hero-bg');
+  assert.ok(html.includes('class="dt-detail-hero'), 'index.html must apply .dt-detail-hero');
+
+  const css = fs.readFileSync(path.join(__dirname, '../src/css/styles.css'), 'utf8');
+  assert.ok(css.includes('.dt-detail-hero'), 'styles.css must define .dt-detail-hero');
+  assert.ok(css.includes('.dt-hero-art'), 'styles.css must define .dt-hero-art');
+});

@@ -1077,8 +1077,27 @@
                 document.getElementById('playlist-view-count').textContent = `${songs.length} tracks • ${durationStr}`;
                 
                 const style = ui.getPlaylistStyle(name);
-                document.getElementById('pl-view-art').className = `w-48 h-48 md:w-full md:aspect-square rounded-2xl shadow-2xl flex items-center justify-center text-5xl md:text-6xl font-bold text-white shadow-black/50 overflow-hidden ${style.bg}`;
-                document.getElementById('pl-view-art').innerHTML = style.customHtml || style.icon;
+                const plArtEl = document.getElementById('pl-view-art');
+                if (plArtEl) {
+                    plArtEl.className = `w-full h-full flex items-center justify-center text-6xl font-bold text-white overflow-hidden ${style.bg}`;
+                    plArtEl.innerHTML = style.customHtml || style.icon;
+                }
+                const plKicker = document.getElementById('playlist-view-kicker');
+                if (plKicker) plKicker.textContent = name === 'Liked Songs' ? 'Liked Songs' : 'Playlist';
+                const plSummary = document.getElementById('playlist-tracklist-summary');
+                if (plSummary) plSummary.textContent = `${songs.length} ${songs.length === 1 ? 'track' : 'tracks'} • ${durationStr}`;
+
+                const plHeroBg = document.getElementById('playlist-hero-bg');
+                if (plHeroBg) {
+                    const leadArt = songs.find(s => s && s.img && s.img !== 'DTunes.svg')?.img;
+                    if (leadArt) {
+                        const safeLead = (typeof sanitizeImageUrl === 'function') ? sanitizeImageUrl(leadArt) : leadArt;
+                        const bgImg = (cls) => `<img src="${safeLead}" class="${cls}" alt="" decoding="async">`;
+                        plHeroBg.innerHTML = `${bgImg('sc-l0')}<div class="sc-comp sc-l1">${bgImg('sc-ci')}${bgImg('sc-ci sc-flip')}</div><div class="sc-comp sc-l2">${bgImg('sc-ci')}${bgImg('sc-ci sc-flip')}</div>`;
+                    } else {
+                        plHeroBg.innerHTML = `<div class="w-full h-full opacity-75 blur-2xl scale-125 ${style.bg}"></div>`;
+                    }
+                }
 
                 const customActions = document.getElementById('playlist-custom-actions');
                 if (customActions) {
@@ -1159,6 +1178,14 @@
                     let durationStr = totalSec > 3600 ? `${Math.floor(totalSec / 3600)} hr ${Math.floor((totalSec % 3600) / 60)} min` : `${Math.floor(totalSec / 60)} min`;
                     if (metaEl) metaEl.textContent = `${year ? year + ' • ' : ''}${songs.length} tracks • ${durationStr}`;
                     if (artEl) artEl.src = img;
+                    const albSummary = document.getElementById('album-tracklist-summary');
+                    if (albSummary) albSummary.textContent = `${songs.length} ${songs.length === 1 ? 'track' : 'tracks'} • ${durationStr}`;
+                    const albHeroBg = document.getElementById('album-hero-bg');
+                    if (albHeroBg && img) {
+                        const safeBg = (typeof sanitizeImageUrl === 'function') ? sanitizeImageUrl(img) : img;
+                        const bgImg = (cls) => `<img src="${safeBg}" class="${cls}" alt="" decoding="async">`;
+                        albHeroBg.innerHTML = `${bgImg('sc-l0')}<div class="sc-comp sc-l1">${bgImg('sc-ci')}${bgImg('sc-ci sc-flip')}</div><div class="sc-comp sc-l2">${bgImg('sc-ci')}${bgImg('sc-ci sc-flip')}</div>`;
+                    }
 
                     if (songs.length === 0) {
                         if (listEl) listEl.innerHTML = '<p class="text-gray-400 py-4">No songs found in this album.</p>';

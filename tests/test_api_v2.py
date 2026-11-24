@@ -260,3 +260,24 @@ def test_atomic_cookies_file_permissions():
     assert path is not None and os.path.exists(path)
     mode = stat.S_IMODE(os.stat(path).st_mode)
     assert mode == 0o600
+
+
+def test_legacy_saavn_migration_route():
+    matched = v2.Track(
+        id="4NRXx6U8ABQ",
+        title="Blinding Lights",
+        artist="The Weeknd",
+        artwork="https://img.example/blinding.jpg",
+        duration=200,
+    )
+    with patch.object(v2, "migrate_saavn_id_sync", return_value=matched) as mock_mig:
+        with TestClient(v2.app) as client:
+            assert client.get("/api-v2/migrate/saavn/!!").status_code == 400
+            r1 = client.get("/api-v2/migrate/saavn/8MT-L-7w")
+            assert r1.status_code == 200
+            assert r1.json()["id"] == "4NRXx6U8ABQ"
+            assert mock_mig.call_count == 1
+            # Second call is served from cache
+            r2 = client.get("/api-v2/migrate/saavn/8MT-L-7w")
+            assert r2.status_code == 200
+            assert mock_mig.call_count == 1

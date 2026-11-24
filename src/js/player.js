@@ -696,6 +696,49 @@
                         }
                     }
 
+                    // Seamless legacy JioSaavn -> YouTube migration (preserves legacy_id/saavn_id for likes & offline)
+                    if (!track.isOffline && typeof mediaAPI !== 'undefined' && mediaAPI.isLegacyJioSaavnTrack && mediaAPI.isLegacyJioSaavnTrack(track)) {
+                        const legacyId = String(track.saavn_id || track.legacy_id || track.id || '');
+                        const migrated = await mediaAPI.resolveLegacyTrack(track);
+                        if (currentRequestId !== playRequestId) return;
+                        if (migrated && migrated.id) {
+                            track = migrated;
+                            state.currentTrack = migrated;
+                            if (legacyId) {
+                                const replaceInList = (arr) => {
+                                    if (!Array.isArray(arr)) return false;
+                                    let changed = false;
+                                    for (let i = 0; i < arr.length; i++) {
+                                        const item = arr[i];
+                                        const itemId = typeof item === 'string' ? item : String(item?.id || item?.saavn_id || '');
+                                        if (itemId === legacyId) {
+                                            arr[i] = migrated;
+                                            changed = true;
+                                        }
+                                    }
+                                    return changed;
+                                };
+                                replaceInList(state.queue);
+                                replaceInList(state.userQueue);
+                                if (replaceInList(state.likedIds)) {
+                                    try { localStorage.setItem('likedIds', JSON.stringify(state.likedIds)); } catch (_) {}
+                                }
+                                if (replaceInList(state.library)) {
+                                    try { localStorage.setItem('library', JSON.stringify(state.library)); } catch (_) {}
+                                }
+                                if (state.playlists && typeof state.playlists === 'object') {
+                                    let plChanged = false;
+                                    Object.keys(state.playlists).forEach(plName => {
+                                        if (replaceInList(state.playlists[plName])) plChanged = true;
+                                    });
+                                    if (plChanged) {
+                                        try { localStorage.setItem('playlists', JSON.stringify(state.playlists)); } catch (_) {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // YouTube Client-Side Direct Playback
                     if (track.source === 'youtube' && !track.isOffline && ytPlayerReady && ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
                         audio.pause();
@@ -1016,7 +1059,10 @@
                 if (!document.getElementById('view-playlist').classList.contains('hidden') && document.getElementById('playlist-view-title').textContent === 'Liked Songs') { ui.openPlaylist('Liked Songs'); }
             },
             toggleLike: () => { player.likeSong(); },
-            isLiked: (songId) => state.likedIds.some(item => (typeof item === 'object' ? item.id : item) === songId),
+            isLiked: (songId) => state.likedIds.some(item => {
+                if (typeof item === 'string') return item === songId;
+                return item && (item.id === songId || item.saavn_id === songId || item.legacy_id === songId);
+            }),
             isDisliked: (songId) => {
                 if (!state.dislikedSongs) return false;
                 return state.dislikedSongs.some(item => (typeof item === 'object' ? item.id : item) === songId);
