@@ -356,10 +356,19 @@ function proxyApiV2(req, res, url) {
     headers: { ...req.headers, host: `${targetHost}:${targetPort}` },
   };
   const proxyReq = http.request(options, (proxyRes) => {
-    res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    if (!res.headersSent) {
+      res.writeHead(proxyRes.statusCode, proxyRes.headers);
+    }
     proxyRes.pipe(res);
   });
+  req.on('close', () => {
+    if (!res.writableEnded) proxyReq.destroy();
+  });
   proxyReq.on('error', (err) => {
+    if (res.headersSent) {
+      res.destroy();
+      return;
+    }
     sendJson(res, 502, { error: 'Failed to connect to yt-dlp backend', details: err.message });
   });
   req.pipe(proxyReq);

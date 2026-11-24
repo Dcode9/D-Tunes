@@ -6,8 +6,15 @@ without storing files to disk. Supports HTTP Range requests (206 Partial Content
 from __future__ import annotations
 
 import asyncio
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
+import hashlib
+import logging
 import os
 import re
+import tempfile
+import threading
 import time
 from typing import Any, Optional
 
@@ -18,15 +25,18 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, field_validator
 import yt_dlp
 
+logger = logging.getLogger("dtunes.api_v2")
+
 try:
     from ytmusicapi import YTMusic
-    _ytmusic_client: Optional[YTMusic] = None
+    _ytmusic_local = threading.local()
 
     def get_ytmusic() -> YTMusic:
-        global _ytmusic_client
-        if _ytmusic_client is None:
-            _ytmusic_client = YTMusic()
-        return _ytmusic_client
+        client = getattr(_ytmusic_local, "client", None)
+        if client is None:
+            client = YTMusic()
+            _ytmusic_local.client = client
+        return client
 except Exception:
     get_ytmusic = None  # type: ignore
 
@@ -79,9 +89,15 @@ class ResolveResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class TTLCache:
-    def __init__(self) -> None:
-        self._store: dict[str, tuple[Any, float]] = {}
+    def __init__(self, max_size: int = 500) -> None:
+        self._store: OrderedDict[str, tuple[Any, float]] = OrderedDict()
+        self._max_size = max(1, max_size)
         self._lock = asyncio.Lock()
+
+    def _prune_expired(self, now: float) -> None:
+        expired = [k for k, (_, exp) in self._store.items() if now > exp]
+        for k in expired:
+            self._store.pop(k, None)
 
     def _get_sync(self, key: str) -> Optional[Any]:
         entry = self._store.get(key)
@@ -89,12 +105,19 @@ class TTLCache:
             return None
         value, expires_at = entry
         if time.monotonic() > expires_at:
-            del self._store[key]
+            self._store.pop(key, None)
             return None
+        self._store.move_to_end(key)
         return value
 
     def _set_sync(self, key: str, value: Any, ttl: float) -> None:
-        self._store[key] = (value, time.monotonic() + ttl)
+        now = time.monotonic()
+        if len(self._store) >= self._max_size:
+            self._prune_expired(now)
+        while len(self._store) >= self._max_size and key not in self._store:
+            self._store.popitem(last=False)
+        self._store[key] = (value, now + ttl)
+        self._store.move_to_end(key)
 
     async def get(self, key: str) -> Optional[Any]:
         async with self._lock:
@@ -109,8 +132,8 @@ class TTLCache:
             self._store.pop(key, None)
 
 
-search_cache = TTLCache()
-stream_cache = TTLCache()
+search_cache = TTLCache(max_size=500)
+stream_cache = TTLCache(max_size=300)
 
 SEARCH_TTL = 5 * 60       # 5 minutes
 STREAM_TTL = 55 * 60      # 55 minutes
@@ -140,6 +163,35 @@ CLIENT_CANDIDATES: list[list[str]] = [
     ["tv_samsung"],
 ]
 
+_cookies_lock = threading.Lock()
+_cookies_hash: Optional[str] = None
+_COOKIES_TMP_PATH = "/tmp/ytdlp_cookies.txt"
+
+
+def _ensure_cookies_file(cookies_text: str) -> Optional[str]:
+    global _cookies_hash
+    digest = hashlib.sha256(cookies_text.encode("utf-8")).hexdigest()
+    with _cookies_lock:
+        if _cookies_hash == digest and os.path.exists(_COOKIES_TMP_PATH):
+            return _COOKIES_TMP_PATH
+        tmp_path: Optional[str] = None
+        try:
+            fd, tmp_path = tempfile.mkstemp(prefix="ytdlp_cookies_", dir="/tmp")
+            os.chmod(tmp_path, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(cookies_text)
+            os.replace(tmp_path, _COOKIES_TMP_PATH)
+            _cookies_hash = digest
+            return _COOKIES_TMP_PATH
+        except Exception as exc:
+            logger.warning("Failed to write cookies file: %s", exc)
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+            return None
+
 def _base_opts(player_client: Optional[list[str]] = None) -> dict:
     clients = player_client or [c.strip() for c in YTDLP_PLAYER_CLIENT.split(",") if c.strip()]
     opts: dict[str, Any] = {
@@ -158,13 +210,9 @@ def _base_opts(player_client: Optional[list[str]] = None) -> dict:
         opts["cookiefile"] = YTDLP_COOKIES_FILE
     cookies_text = os.environ.get("YTDLP_COOKIES")
     if cookies_text and not opts.get("cookiefile"):
-        cookies_path = "/tmp/ytdlp_cookies.txt"
-        try:
-            with open(cookies_path, "w", encoding="utf-8") as f:
-                f.write(cookies_text)
+        cookies_path = _ensure_cookies_file(cookies_text)
+        if cookies_path:
             opts["cookiefile"] = cookies_path
-        except Exception:
-            pass
     if YTDLP_PROXY:
         opts["proxy"] = YTDLP_PROXY
     return opts
@@ -210,6 +258,49 @@ def _normalize_entry(entry: dict) -> Optional[Track]:
     )
 
 
+def _normalize_ytm_track(item: dict, exclude_id: Optional[str] = None) -> Optional[Track]:
+    video_id = item.get("videoId")
+    if not video_id or not is_valid_video_id(video_id) or (exclude_id and video_id == exclude_id):
+        return None
+    title = item.get("title") or "Unknown"
+    artists_list = item.get("artists") or []
+    artist_names = [a.get("name") for a in artists_list if isinstance(a, dict) and a.get("name")]
+    artist = ", ".join(artist_names) if artist_names else "Unknown Artist"
+
+    album_info = item.get("album")
+    album_name = album_info.get("name") if isinstance(album_info, dict) else None
+
+    duration = item.get("duration_seconds")
+    if duration is None:
+        dur_str = item.get("duration")
+        if dur_str and ":" in str(dur_str):
+            parts = str(dur_str).split(":")
+            try:
+                if len(parts) == 2:
+                    duration = int(parts[0]) * 60 + int(parts[1])
+                elif len(parts) == 3:
+                    duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+            except ValueError:
+                duration = None
+
+    thumbnails = item.get("thumbnails") or []
+    artwork = ""
+    if thumbnails and isinstance(thumbnails[-1], dict):
+        artwork = thumbnails[-1].get("url", "")
+        if artwork:
+            artwork = re.sub(r"=w\d+-h\d+", "=w544-h544", artwork)
+
+    return Track(
+        id=video_id,
+        title=title,
+        artist=artist,
+        artwork=artwork,
+        duration=int(duration) if duration else None,
+        album=album_name,
+        source="youtube",
+    )
+
+
 def search_ytmusic(query: str, limit: int = 10) -> list[Track]:
     """Search YouTube Music songs using ytmusicapi."""
     if not get_ytmusic:
@@ -221,48 +312,9 @@ def search_ytmusic(query: str, limit: int = 10) -> list[Track]:
         for item in raw:
             if not isinstance(item, dict) or item.get("resultType") != "song":
                 continue
-            video_id = item.get("videoId")
-            if not video_id or not is_valid_video_id(video_id):
-                continue
-            title = item.get("title") or "Unknown"
-            artists_list = item.get("artists") or []
-            artist_names = [a.get("name") for a in artists_list if isinstance(a, dict) and a.get("name")]
-            artist = ", ".join(artist_names) if artist_names else "Unknown Artist"
-
-            album_info = item.get("album")
-            album_name = album_info.get("name") if isinstance(album_info, dict) else None
-
-            duration = item.get("duration_seconds")
-            if duration is None:
-                dur_str = item.get("duration")
-                if dur_str and ":" in dur_str:
-                    parts = dur_str.split(":")
-                    try:
-                        if len(parts) == 2:
-                            duration = int(parts[0]) * 60 + int(parts[1])
-                        elif len(parts) == 3:
-                            duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-                    except ValueError:
-                        duration = None
-
-            thumbnails = item.get("thumbnails") or []
-            artwork = ""
-            if thumbnails:
-                artwork = thumbnails[-1].get("url", "")
-                if artwork:
-                    artwork = re.sub(r"=w\d+-h\d+", "=w544-h544", artwork)
-
-            tracks.append(
-                Track(
-                    id=video_id,
-                    title=title,
-                    artist=artist,
-                    artwork=artwork,
-                    duration=int(duration) if duration else None,
-                    album=album_name,
-                    source="youtube",
-                )
-            )
+            track = _normalize_ytm_track(item)
+            if track:
+                tracks.append(track)
             if len(tracks) >= limit:
                 break
         return tracks
@@ -334,26 +386,33 @@ def search_sync(query: str, limit: int = 10) -> list[Track]:
         or " + " in q_lower
     )
 
-    # 1. Primary: YouTube Music API
-    ytm_results = search_ytmusic(query_str, limit=limit)
+    # When a derivative/mashup marker is present, run both catalogs concurrently
+    if has_derivative_marker:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            ytm_future = pool.submit(search_ytmusic, query_str, limit)
+            ytdlp_future = pool.submit(search_ytdlp, query_str, limit)
+            ytm_results = ytm_future.result()
+            ytdlp_results = ytdlp_future.result()
+    else:
+        # 1. Primary: YouTube Music API
+        ytm_results = search_ytmusic(query_str, limit=limit)
 
-    top_coverage = 0.0
-    if ytm_results:
-        top_coverage = _calculate_token_coverage(query_str, ytm_results[0].title, ytm_results[0].artist)
+        top_coverage = 0.0
+        if ytm_results:
+            top_coverage = _calculate_token_coverage(query_str, ytm_results[0].title, ytm_results[0].artist)
 
-    # If YouTube Music matched well and it's not a crossover/mashup query, return fast
-    needs_api2 = (
-        has_derivative_marker
-        or not ytm_results
-        or top_coverage < 0.60
-        or len(ytm_results) < min(3, limit)
-    )
+        # If YouTube Music matched well, return fast without calling yt-dlp
+        needs_api2 = (
+            not ytm_results
+            or top_coverage < 0.60
+            or len(ytm_results) < min(3, limit)
+        )
 
-    if not needs_api2 and ytm_results:
-        return ytm_results
+        if not needs_api2 and ytm_results:
+            return ytm_results
 
-    # 2. Secondary: Query Full YouTube (yt-dlp) for video/mashup catalog
-    ytdlp_results = search_ytdlp(query_str, limit=limit)
+        # 2. Secondary: Query Full YouTube (yt-dlp) for video/mashup catalog
+        ytdlp_results = search_ytdlp(query_str, limit=limit)
 
     if not ytdlp_results:
         return ytm_results or []
@@ -411,10 +470,15 @@ _EXT_TO_CONTENT_TYPE: dict[str, str] = {
 }
 
 
-INVIDIOUS_INSTANCES = [
+_DEFAULT_INVIDIOUS_INSTANCES = [
     "https://yt.chocolatemoo53.com",
     "https://inv.tux.pizza",
 ]
+INVIDIOUS_INSTANCES: list[str] = [
+    u.strip().rstrip("/")
+    for u in os.environ.get("INVIDIOUS_INSTANCES", "").split(",")
+    if u.strip()
+] or list(_DEFAULT_INVIDIOUS_INSTANCES)
 
 def _resolve_invidious_sync(video_id: str) -> tuple[Optional[StreamInfo], Optional[str]]:
     errs = []
@@ -559,13 +623,48 @@ async def search(q: str = "", limit: int = 10) -> SearchResponse:
     try:
         results: list[Track] = await asyncio.to_thread(search_sync, q_str, limit_val)
     except Exception as exc:
+        logger.warning("Search failed for %r: %s", q_str, exc)
         raise HTTPException(
             status_code=502,
-            detail={"error": "Search failed", "code": "search_error", "detail": str(exc)},
+            detail={"error": "Search failed", "code": "search_error"},
         )
 
     await search_cache.set(cache_key, results, SEARCH_TTL)
     return SearchResponse(results=results, query=q_str, cached=False)
+
+
+_http_client: Optional[httpx.AsyncClient] = None
+_resolve_locks: dict[str, asyncio.Lock] = {}
+_resolve_locks_guard = asyncio.Lock()
+
+_UPSTREAM_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None or _http_client.is_closed:
+        _http_client = httpx.AsyncClient(
+            timeout=httpx.Timeout(30.0, connect=10.0),
+            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+            follow_redirects=True,
+        )
+    return _http_client
+
+
+async def _close_http_client() -> None:
+    global _http_client
+    if _http_client is not None and not _http_client.is_closed:
+        await _http_client.aclose()
+    _http_client = None
+
+
+async def _get_resolve_lock(video_id: str) -> asyncio.Lock:
+    async with _resolve_locks_guard:
+        lock = _resolve_locks.get(video_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            _resolve_locks[video_id] = lock
+        return lock
 
 
 async def _resolve_with_retry(video_id: str) -> tuple[StreamInfo, bool]:
@@ -574,9 +673,16 @@ async def _resolve_with_retry(video_id: str) -> tuple[StreamInfo, bool]:
     if cached is not None:
         return cached, True
 
-    info: StreamInfo = await asyncio.to_thread(resolve_sync, video_id)
-    await stream_cache.set(cache_key, info, STREAM_TTL)
-    return info, False
+    # Single-flight lock so concurrent requests for the same track share one extraction
+    lock = await _get_resolve_lock(video_id)
+    async with lock:
+        cached = await stream_cache.get(cache_key)
+        if cached is not None:
+            return cached, True
+
+        info: StreamInfo = await asyncio.to_thread(resolve_sync, video_id)
+        await stream_cache.set(cache_key, info, STREAM_TTL)
+        return info, False
 
 
 async def _stream_proxy(video_id: str, request: Request, allow_re_resolve: bool = True) -> StreamingResponse:
@@ -585,28 +691,30 @@ async def _stream_proxy(video_id: str, request: Request, allow_re_resolve: bool 
     range_header = request.headers.get("range")
     if_range = request.headers.get("if-range")
 
-    headers_to_upstream: dict[str, str] = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    }
+    headers_to_upstream: dict[str, str] = {"User-Agent": _UPSTREAM_UA}
     if range_header:
         headers_to_upstream["Range"] = range_header
     if if_range:
         headers_to_upstream["If-Range"] = if_range
 
-    client = httpx.AsyncClient(timeout=httpx.Timeout(30.0, connect=10.0), follow_redirects=True)
+    client = _get_http_client()
     try:
         upstream = await client.send(
             client.build_request("GET", info.url, headers=headers_to_upstream),
             stream=True,
         )
     except Exception as exc:
-        await client.aclose()
         raise RuntimeError(str(exc)) from exc
 
     if upstream.status_code in (403, 410) and allow_re_resolve:
-        await client.aclose()
+        await upstream.aclose()
         await stream_cache.delete(f"stream:{video_id}")
         return await _stream_proxy(video_id, request, allow_re_resolve=False)
+
+    if upstream.status_code not in (200, 206):
+        status_code = upstream.status_code
+        await upstream.aclose()
+        raise RuntimeError(f"Upstream returned HTTP {status_code}")
 
     resp_headers: dict[str, str] = {
         "Content-Type": info.content_type,
@@ -624,7 +732,7 @@ async def _stream_proxy(video_id: str, request: Request, allow_re_resolve: bool 
             async for chunk in upstream.aiter_bytes(STREAM_CHUNK):
                 yield chunk
         finally:
-            await client.aclose()
+            await upstream.aclose()
 
     return StreamingResponse(
         _generate(),
@@ -642,7 +750,8 @@ async def stream(video_id: str, request: Request) -> Response:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail={"error": str(exc), "code": "invalid_id"})
     except Exception as exc:
-        raise HTTPException(status_code=502, detail={"error": f"Upstream proxy failed: {exc}", "code": "proxy_error"})
+        logger.warning("Upstream proxy failed for %s: %s", video_id, exc)
+        raise HTTPException(status_code=502, detail={"error": "Upstream audio stream unavailable", "code": "proxy_error"})
 
 
 @router.head("/stream/{video_id}")
@@ -651,9 +760,24 @@ async def stream_head(video_id: str) -> Response:
         raise HTTPException(status_code=400, detail={"error": "Invalid video ID format", "code": "invalid_id"})
     try:
         info, _ = await _resolve_with_retry(video_id)
-        return Response(status_code=200, headers={"Content-Type": info.content_type, "Accept-Ranges": "bytes"})
+        headers: dict[str, str] = {
+            "Content-Type": info.content_type,
+            "Accept-Ranges": "bytes",
+        }
+        try:
+            client = _get_http_client()
+            head_res = await client.head(info.url, headers={"User-Agent": _UPSTREAM_UA}, timeout=5.0)
+            if head_res.status_code in (200, 206):
+                if "content-length" in head_res.headers:
+                    headers["Content-Length"] = head_res.headers["content-length"]
+                if "content-type" in head_res.headers:
+                    headers["Content-Type"] = head_res.headers["content-type"]
+        except Exception:
+            pass
+        return Response(status_code=200, headers=headers)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail={"error": str(exc), "code": "proxy_error"})
+        logger.warning("HEAD stream failed for %s: %s", video_id, exc)
+        raise HTTPException(status_code=502, detail={"error": "Unable to resolve stream metadata", "code": "proxy_error"})
 
 
 @router.get("/resolve/{video_id}", response_model=ResolveResponse)
@@ -663,7 +787,8 @@ async def resolve(video_id: str) -> ResolveResponse:
     try:
         info, was_cached = await _resolve_with_retry(video_id)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail={"error": str(exc), "code": "resolve_error"})
+        logger.warning("Resolve failed for %s: %s", video_id, exc)
+        raise HTTPException(status_code=502, detail={"error": "Unable to resolve audio stream", "code": "resolve_error"})
 
     return ResolveResponse(
         id=video_id,
@@ -689,48 +814,9 @@ def related_sync(video_id: str, limit: int = 20) -> list[Track]:
         for item in raw_tracks:
             if not isinstance(item, dict):
                 continue
-            v_id = item.get("videoId")
-            if not v_id or not is_valid_video_id(v_id) or v_id == video_id:
-                continue
-            title = item.get("title") or "Unknown"
-            artists_list = item.get("artists") or []
-            artist_names = [a.get("name") for a in artists_list if isinstance(a, dict) and a.get("name")]
-            artist = ", ".join(artist_names) if artist_names else "Unknown Artist"
-
-            album_info = item.get("album")
-            album_name = album_info.get("name") if isinstance(album_info, dict) else None
-
-            duration = item.get("duration_seconds")
-            if duration is None:
-                dur_str = item.get("duration")
-                if dur_str and ":" in dur_str:
-                    parts = dur_str.split(":")
-                    try:
-                        if len(parts) == 2:
-                            duration = int(parts[0]) * 60 + int(parts[1])
-                        elif len(parts) == 3:
-                            duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-                    except ValueError:
-                        duration = None
-
-            thumbnails = item.get("thumbnails") or []
-            artwork = ""
-            if thumbnails:
-                artwork = thumbnails[-1].get("url", "")
-                if artwork:
-                    artwork = re.sub(r"=w\d+-h\d+", "=w544-h544", artwork)
-
-            tracks.append(
-                Track(
-                    id=v_id,
-                    title=title,
-                    artist=artist,
-                    artwork=artwork,
-                    duration=int(duration) if duration else None,
-                    album=album_name,
-                    source="youtube",
-                )
-            )
+            track = _normalize_ytm_track(item, exclude_id=video_id)
+            if track:
+                tracks.append(track)
             if len(tracks) >= limit:
                 break
         return tracks
@@ -1045,10 +1131,19 @@ async def artist_endpoint(artist_id: str) -> dict[str, Any]:
 # App initialization & Multi-prefix mounting
 # ---------------------------------------------------------------------------
 
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    try:
+        yield
+    finally:
+        await _close_http_client()
+
+
 app = FastAPI(
     title="D'Tunes API v2",
     description="yt-dlp Media Backend for D'Tunes",
     version="2.0.0",
+    lifespan=_lifespan,
 )
 
 app.add_middleware(
