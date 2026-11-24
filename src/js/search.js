@@ -144,11 +144,17 @@
                         return;
                     }
 
+                    if (searchManager._quickSearchAbort) {
+                        try { searchManager._quickSearchAbort.abort(); } catch (_) {}
+                        searchManager._quickSearchAbort = null;
+                    }
                     dropWrapper.classList.add('active');
                     results.classList.add('is-updating');
                     const requestedQuery = query;
                     state.searchDebounce = setTimeout(async () => {
-                        const songs = await jiosaavnAPI.searchSongs(requestedQuery, 6);
+                        const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+                        searchManager._quickSearchAbort = controller;
+                        const songs = await jiosaavnAPI.searchSongs(requestedQuery, 6, controller ? { signal: controller.signal } : {});
                         if (input.value.trim() !== requestedQuery) return;
                         results.classList.remove('is-updating');
                         if (!songs || songs.length === 0) {

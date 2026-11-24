@@ -58,6 +58,25 @@
                     if (typeof lyricsManager !== 'undefined' && lyricsManager.syncTime) {
                         lyricsManager.syncTime(cur);
                     }
+                    if (window.listeningSession && typeof window.listeningSession.update === 'function') {
+                        window.listeningSession.update();
+                    }
+                    if ('mediaSession' in navigator && typeof navigator.mediaSession.setPositionState === 'function' && Number.isFinite(dur) && dur > 0) {
+                        try {
+                            navigator.mediaSession.setPositionState({
+                                duration: dur,
+                                playbackRate: 1,
+                                position: Math.max(0, Math.min(cur, dur))
+                            });
+                        } catch (_) {}
+                    }
+                    if ((cur / dur) >= 0.9 && state.currentTrack && typeof recommendationEvents !== 'undefined' && recommendationEvents.completedSongId !== state.currentTrack.id) {
+                        recommendationEvents.completedSongId = state.currentTrack.id;
+                        recommendationEvents.record('play_complete', state.currentTrack, {
+                            playDurationSeconds: Math.floor(cur),
+                            songDurationSeconds: Math.floor(dur),
+                        });
+                    }
                 }
             }, 250);
         };
@@ -89,6 +108,12 @@
                     events: {
                         onReady: () => {
                             ytPlayerReady = true;
+                            if (typeof ytPlayer.setVolume === 'function' && typeof audio !== 'undefined' && audio) {
+                                try {
+                                    const vol = Number.isFinite(audio.volume) ? audio.volume : 1;
+                                    ytPlayer.setVolume(Math.round(Math.max(0, Math.min(1, vol)) * 100));
+                                } catch (_) {}
+                            }
                         },
                         onStateChange: (event) => {
                             if (event.data === 1) { // PLAYING
@@ -109,6 +134,9 @@
                                 ui.setPlayerLoading(true);
                             } else if (event.data === 0) { // ENDED
                                 stopYTProgressTimer();
+                                if (typeof sleepTimer !== 'undefined' && sleepTimer.onTrackEnded && sleepTimer.onTrackEnded()) {
+                                    return;
+                                }
                                 if (state.repeat === 2) {
                                     ytPlayer.seekTo(0, true);
                                     ytPlayer.playVideo();
@@ -470,11 +498,14 @@
 
         window.playContext = async (type, id) => {
             try {
-                const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/${type}s?id=${id}`);
                 let songs = [];
-                if(type === 'album') songs = (data.data?.songs || []).map(jiosaavnAPI.normalizeSong).filter(Boolean);
-                else if (type === 'artist') songs = (data.data?.topSongs || data.data?.songs || []).map(jiosaavnAPI.normalizeSong).filter(Boolean);
-                
+                if (type === 'album' && jiosaavnAPI.getAlbum) {
+                    const album = await jiosaavnAPI.getAlbum(id);
+                    songs = (album?.songs || []).filter(Boolean);
+                } else if (type === 'artist' && jiosaavnAPI.getArtist) {
+                    const artist = await jiosaavnAPI.getArtist(id);
+                    songs = (artist?.topSongs || []).filter(Boolean);
+                }
                 if (songs.length > 0) { state.queue = songs; state.userQueue = []; state.idx = 0; player.playDirect(songs[0]); }
             } catch(e) {}
         };
@@ -1112,8 +1143,8 @@
             },
             addAlbumNext: async (albumId) => {
                 try {
-                    const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/albums?id=${albumId}`);
-                    const songs = (data.data?.songs || []).map(jiosaavnAPI.normalizeSong).filter(Boolean);
+                    const album = await jiosaavnAPI.getAlbum(albumId);
+                    const songs = (album?.songs || []).filter(Boolean);
                     if (songs.length === 0) { if (ui.showToast) ui.showToast('No album songs found', 'error'); return; }
                     state.userQueue.unshift(...songs);
                     ui.renderQueue();
@@ -1126,8 +1157,8 @@
             },
             addAlbumToQueue: async (albumId) => {
                 try {
-                    const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/albums?id=${albumId}`);
-                    const songs = (data.data?.songs || []).map(jiosaavnAPI.normalizeSong).filter(Boolean);
+                    const album = await jiosaavnAPI.getAlbum(albumId);
+                    const songs = (album?.songs || []).filter(Boolean);
                     if (songs.length === 0) { if (ui.showToast) ui.showToast('No album songs found', 'error'); return; }
                     state.userQueue.push(...songs);
                     ui.renderQueue();

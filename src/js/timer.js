@@ -10,6 +10,15 @@
             originalVolume: 1,
             isFading: false,
 
+            _applyVolume: (vol) => {
+                const clamped = Math.max(0, Math.min(1, vol));
+                if (typeof player !== 'undefined' && typeof player.setVolume === 'function') {
+                    player.setVolume(clamped);
+                } else if (typeof audio !== 'undefined' && audio) {
+                    audio.volume = clamped;
+                }
+            },
+
             start: (minutesOrMode) => {
                 sleepTimer.cancel();
                 if (!minutesOrMode) return;
@@ -39,8 +48,8 @@
 
             cancel: () => {
                 if (sleepTimer.intervalId) clearInterval(sleepTimer.intervalId);
-                if (sleepTimer.isFading && typeof audio !== 'undefined' && audio) {
-                    audio.volume = sleepTimer.originalVolume;
+                if (sleepTimer.isFading) {
+                    sleepTimer._applyVolume(sleepTimer.originalVolume);
                 }
                 sleepTimer.intervalId = null;
                 sleepTimer.targetEndTime = 0;
@@ -58,9 +67,9 @@
                 const extraMs = extraMinutes * 60 * 1000;
                 sleepTimer.targetEndTime += extraMs;
                 sleepTimer.durationMs += extraMs;
-                if (sleepTimer.isFading && typeof audio !== 'undefined' && audio) {
+                if (sleepTimer.isFading) {
                     sleepTimer.isFading = false;
-                    audio.volume = sleepTimer.originalVolume;
+                    sleepTimer._applyVolume(sleepTimer.originalVolume);
                 }
                 sleepTimer.updateUI();
                 if (ui.showToast) ui.showToast(`Sleep timer extended by ${extraMinutes} min`, 'info');
@@ -77,10 +86,10 @@
                 }
 
                 // 10-second volume fade-out before ending
-                if (remainingMs <= sleepTimer.fadeDurationMs && typeof audio !== 'undefined' && audio) {
+                if (remainingMs <= sleepTimer.fadeDurationMs) {
                     sleepTimer.isFading = true;
                     const fraction = remainingMs / sleepTimer.fadeDurationMs;
-                    audio.volume = Math.max(0, Math.min(1, sleepTimer.originalVolume * fraction));
+                    sleepTimer._applyVolume(sleepTimer.originalVolume * fraction);
                 }
 
                 sleepTimer.updateUI(remainingMs);
@@ -89,7 +98,7 @@
             finish: () => {
                 sleepTimer.cancel();
                 if (typeof player !== 'undefined' && player.pause) player.pause();
-                if (typeof audio !== 'undefined' && audio) audio.volume = sleepTimer.originalVolume;
+                sleepTimer._applyVolume(sleepTimer.originalVolume);
                 if (ui.showToast) ui.showToast('Sleep timer finished: Playback paused', 'info');
             },
 

@@ -116,9 +116,13 @@ SEARCH_TTL = 5 * 60       # 5 minutes
 STREAM_TTL = 55 * 60      # 55 minutes
 STREAM_CHUNK = 65_536     # 64 KiB chunks
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+_BROWSE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{4,64}$")
 
 def is_valid_video_id(video_id: str) -> bool:
     return bool(_VIDEO_ID_RE.match(video_id))
+
+def is_valid_browse_id(browse_id: str) -> bool:
+    return bool(_BROWSE_ID_RE.match(browse_id))
 
 
 # ---------------------------------------------------------------------------
@@ -777,6 +781,263 @@ async def lyrics_endpoint(video_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail={"error": "Lyrics not found", "code": "lyrics_not_found"})
     data = {"lyrics": text, "source": "YouTube Music"}
     await search_cache.set(cache_key, data, STREAM_TTL)
+    return data
+
+
+def _ytm_thumb(thumbnails: Any, size: int = 544) -> str:
+    if not isinstance(thumbnails, list) or not thumbnails:
+        return ""
+    url = thumbnails[-1].get("url", "") if isinstance(thumbnails[-1], dict) else ""
+    if url:
+        url = re.sub(r"=w\d+-h\d+", f"=w{size}-h{size}", url)
+    return url
+
+
+def _ytm_duration(item: dict) -> Optional[int]:
+    duration = item.get("duration_seconds")
+    if duration is None:
+        dur_str = item.get("duration")
+        if dur_str and ":" in str(dur_str):
+            parts = str(dur_str).split(":")
+            try:
+                if len(parts) == 2:
+                    duration = int(parts[0]) * 60 + int(parts[1])
+                elif len(parts) == 3:
+                    duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+            except ValueError:
+                duration = None
+    return int(duration) if duration else None
+
+
+def search_albums_sync(query: str, limit: int = 8) -> list[dict[str, Any]]:
+    if not get_ytmusic:
+        return []
+    try:
+        ytm = get_ytmusic()
+        raw = ytm.search(query, filter="albums") or []
+        results: list[dict[str, Any]] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            browse_id = item.get("browseId") or ""
+            if not browse_id or not is_valid_browse_id(browse_id):
+                continue
+            artists = item.get("artists") or []
+            artist_names = [a.get("name") for a in artists if isinstance(a, dict) and a.get("name")]
+            results.append({
+                "id": browse_id,
+                "name": item.get("title") or "Unknown Album",
+                "title": item.get("title") or "Unknown Album",
+                "artist": ", ".join(artist_names) if artist_names else "Album",
+                "year": str(item.get("year") or ""),
+                "artwork": _ytm_thumb(item.get("thumbnails")),
+                "img": _ytm_thumb(item.get("thumbnails")),
+                "type": "album",
+            })
+            if len(results) >= limit:
+                break
+        return results
+    except Exception:
+        return []
+
+
+def search_artists_sync(query: str, limit: int = 8) -> list[dict[str, Any]]:
+    if not get_ytmusic:
+        return []
+    try:
+        ytm = get_ytmusic()
+        raw = ytm.search(query, filter="artists") or []
+        results: list[dict[str, Any]] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            browse_id = item.get("browseId") or ""
+            if not browse_id or not is_valid_browse_id(browse_id):
+                continue
+            name = item.get("artist") or item.get("title") or "Unknown Artist"
+            results.append({
+                "id": browse_id,
+                "name": name,
+                "artist": "Artist",
+                "artwork": _ytm_thumb(item.get("thumbnails")),
+                "img": _ytm_thumb(item.get("thumbnails")),
+                "type": "artist",
+            })
+            if len(results) >= limit:
+                break
+        return results
+    except Exception:
+        return []
+
+
+def get_album_sync(album_id: str) -> Optional[dict[str, Any]]:
+    if not get_ytmusic:
+        return None
+    try:
+        ytm = get_ytmusic()
+        data = ytm.get_album(album_id)
+        if not isinstance(data, dict):
+            return None
+        artwork = _ytm_thumb(data.get("thumbnails"))
+        artists = data.get("artists") or []
+        artist_names = [a.get("name") for a in artists if isinstance(a, dict) and a.get("name")]
+        primary_artist_id = next((a.get("id") for a in artists if isinstance(a, dict) and a.get("id")), "")
+        album_title = data.get("title") or "Album"
+        songs: list[dict[str, Any]] = []
+        for item in data.get("tracks") or []:
+            if not isinstance(item, dict):
+                continue
+            vid = item.get("videoId") or ""
+            if not vid or not is_valid_video_id(vid):
+                continue
+            t_artists = item.get("artists") or artists
+            t_artist_names = [a.get("name") for a in t_artists if isinstance(a, dict) and a.get("name")]
+            songs.append(Track(
+                id=vid,
+                title=item.get("title") or "Unknown",
+                artist=", ".join(t_artist_names) if t_artist_names else (", ".join(artist_names) or "Unknown Artist"),
+                artwork=_ytm_thumb(item.get("thumbnails")) or artwork,
+                duration=_ytm_duration(item),
+                album=album_title,
+                source="youtube",
+            ).model_dump())
+        return {
+            "id": album_id,
+            "name": album_title,
+            "title": album_title,
+            "artist": ", ".join(artist_names) if artist_names else "Artist",
+            "artistId": primary_artist_id,
+            "year": str(data.get("year") or ""),
+            "artwork": artwork,
+            "img": artwork,
+            "songs": songs,
+        }
+    except Exception:
+        return None
+
+
+def get_artist_sync(artist_id: str) -> Optional[dict[str, Any]]:
+    if not get_ytmusic:
+        return None
+    try:
+        ytm = get_ytmusic()
+        data = ytm.get_artist(artist_id)
+        if not isinstance(data, dict):
+            return None
+        name = data.get("name") or "Artist"
+        artwork = _ytm_thumb(data.get("thumbnails"))
+        top_songs: list[dict[str, Any]] = []
+        songs_section = data.get("songs") or {}
+        for item in (songs_section.get("results") or [])[:15]:
+            if not isinstance(item, dict):
+                continue
+            vid = item.get("videoId") or ""
+            if not vid or not is_valid_video_id(vid):
+                continue
+            t_artists = item.get("artists") or []
+            t_artist_names = [a.get("name") for a in t_artists if isinstance(a, dict) and a.get("name")]
+            album_info = item.get("album")
+            album_name = album_info.get("name") if isinstance(album_info, dict) else None
+            top_songs.append(Track(
+                id=vid,
+                title=item.get("title") or "Unknown",
+                artist=", ".join(t_artist_names) if t_artist_names else name,
+                artwork=_ytm_thumb(item.get("thumbnails")) or artwork,
+                duration=_ytm_duration(item),
+                album=album_name,
+                source="youtube",
+            ).model_dump())
+        top_albums: list[dict[str, Any]] = []
+        albums_section = data.get("albums") or {}
+        for item in (albums_section.get("results") or [])[:12]:
+            if not isinstance(item, dict):
+                continue
+            bid = item.get("browseId") or ""
+            if not bid or not is_valid_browse_id(bid):
+                continue
+            top_albums.append({
+                "id": bid,
+                "name": item.get("title") or "Album",
+                "title": item.get("title") or "Album",
+                "year": str(item.get("year") or ""),
+                "artwork": _ytm_thumb(item.get("thumbnails")),
+                "img": _ytm_thumb(item.get("thumbnails")),
+                "type": "album",
+            })
+        return {
+            "id": artist_id,
+            "name": name,
+            "artwork": artwork,
+            "img": artwork,
+            "subscribers": str(data.get("subscribers") or ""),
+            "topSongs": top_songs,
+            "topAlbums": top_albums,
+        }
+    except Exception:
+        return None
+
+
+@router.get("/search/albums")
+async def search_albums(q: str = "", limit: int = 8) -> dict[str, Any]:
+    q_str = q.strip()
+    if not q_str:
+        raise HTTPException(status_code=400, detail={"error": "Query parameter 'q' is required", "code": "missing_query"})
+    if len(q_str) > 200:
+        raise HTTPException(status_code=400, detail={"error": "Query exceeds 200 characters", "code": "query_too_long"})
+    limit_val = max(1, min(limit, 25))
+    cache_key = f"search_albums:{q_str.lower()}:{limit_val}"
+    cached = await search_cache.get(cache_key)
+    if cached is not None:
+        return {"results": cached, "query": q_str, "cached": True}
+    results = await asyncio.to_thread(search_albums_sync, q_str, limit_val)
+    await search_cache.set(cache_key, results, SEARCH_TTL)
+    return {"results": results, "query": q_str, "cached": False}
+
+
+@router.get("/search/artists")
+async def search_artists(q: str = "", limit: int = 8) -> dict[str, Any]:
+    q_str = q.strip()
+    if not q_str:
+        raise HTTPException(status_code=400, detail={"error": "Query parameter 'q' is required", "code": "missing_query"})
+    if len(q_str) > 200:
+        raise HTTPException(status_code=400, detail={"error": "Query exceeds 200 characters", "code": "query_too_long"})
+    limit_val = max(1, min(limit, 25))
+    cache_key = f"search_artists:{q_str.lower()}:{limit_val}"
+    cached = await search_cache.get(cache_key)
+    if cached is not None:
+        return {"results": cached, "query": q_str, "cached": True}
+    results = await asyncio.to_thread(search_artists_sync, q_str, limit_val)
+    await search_cache.set(cache_key, results, SEARCH_TTL)
+    return {"results": results, "query": q_str, "cached": False}
+
+
+@router.get("/album/{album_id}")
+async def album_endpoint(album_id: str) -> dict[str, Any]:
+    if not is_valid_browse_id(album_id):
+        raise HTTPException(status_code=400, detail={"error": "Invalid album ID format", "code": "invalid_id"})
+    cache_key = f"album:{album_id}"
+    cached = await search_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    data = await asyncio.to_thread(get_album_sync, album_id)
+    if not data:
+        raise HTTPException(status_code=404, detail={"error": "Album not found", "code": "album_not_found"})
+    await search_cache.set(cache_key, data, SEARCH_TTL)
+    return data
+
+
+@router.get("/artist/{artist_id}")
+async def artist_endpoint(artist_id: str) -> dict[str, Any]:
+    if not is_valid_browse_id(artist_id):
+        raise HTTPException(status_code=400, detail={"error": "Invalid artist ID format", "code": "invalid_id"})
+    cache_key = f"artist:{artist_id}"
+    cached = await search_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    data = await asyncio.to_thread(get_artist_sync, artist_id)
+    if not data:
+        raise HTTPException(status_code=404, detail={"error": "Artist not found", "code": "artist_not_found"})
+    await search_cache.set(cache_key, data, SEARCH_TTL)
     return data
 
 

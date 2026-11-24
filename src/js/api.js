@@ -3,7 +3,6 @@
         // ============================================
         const API_V2_BASE = '/api-v2';
         const clientSearchCache = new Map();
-        let activeSearchAbortController = null;
 
         const isNetworkOffline = () => {
             if (typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function') {
@@ -50,19 +49,14 @@
                 }
             },
 
-            searchSongs: async (query, limit = 20) => {
+            searchSongs: async (query, limit = 20, options = {}) => {
                 if (isNetworkOffline()) return [];
                 const normalizedQ = (query || '').toLowerCase().trim();
                 if (!normalizedQ) return [];
                 const cacheKey = `${normalizedQ}:${limit}`;
                 if (clientSearchCache.has(cacheKey)) return clientSearchCache.get(cacheKey);
 
-                // Cancel any previous in-flight quick-search
-                if (activeSearchAbortController) {
-                    try { activeSearchAbortController.abort(); } catch (_) {}
-                }
-                activeSearchAbortController = new AbortController();
-                const signal = activeSearchAbortController.signal;
+                const signal = options && options.signal ? options.signal : null;
 
                 try {
                     const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/search?q=${encodeURIComponent(query)}&limit=${limit}`, 2, signal);
@@ -84,25 +78,56 @@
             searchAll: async (query) => {
                 if (isNetworkOffline()) return { top: null, songs: [], albums: [], artists: [] };
                 try {
-                    const songs = await mediaAPI.searchSongs(query, 15);
+                    const [songs, albums, artists] = await Promise.all([
+                        mediaAPI.searchSongs(query, 15),
+                        mediaAPI.searchAlbums(query, 8),
+                        mediaAPI.searchArtists(query, 8),
+                    ]);
                     if (!songs || songs.length === 0) {
-                        return { top: null, songs: [], albums: [], artists: [] };
+                        return { top: null, songs: [], albums: albums || [], artists: artists || [] };
                     }
                     const top = songs[0];
                     const remainingSongs = songs.slice(1);
-                    return { top, songs: remainingSongs, albums: [], artists: [] };
+                    return { top, songs: remainingSongs, albums: albums || [], artists: artists || [] };
                 } catch (e) {
                     console.warn('[API-v2 SearchAll] Error:', e);
                     return { top: null, songs: [], albums: [], artists: [] };
                 }
             },
 
-            searchAlbums: async (query) => {
-                return [];
+            searchAlbums: async (query, limit = 8) => {
+                if (!query || isNetworkOffline()) return [];
+                try {
+                    const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/search/albums?q=${encodeURIComponent(query)}&limit=${limit}`);
+                    const fallbackImg = typeof FALLBACK_ART !== 'undefined' ? FALLBACK_ART : '';
+                    return (data.results || []).map(a => ({
+                        id: a.id,
+                        name: (typeof utils !== 'undefined' && utils.decodeHtml) ? utils.decodeHtml(a.name || a.title || 'Unknown') : (a.name || a.title || 'Unknown'),
+                        artist: (typeof utils !== 'undefined' && utils.decodeHtml) ? utils.decodeHtml(a.artist || 'Album') : (a.artist || 'Album'),
+                        year: a.year || '',
+                        img: (typeof sanitizeImageUrl === 'function') ? sanitizeImageUrl(a.img || a.artwork || fallbackImg) : (a.img || a.artwork || fallbackImg),
+                        type: 'album'
+                    })).filter(a => a.id);
+                } catch (e) {
+                    return [];
+                }
             },
 
-            searchArtists: async (query) => {
-                return [];
+            searchArtists: async (query, limit = 8) => {
+                if (!query || isNetworkOffline()) return [];
+                try {
+                    const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/search/artists?q=${encodeURIComponent(query)}&limit=${limit}`);
+                    const fallbackImg = typeof FALLBACK_ART !== 'undefined' ? FALLBACK_ART : '';
+                    return (data.results || []).map(a => ({
+                        id: a.id,
+                        name: (typeof utils !== 'undefined' && utils.decodeHtml) ? utils.decodeHtml(a.name || a.title || 'Unknown') : (a.name || a.title || 'Unknown'),
+                        artist: a.artist || 'Artist',
+                        img: (typeof sanitizeImageUrl === 'function') ? sanitizeImageUrl(a.img || a.artwork || fallbackImg) : (a.img || a.artwork || fallbackImg),
+                        type: 'artist'
+                    })).filter(a => a.id);
+                } catch (e) {
+                    return [];
+                }
             },
 
             getTrending: async (limit = 25) => {
@@ -151,7 +176,51 @@
             },
 
             getAlbum: async (id) => {
-                return null;
+                if (!id || isNetworkOffline()) return null;
+                try {
+                    const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/album/${encodeURIComponent(id)}`);
+                    if (!data) return null;
+                    const fallbackImg = typeof FALLBACK_ART !== 'undefined' ? FALLBACK_ART : '';
+                    const rawImg = data.artwork || data.img || fallbackImg;
+                    return {
+                        id: data.id || id,
+                        name: (typeof utils !== 'undefined' && utils.decodeHtml) ? utils.decodeHtml(data.name || data.title || 'Album') : (data.name || data.title || 'Album'),
+                        title: (typeof utils !== 'undefined' && utils.decodeHtml) ? utils.decodeHtml(data.title || data.name || 'Album') : (data.title || data.name || 'Album'),
+                        artist: (typeof utils !== 'undefined' && utils.decodeHtml) ? utils.decodeHtml(data.artist || 'Artist') : (data.artist || 'Artist'),
+                        artistId: data.artistId || '',
+                        year: data.year || '',
+                        img: (typeof sanitizeImageUrl === 'function') ? sanitizeImageUrl(rawImg) : rawImg,
+                        songs: (data.songs || []).map(s => mediaAPI.normalizeTrack(s)).filter(Boolean)
+                    };
+                } catch (e) {
+                    return null;
+                }
+            },
+
+            getArtist: async (id) => {
+                if (!id || isNetworkOffline()) return null;
+                try {
+                    const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/artist/${encodeURIComponent(id)}`);
+                    if (!data) return null;
+                    const fallbackImg = typeof FALLBACK_ART !== 'undefined' ? FALLBACK_ART : '';
+                    const rawImg = data.artwork || data.img || fallbackImg;
+                    return {
+                        id: data.id || id,
+                        name: (typeof utils !== 'undefined' && utils.decodeHtml) ? utils.decodeHtml(data.name || 'Artist') : (data.name || 'Artist'),
+                        img: (typeof sanitizeImageUrl === 'function') ? sanitizeImageUrl(rawImg) : rawImg,
+                        subscribers: data.subscribers || '',
+                        topSongs: (data.topSongs || []).map(s => mediaAPI.normalizeTrack(s)).filter(Boolean),
+                        topAlbums: (data.topAlbums || []).map(a => ({
+                            id: a.id,
+                            name: a.name || a.title || 'Album',
+                            year: a.year || '',
+                            img: (typeof sanitizeImageUrl === 'function') ? sanitizeImageUrl(a.img || a.artwork || fallbackImg) : (a.img || a.artwork || fallbackImg),
+                            type: 'album'
+                        })).filter(a => a.id)
+                    };
+                } catch (e) {
+                    return null;
+                }
             },
 
             normalizeTrack: (item) => {

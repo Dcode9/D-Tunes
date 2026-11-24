@@ -62,3 +62,45 @@ test('D-Tunes API v2: server.js proxies /api-v2 in local mode', () => {
   assert.ok(serverContent.includes("url.pathname.startsWith('/api-v2')"), 'server.js must detect /api-v2 requests');
   assert.ok(serverContent.includes('proxyApiV2'), 'server.js must define proxyApiV2');
 });
+
+test('D-Tunes API v2: searchSongs does not share a global AbortController across callers', () => {
+  const apiContent = fs.readFileSync(path.join(__dirname, '../src/js/api.js'), 'utf8');
+  assert.ok(!apiContent.includes('activeSearchAbortController'), 'api.js must not abort concurrent searchSongs calls globally');
+  assert.ok(apiContent.includes('options = {}'), 'searchSongs must accept optional signal via options');
+
+  const searchContent = fs.readFileSync(path.join(__dirname, '../src/js/search.js'), 'utf8');
+  assert.ok(searchContent.includes('_quickSearchAbort'), 'search.js must scope AbortController to quick-search');
+});
+
+test('D-Tunes API v2: no stale JIOSAAVN_API references remain and album/artist endpoints are wired', () => {
+  for (const rel of ['../src/js/api.js', '../src/js/player.js', '../src/js/ui.js']) {
+    const content = fs.readFileSync(path.join(__dirname, rel), 'utf8');
+    assert.ok(!content.includes('JIOSAAVN_API'), `${rel} must not reference removed JIOSAAVN_API`);
+  }
+
+  const v2Content = fs.readFileSync(path.join(__dirname, '../api/v2.py'), 'utf8');
+  assert.ok(v2Content.includes('/search/albums'), 'api/v2.py must expose /search/albums');
+  assert.ok(v2Content.includes('/search/artists'), 'api/v2.py must expose /search/artists');
+  assert.ok(v2Content.includes('/album/{album_id}'), 'api/v2.py must expose /album/{album_id}');
+  assert.ok(v2Content.includes('/artist/{artist_id}'), 'api/v2.py must expose /artist/{artist_id}');
+
+  const apiContent = fs.readFileSync(path.join(__dirname, '../src/js/api.js'), 'utf8');
+  assert.ok(apiContent.includes('getArtist:'), 'api.js must implement getArtist');
+});
+
+test('D-Tunes API v2: lyrics, playhead, timer, and YT player adapter stay in sync', () => {
+  const lyricsContent = fs.readFileSync(path.join(__dirname, '../src/js/lyrics.js'), 'utf8');
+  assert.ok(!lyricsContent.includes("getElementById('audio')"), "lyrics.js must not query nonexistent id='audio'");
+  assert.ok(lyricsContent.includes("getElementById('audio-el')"), "lyrics.js must query id='audio-el'");
+  assert.ok(lyricsContent.includes('_ytPlayerInstance'), 'lyrics.js must read YT player time when YouTube is active');
+
+  const mainContent = fs.readFileSync(path.join(__dirname, '../src/js/main.js'), 'utf8');
+  assert.ok(!mainContent.includes('lyricsManager.syncTime(cur, true)'), 'tickPlayhead must not force-scroll lyrics at 60fps');
+
+  const timerContent = fs.readFileSync(path.join(__dirname, '../src/js/timer.js'), 'utf8');
+  assert.ok(timerContent.includes('player.setVolume'), 'timer.js must route volume fades through player.setVolume');
+
+  const playerContent = fs.readFileSync(path.join(__dirname, '../src/js/player.js'), 'utf8');
+  assert.ok(playerContent.includes('sleepTimer.onTrackEnded'), 'YT player ENDED handler must honor sleepTimer.onTrackEnded');
+  assert.ok(playerContent.includes("recommendationEvents.record('play_complete'"), 'YT progress timer must record play_complete');
+});

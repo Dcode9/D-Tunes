@@ -255,8 +255,15 @@
                     });
 
                     lyricsManager.activeLineIndex = -1;
-                    const audioEl = document.getElementById('audio');
-                    lyricsManager.syncTime(audioEl?.currentTime || 0, true);
+                    const isYTActive = typeof state !== 'undefined'
+                        && state.currentTrack?.source === 'youtube'
+                        && !state.currentTrack?.isOffline
+                        && window._ytPlayerInstance
+                        && typeof window._ytPlayerInstance.getCurrentTime === 'function';
+                    const currentPlaybackTime = isYTActive
+                        ? (window._ytPlayerInstance.getCurrentTime() || 0)
+                        : (document.getElementById('audio-el')?.currentTime || 0);
+                    lyricsManager.syncTime(currentPlaybackTime, true);
                     return;
                 }
 

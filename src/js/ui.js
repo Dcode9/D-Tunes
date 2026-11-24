@@ -1141,14 +1141,13 @@
                 if (listEl) listEl.innerHTML = '<div class="text-gray-400 py-8 text-center"><div class="w-6 h-6 border-2 border-[var(--accent-color)] border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>Loading tracks...</div>';
 
                 try {
-                    const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/albums?id=${albumId}`);
-                    const albumData = data.data || {};
+                    const albumData = (await jiosaavnAPI.getAlbum(albumId)) || {};
                     const title = albumData.name || albumData.title || 'Album';
                     const artist = albumData.artist || albumData.primaryArtists || 'Artist';
                     const artistId = albumData.artistId || albumData.primaryArtistsId || '';
                     const year = albumData.year || '';
-                    const img = albumData.image ? (Array.isArray(albumData.image) ? albumData.image[albumData.image.length - 1]?.url || albumData.image[0]?.url : albumData.image) : FALLBACK_ART;
-                    const songs = (albumData.songs || []).map(jiosaavnAPI.normalizeSong).filter(Boolean);
+                    const img = albumData.img || (albumData.image ? (Array.isArray(albumData.image) ? albumData.image[albumData.image.length - 1]?.url || albumData.image[0]?.url : albumData.image) : FALLBACK_ART);
+                    const songs = (albumData.songs || []).map(s => (s && s.url) ? s : jiosaavnAPI.normalizeSong(s)).filter(Boolean);
 
                     if (titleEl) titleEl.textContent = title;
                     if (artistEl) {
@@ -1214,25 +1213,27 @@
 
                 try {
                     let artistData = null;
-                    if (artistId) {
-                        const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/artists?id=${artistId}`);
-                        artistData = data.data || {};
-                    } else {
-                        const data = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/search/artists?query=${encodeURIComponent(fallbackName)}`);
-                        const first = data.data?.results?.[0];
-                        if (first?.id) {
-                            const full = await jiosaavnAPI.fetchWithRetry(`${JIOSAAVN_API}/artists?id=${first.id}`);
-                            artistData = full.data || {};
+                    if (artistId && jiosaavnAPI.getArtist) {
+                        artistData = await jiosaavnAPI.getArtist(artistId);
+                    } else if (fallbackName && jiosaavnAPI.searchArtists) {
+                        const matches = await jiosaavnAPI.searchArtists(fallbackName, 1);
+                        const first = matches && matches[0];
+                        if (first?.id && jiosaavnAPI.getArtist) {
+                            artistData = await jiosaavnAPI.getArtist(first.id);
                         }
                     }
 
                     const name = artistData?.name || fallbackName;
-                    const img = artistData?.image ? (Array.isArray(artistData.image) ? artistData.image[artistData.image.length - 1]?.url || artistData.image[0]?.url : artistData.image) : FALLBACK_ART;
-                    const topSongs = (artistData?.topSongs || []).map(jiosaavnAPI.normalizeSong).filter(Boolean);
+                    const img = artistData?.img || (artistData?.image ? (Array.isArray(artistData.image) ? artistData.image[artistData.image.length - 1]?.url || artistData.image[0]?.url : artistData.image) : FALLBACK_ART);
+                    const topSongs = (artistData?.topSongs || []).map(s => (s && s.url) ? s : jiosaavnAPI.normalizeSong(s)).filter(Boolean);
                     const topAlbums = artistData?.topAlbums || [];
 
                     if (nameEl) nameEl.textContent = name;
-                    if (subtitleEl) subtitleEl.textContent = artistData?.fanCount ? `${parseInt(artistData.fanCount).toLocaleString()} Monthly Listeners` : 'Top Artist';
+                    if (subtitleEl) {
+                        subtitleEl.textContent = artistData?.subscribers
+                            ? `${artistData.subscribers} Subscribers`
+                            : (artistData?.fanCount ? `${parseInt(artistData.fanCount).toLocaleString()} Monthly Listeners` : 'Top Artist');
+                    }
                     if (avatarEl) avatarEl.src = img;
                     if (heroBgEl) heroBgEl.style.backgroundImage = `url('${img}')`;
 
