@@ -1400,7 +1400,7 @@
                 listeningSession.startedAt = Date.now();
                 listeningSession.accumulatedMs = 0;
                 listeningSession.lastUpdate = Date.now();
-                listeningSession.isPlaying = !audio.paused;
+                listeningSession.isPlaying = (typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt') ? Boolean(state.playing) : !audio.paused;
                 try {
                     listeningSession.eventId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : null;
                 } catch (_) {

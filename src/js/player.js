@@ -1364,7 +1364,8 @@
             }
             if (typeof viz !== 'undefined' && viz.start) viz.start();
         });
-        audio.addEventListener('pause', () => { 
+        audio.addEventListener('pause', () => {
+            if (typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt') return;
             // Only update play state if the user explicitly requested a pause,
             // or if the playback naturally ended, or if the page is visible.
             if (state.userPaused || audio.ended || document.visibilityState !== 'hidden') {
@@ -1392,6 +1393,7 @@
         let stallCheckTimer = null;
         ['loadstart', 'waiting', 'stalled'].forEach((eventName) => {
             audio.addEventListener(eventName, () => {
+                if (typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt') return;
                 if (!state.currentTrack) return;
                 state.loading = true;
                 ui.setPlayerLoading(true);
@@ -1467,10 +1469,24 @@
 
         audio.addEventListener('error', recoverFromAudioError);
 
-        // Periodic state reconciliation: catches any desync between audio
-        // element and UI state without false triggers from buffering readyState.
+        // Periodic state reconciliation: respects active engine (YouTube IFrame vs <audio>)
         setInterval(() => {
             if (!state.loaded || isPlaybackPending) return;
+            if (typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt') {
+                const activeYT = ytPlayer || window._ytPlayerInstance;
+                if (activeYT && typeof activeYT.getPlayerState === 'function') {
+                    const ytState = activeYT.getPlayerState();
+                    // 1 = PLAYING, 2 = PAUSED (ignore 3 = BUFFERING and -1 = UNSTARTED)
+                    if (ytState === 1 && !state.playing) {
+                        state.playing = true;
+                        ui.updatePlayBtn();
+                    } else if (ytState === 2 && state.playing && !state.loading) {
+                        state.playing = false;
+                        ui.updatePlayBtn();
+                    }
+                }
+                return;
+            }
             const isAudioRunning = !audio.paused && !audio.ended;
             if (isAudioRunning !== state.playing && !state.loading) {
                 state.playing = isAudioRunning;
@@ -1479,14 +1495,29 @@
         }, 2000);
 
         document.addEventListener('visibilitychange', () => {
+            const isYTEngine = typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt';
             if (document.visibilityState === 'hidden') {
-                state.wasPlayingBeforeHidden = Boolean(state.playing || !audio.paused);
+                state.wasPlayingBeforeHidden = isYTEngine ? Boolean(state.playing) : Boolean(state.playing || !audio.paused);
                 persist.save();
                 cloudLibrary.flushPlaybackState(true);
             } else {
                 isPlaybackPending = false;
                 state.loading = false;
                 ui.setPlayerLoading(false);
+
+                if (isYTEngine) {
+                    const activeYT = ytPlayer || window._ytPlayerInstance;
+                    if (activeYT && typeof activeYT.getPlayerState === 'function') {
+                        const ytState = activeYT.getPlayerState();
+                        if (ytState === 1) {
+                            state.playing = true;
+                            ui.updatePlayBtn();
+                        } else if (state.wasPlayingBeforeHidden && !state.userPaused && ytState === 2 && typeof activeYT.playVideo === 'function') {
+                            try { activeYT.playVideo(); } catch (_) {}
+                        }
+                    }
+                    return;
+                }
 
                 if (audioContext && audioContext.state === 'suspended') {
                     audioContext.resume().catch(err => console.warn('[DTunes] audioContext resume failed:', err));
@@ -1506,7 +1537,7 @@
                     });
                 }
             }
-            if ('mediaSession' in navigator && (state.playing || !audio.paused)) {
+            if ('mediaSession' in navigator && (state.playing || (!isYTEngine && !audio.paused))) {
                 navigator.mediaSession.playbackState = 'playing';
             }
         });
