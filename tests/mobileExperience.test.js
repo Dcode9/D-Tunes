@@ -106,5 +106,21 @@ test('Mobile JS & HTML: playlist cards, recent searches, lyrics tab sync, back b
     assert.ok(html.includes('aria-label="Back to Library"'), 'Playlist view must expose a mobile-visible Back button');
     assert.ok(html.includes('aria-label="Go back"'), 'Album view must expose a mobile-visible Back button');
     assert.ok(html.includes('style="--seg-count:3;"'), 'Mobile player tabs must default to 3 visible tabs before lyrics load');
-    assert.ok(sw.includes('dtunes-shell-v1.4.12-mobile-mezzotint'), 'Service worker shell cache version must be bumped');
+    assert.ok(sw.includes('dtunes-shell-v1.4.13-mobile-motion'), 'Service worker shell cache version must be bumped');
+});
+
+test('Mobile Motion & Search Cleanup: sliding dock pill, FLIP player morph & clean search header', () => {
+    const css = read('src/css/styles.css');
+    const ui = read('src/js/ui.js');
+    const html = read('index.html');
+
+    assert.ok(html.includes('id="mobile-nav-indicator"'), 'Bottom dock must include sliding glass indicator element');
+    assert.ok(css.includes('translate3d(calc(var(--nav-index, 0) * 100%), 0, 0)'), 'Bottom dock indicator must glide smoothly via --nav-index');
+    assert.ok(ui.includes("nav.style.setProperty('--nav-index'"), 'setMobileNavActive must update --nav-index');
+
+    assert.ok(ui.includes("document.body.classList.add('mobile-player-morphing')"), 'toggleMobilePlayer must perform FLIP pill-to-fullscreen morph');
+    assert.ok(ui.includes("document.body.classList.add('mobile-player-morphing', 'mobile-player-closing')"), 'toggleMobilePlayer must perform reverse morph on close');
+
+    assert.ok(css.includes('html[data-ui-mode="mobile"] #search-view-header'), 'Redundant Search title and Report row must be hidden on mobile');
+    assert.ok(html.includes('id="search-history-section"') && html.indexOf('id="btn-clear-search-history"') > html.indexOf('id="search-history-section"'), 'Clear History button must live in the Recent Searches header row');
 });
