@@ -824,8 +824,32 @@ def related_sync(video_id: str, limit: int = 20) -> list[Track]:
         return []
 
 
+def _format_timed_lyrics(lines: Any) -> Optional[str]:
+    if not isinstance(lines, list) or not lines:
+        return None
+    formatted: list[str] = []
+    for item in lines:
+        text = getattr(item, "text", None) if not isinstance(item, dict) else item.get("text")
+        start_ms = getattr(item, "start_time", None) if not isinstance(item, dict) else item.get("start_time")
+        if text is None:
+            continue
+        clean_line = str(text).strip()
+        if start_ms is not None:
+            try:
+                total_cs = max(0, int(round(float(start_ms) / 10.0)))
+                mins = total_cs // 6000
+                secs = (total_cs % 6000) // 100
+                cs = total_cs % 100
+                formatted.append(f"[{mins:02d}:{secs:02d}.{cs:02d}] {clean_line}")
+                continue
+            except (TypeError, ValueError):
+                pass
+        formatted.append(clean_line)
+    return "\n".join(formatted) if formatted else None
+
+
 def lyrics_sync(video_id: str) -> Optional[str]:
-    """Get lyrics for a track via YouTube Music."""
+    """Get lyrics strictly for this video_id via YouTube Music (with synced timestamps when available)."""
     if not get_ytmusic:
         return None
     try:
@@ -834,8 +858,21 @@ def lyrics_sync(video_id: str) -> Optional[str]:
         browse_id = watch.get("lyrics")
         if not browse_id:
             return None
-        lyr = ytm.get_lyrics(browse_id)
-        return lyr.get("lyrics") if isinstance(lyr, dict) else None
+        lyr = None
+        try:
+            lyr = ytm.get_lyrics(browse_id, timestamps=True)
+        except TypeError:
+            lyr = ytm.get_lyrics(browse_id)
+        except Exception:
+            lyr = ytm.get_lyrics(browse_id)
+        if not isinstance(lyr, dict):
+            return None
+        raw = lyr.get("lyrics")
+        if lyr.get("hasTimestamps") and isinstance(raw, list):
+            return _format_timed_lyrics(raw)
+        if isinstance(raw, str) and raw.strip():
+            return raw
+        return None
     except Exception:
         return None
 

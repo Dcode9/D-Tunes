@@ -300,3 +300,12 @@ def test_trending_filters_spotify_charts():
             items = res.json()["results"]
             assert len(items) == 1
             assert items[0]["id"] == "4NRXx6U8ABQ"
+
+
+def test_format_timed_lyrics_converts_ms_to_lrc():
+    lines = [
+        {"text": "First line", "start_time": 9200, "end_time": 11000},
+        {"text": "Second line", "start_time": 65430, "end_time": 69000},
+    ]
+    out = v2._format_timed_lyrics(lines)
+    assert out == "[00:09.20] First line\n[01:05.43] Second line"

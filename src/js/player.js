@@ -18,10 +18,80 @@
         let isAudioRecoveryPending = false;
         let playRequestId = 0;
 
-        // YouTube Client-Side Player Adapter
+        // YouTube Client-Side Player Adapter with 60fps native clock interpolation & intent lock
         let ytPlayer = null;
         let ytPlayerReady = false;
         let ytProgressTimer = null;
+        let _ytDesiredState = null; // 'playing' | 'paused' | null
+        let _ytDesiredAt = 0;
+        const YT_INTENT_LOCK_MS = 1200;
+        const _ytClock = {
+            videoId: null,
+            baseTime: 0,
+            basePerfMs: 0,
+            duration: 0,
+            running: false,
+            active: false,
+            lastReportedTime: -1,
+        };
+
+        const _isWithinYTIntentLock = (expected) =>
+            _ytDesiredState === expected && (performance.now() - _ytDesiredAt) < YT_INTENT_LOCK_MS;
+
+        const _restoreYTVolume = () => {
+            const activeYT = ytPlayer || window._ytPlayerInstance;
+            if (!activeYT) return;
+            try {
+                if (typeof activeYT.unMute === 'function') activeYT.unMute();
+                if (typeof activeYT.setVolume === 'function' && typeof audio !== 'undefined' && audio) {
+                    const vol = Number.isFinite(audio.volume) ? audio.volume : 1;
+                    activeYT.setVolume(Math.round(Math.max(0, Math.min(1, vol)) * 100));
+                }
+            } catch (_) {}
+        };
+
+        const _syncYTClockFromPlayer = (activeYT) => {
+            if (!activeYT || typeof activeYT.getCurrentTime !== 'function') return;
+            // Ignore stale clock from previous video until the new video is actually loaded/playing
+            let loadedVid = null;
+            try {
+                if (typeof activeYT.getVideoData === 'function') {
+                    loadedVid = activeYT.getVideoData()?.video_id || null;
+                }
+            } catch (_) {}
+            if (_ytClock.videoId && loadedVid && loadedVid !== _ytClock.videoId && !_ytClock.active) {
+                return;
+            }
+            const rawCur = Number(activeYT.getCurrentTime() || 0);
+            const rawDur = typeof activeYT.getDuration === 'function' ? Number(activeYT.getDuration() || 0) : 0;
+            if (Number.isFinite(rawDur) && rawDur > 0) {
+                _ytClock.duration = rawDur;
+            }
+            if (Number.isFinite(rawCur) && rawCur >= 0) {
+                const now = performance.now();
+                const interp = _ytClock.running
+                    ? _ytClock.baseTime + Math.max(0, (now - _ytClock.basePerfMs) / 1000)
+                    : _ytClock.baseTime;
+                // Re-anchor smoothly whenever YT advances or drifts by > 0.35s
+                if (rawCur !== _ytClock.lastReportedTime || Math.abs(rawCur - interp) > 0.35) {
+                    _ytClock.baseTime = rawCur;
+                    _ytClock.basePerfMs = now;
+                    _ytClock.lastReportedTime = rawCur;
+                }
+            }
+        };
+
+        const _freezeYTClock = () => {
+            if (_ytClock.running) {
+                const elapsed = Math.max(0, (performance.now() - _ytClock.basePerfMs) / 1000);
+                _ytClock.baseTime = _ytClock.duration > 0
+                    ? Math.min(_ytClock.baseTime + elapsed, _ytClock.duration)
+                    : (_ytClock.baseTime + elapsed);
+                _ytClock.basePerfMs = performance.now();
+                _ytClock.running = false;
+            }
+        };
+
         if (typeof window !== 'undefined') {
             window._dtunesActiveEngine = 'audio';
             window.getActivePlaybackClock = () => {
@@ -30,9 +100,16 @@
                     && activeYT
                     && typeof activeYT.getCurrentTime === 'function';
                 if (isYTActive) {
-                    const cur = Number(activeYT.getCurrentTime() || 0);
-                    const ytDur = typeof activeYT.getDuration === 'function' ? Number(activeYT.getDuration() || 0) : 0;
-                    const dur = ytDur > 0 ? ytDur : Number(state.currentTrack?.duration || state.currentTrack?.duration_seconds || 0);
+                    if (_ytClock.active || _ytClock.running) {
+                        _syncYTClockFromPlayer(activeYT);
+                    }
+                    const fallbackDur = Number(state.currentTrack?.duration || state.currentTrack?.duration_seconds || 0);
+                    const dur = _ytClock.duration > 0 ? _ytClock.duration : fallbackDur;
+                    let cur = _ytClock.baseTime;
+                    if (_ytClock.running && state.playing) {
+                        cur += Math.max(0, (performance.now() - _ytClock.basePerfMs) / 1000);
+                    }
+                    if (dur > 0) cur = Math.max(0, Math.min(cur, dur));
                     return { currentTime: Number.isFinite(cur) ? cur : 0, duration: Number.isFinite(dur) ? dur : 0, engine: 'yt' };
                 }
                 const cur = Number(audio?.currentTime || 0);
@@ -47,14 +124,15 @@
         const startYTProgressTimer = () => {
             if (ytProgressTimer) clearInterval(ytProgressTimer);
             ytProgressTimer = setInterval(() => {
-                if (window._dtunesActiveEngine !== 'yt' || !ytPlayer || typeof ytPlayer.getCurrentTime !== 'function' || !state.playing) return;
-                const cur = ytPlayer.getCurrentTime() || 0;
-                const ytDur = typeof ytPlayer.getDuration === 'function' ? ytPlayer.getDuration() : 0;
-                const dur = (ytDur > 0) ? ytDur : (state.currentTrack?.duration || state.currentTrack?.duration_seconds || 0);
+                const activeYT = ytPlayer || window._ytPlayerInstance;
+                if (window._dtunesActiveEngine !== 'yt' || !activeYT || typeof activeYT.getCurrentTime !== 'function' || !state.playing) return;
+                const clock = window.getActivePlaybackClock();
+                const cur = clock.currentTime;
+                const dur = clock.duration;
 
                 if (dur > 0 && !state.isDragging) {
                     const sb = document.getElementById('seek-bar');
-                    if (sb && document.activeElement !== sb) {
+                    if (sb) {
                         sb.max = dur;
                         sb.value = cur;
                     }
@@ -138,6 +216,16 @@
                         },
                         onStateChange: (event) => {
                             if (event.data === 1) { // PLAYING
+                                if (_isWithinYTIntentLock('paused')) {
+                                    // User just clicked Pause; suppress stale iframe PLAYING event
+                                    try { ytPlayer.mute(); ytPlayer.pauseVideo(); } catch (_) {}
+                                    return;
+                                }
+                                _ytClock.active = true;
+                                _ytClock.running = true;
+                                _ytClock.basePerfMs = performance.now();
+                                _syncYTClockFromPlayer(ytPlayer);
+                                _restoreYTVolume();
                                 state.playing = true;
                                 state.loading = false;
                                 ui.setPlayerLoading(false);
@@ -146,13 +234,21 @@
                                 if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
                                 if (typeof viz !== 'undefined' && viz.start) viz.start();
                             } else if (event.data === 2) { // PAUSED
+                                if (_isWithinYTIntentLock('playing')) {
+                                    // User just clicked Play; suppress stale iframe PAUSED event
+                                    return;
+                                }
+                                _freezeYTClock();
                                 state.playing = false;
                                 ui.updatePlayBtn();
                                 stopYTProgressTimer();
                                 if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+                                if (typeof viz !== 'undefined' && viz.start) viz.start();
                             } else if (event.data === 3) { // BUFFERING
-                                state.loading = true;
-                                ui.setPlayerLoading(true);
+                                // Keep playhead steady without flashing ugly loading overlays on the button
+                                if (!_isWithinYTIntentLock('paused')) {
+                                    _freezeYTClock();
+                                }
                             } else if (event.data === 0) { // ENDED
                                 stopYTProgressTimer();
                                 if (typeof sleepTimer !== 'undefined' && sleepTimer.onTrackEnded && sleepTimer.onTrackEnded()) {
@@ -272,10 +368,13 @@
 
         const updateMediaPosition = () => {
             if (!('mediaSession' in navigator) || typeof navigator.mediaSession.setPositionState !== 'function' || !state.currentTrack) return;
-            const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : Number(state.currentTrack.duration) || 0;
-            const position = Number.isFinite(audio.currentTime) ? Math.max(0, Math.min(audio.currentTime, duration || audio.currentTime)) : 0;
+            const clock = typeof window.getActivePlaybackClock === 'function'
+                ? window.getActivePlaybackClock()
+                : { currentTime: audio.currentTime || 0, duration: audio.duration || Number(state.currentTrack.duration) || 0 };
+            const duration = Number.isFinite(clock.duration) && clock.duration > 0 ? clock.duration : Number(state.currentTrack.duration) || 0;
+            const position = Number.isFinite(clock.currentTime) ? Math.max(0, Math.min(clock.currentTime, duration || clock.currentTime)) : 0;
             if (duration > 0) {
-                try { navigator.mediaSession.setPositionState({ duration, playbackRate: audio.playbackRate || 1, position }); } catch (e) {}
+                try { navigator.mediaSession.setPositionState({ duration, playbackRate: 1, position }); } catch (e) {}
             }
         };
 
@@ -310,10 +409,16 @@
         const requestPlay = async () => {
             if (!state.loaded && !state.currentTrack) return;
             state.userPaused = false;
-            const isYT = window._dtunesActiveEngine === 'yt' && ytPlayerReady && ytPlayer && typeof ytPlayer.playVideo === 'function';
+            const activeYT = ytPlayer || window._ytPlayerInstance;
+            const isYT = window._dtunesActiveEngine === 'yt' && activeYT && typeof activeYT.playVideo === 'function';
             if (isYT) {
                 try {
-                    ytPlayer.playVideo();
+                    _ytDesiredState = 'playing';
+                    _ytDesiredAt = performance.now();
+                    _restoreYTVolume();
+                    activeYT.playVideo();
+                    _ytClock.basePerfMs = performance.now();
+                    _ytClock.running = true;
                     state.playing = true;
                     ui.updatePlayBtn();
                     startYTProgressTimer();
@@ -346,14 +451,21 @@
 
         const requestPause = () => {
             state.userPaused = true;
-            const isYT = window._dtunesActiveEngine === 'yt' && ytPlayerReady && ytPlayer && typeof ytPlayer.pauseVideo === 'function';
+            const activeYT = ytPlayer || window._ytPlayerInstance;
+            const isYT = window._dtunesActiveEngine === 'yt' && activeYT && typeof activeYT.pauseVideo === 'function';
             if (isYT) {
                 try {
-                    ytPlayer.pauseVideo();
+                    _ytDesiredState = 'paused';
+                    _ytDesiredAt = performance.now();
+                    _freezeYTClock();
+                    // Instant mute cuts audio on the exact click frame instead of waiting for iframe postMessage lag
+                    if (typeof activeYT.mute === 'function') activeYT.mute();
+                    activeYT.pauseVideo();
                     state.playing = false;
                     ui.updatePlayBtn();
                     stopYTProgressTimer();
                     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+                    if (typeof viz !== 'undefined' && viz.start) viz.start();
                     return;
                 } catch (_) {}
             }
@@ -773,6 +885,16 @@
                         audio.removeAttribute('src');
                         state.loaded = true;
                         ui.enableControls();
+                        _ytDesiredState = 'playing';
+                        _ytDesiredAt = performance.now();
+                        _ytClock.videoId = track.id;
+                        _ytClock.baseTime = 0;
+                        _ytClock.basePerfMs = performance.now();
+                        _ytClock.duration = Number(track.duration || track.duration_seconds || 0);
+                        _ytClock.running = false;
+                        _ytClock.active = false;
+                        _ytClock.lastReportedTime = -1;
+                        _restoreYTVolume();
                         ytPlayer.loadVideoById({ videoId: track.id });
                         state.playing = true;
                         state.loading = false;
@@ -855,14 +977,20 @@
             },
             seek: (time) => {
                 if (!state.loaded || !Number.isFinite(time)) return;
-                const isYT = window._dtunesActiveEngine === 'yt' && ytPlayerReady && ytPlayer && typeof ytPlayer.seekTo === 'function';
+                const activeYT = ytPlayer || window._ytPlayerInstance;
+                const isYT = window._dtunesActiveEngine === 'yt' && activeYT && typeof activeYT.seekTo === 'function';
                 if (isYT) {
                     try {
-                        const dur = (typeof ytPlayer.getDuration === 'function' && ytPlayer.getDuration() > 0)
-                            ? ytPlayer.getDuration()
-                            : (state.currentTrack?.duration || state.currentTrack?.duration_seconds || 1);
+                        const dur = (_ytClock.duration > 0)
+                            ? _ytClock.duration
+                            : ((typeof activeYT.getDuration === 'function' && activeYT.getDuration() > 0)
+                                ? activeYT.getDuration()
+                                : (state.currentTrack?.duration || state.currentTrack?.duration_seconds || 1));
                         const clamped = Math.max(0, Math.min(time, dur));
-                        ytPlayer.seekTo(clamped, true);
+                        _ytClock.baseTime = clamped;
+                        _ytClock.basePerfMs = performance.now();
+                        _ytClock.lastReportedTime = clamped;
+                        activeYT.seekTo(clamped, true);
                         currentProgress = dur ? clamped / dur : 0;
                         if (typeof paintPlayhead === 'function') paintPlayhead(currentProgress);
                         const sb = document.getElementById('seek-bar');
@@ -1475,12 +1603,20 @@
             if (typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt') {
                 const activeYT = ytPlayer || window._ytPlayerInstance;
                 if (activeYT && typeof activeYT.getPlayerState === 'function') {
+                    if (_isWithinYTIntentLock('playing') || _isWithinYTIntentLock('paused')) {
+                        return;
+                    }
                     const ytState = activeYT.getPlayerState();
                     // 1 = PLAYING, 2 = PAUSED (ignore 3 = BUFFERING and -1 = UNSTARTED)
                     if (ytState === 1 && !state.playing) {
+                        _ytClock.active = true;
+                        _ytClock.running = true;
+                        _ytClock.basePerfMs = performance.now();
+                        _restoreYTVolume();
                         state.playing = true;
                         ui.updatePlayBtn();
                     } else if (ytState === 2 && state.playing && !state.loading) {
+                        _freezeYTClock();
                         state.playing = false;
                         ui.updatePlayBtn();
                     }
@@ -1568,16 +1704,19 @@
             safeSet('previoustrack', () => player.prev());
             safeSet('nexttrack', () => player.next(true));
             safeSet('seekbackward', (details) => {
-                audio.currentTime = Math.max(audio.currentTime - (details?.seekOffset || 10), 0);
+                const clock = window.getActivePlaybackClock();
+                player.seek(Math.max(clock.currentTime - (details?.seekOffset || 10), 0));
                 updateMediaPosition();
             });
             safeSet('seekforward', (details) => {
-                audio.currentTime = Math.min(audio.currentTime + (details?.seekOffset || 10), audio.duration || 0);
+                const clock = window.getActivePlaybackClock();
+                player.seek(Math.min(clock.currentTime + (details?.seekOffset || 10), clock.duration || 0));
                 updateMediaPosition();
             });
             safeSet('seekto', (details) => {
                 if (!details || !Number.isFinite(details.seekTime)) return;
-                audio.currentTime = Math.max(0, Math.min(details.seekTime, audio.duration || details.seekTime));
+                const clock = window.getActivePlaybackClock();
+                player.seek(Math.max(0, Math.min(details.seekTime, clock.duration || details.seekTime)));
                 updateMediaPosition();
             });
         }

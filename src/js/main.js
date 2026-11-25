@@ -152,8 +152,11 @@
                 });
                 nextBtn.addEventListener('pointerleave', () => {
                     state.nextBtnHover = false;
-                    const remaining = (audio.duration || 0) - (audio.currentTime || 0);
-                    const nearEnd = Number.isFinite(audio.duration) && audio.duration > 12 && audio.currentTime > 3 && remaining <= 5 && remaining > 0.15;
+                    const clock = typeof window.getActivePlaybackClock === 'function'
+                        ? window.getActivePlaybackClock()
+                        : { currentTime: audio.currentTime || 0, duration: audio.duration || 0 };
+                    const remaining = (clock.duration || 0) - (clock.currentTime || 0);
+                    const nearEnd = Number.isFinite(clock.duration) && clock.duration > 12 && clock.currentTime > 3 && remaining <= 5 && remaining > 0.15;
                     if (!nearEnd) {
                         state.upNextTriggered = false;
                         document.getElementById('queue-wrapper')?.classList.remove('preview-expanded');
@@ -223,15 +226,15 @@
                 if (!Number.isFinite(clock.duration) || clock.duration <= 0) return;
                 const nextTime = parseFloat(seekBar.value);
                 if (!Number.isFinite(nextTime)) return;
+                // Smooth 60fps visual preview while dragging without flooding YouTube with seekTo() calls
                 paintPlayhead(nextTime / clock.duration);
-                if (typeof player !== 'undefined' && player.seek) {
-                    player.seek(nextTime);
-                } else {
-                    audio.currentTime = nextTime;
-                }
-                updateMediaPosition();
+                const currTimeEl = document.getElementById('seek-current-time');
+                if (currTimeEl && typeof utils !== 'undefined') currTimeEl.textContent = utils.formatTime(nextTime);
                 if (typeof lyricsManager !== 'undefined' && lyricsManager.syncTime) {
                     lyricsManager.syncTime(nextTime, true);
+                }
+                if (clock.engine !== 'yt') {
+                    audio.currentTime = nextTime;
                 }
                 if (typeof viz !== 'undefined') viz.start();
             });
@@ -255,6 +258,7 @@
                 }
                 if (typeof viz !== 'undefined') viz.start();
                 setDragging(false);
+                try { seekBar.blur(); } catch (_) {}
             });
 
             audio.addEventListener('loadedmetadata', () => {

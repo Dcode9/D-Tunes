@@ -37,6 +37,25 @@
                 return (first || art).trim();
             },
 
+            isDerivativeOrMashup: (title = '', artist = '') => {
+                const t = String(title || '');
+                const a = String(artist || '');
+                const combined = `${t} ${a}`;
+                if (/\s+(?:[xX×]|vs\.?|VS\.?)\s+/.test(t)) return true;
+                if (/\b(?:mashup|mash-up|medley|megamix|jukebox|nonstop|non-stop|remix|bootleg|flip|slowed|reverb|sped\s*up|speed\s*up|nightcore|8d\s*audio|8d|lofi|lo-fi|karaoke|instrumental|ringtone|bgm)\b/i.test(combined)) {
+                    return true;
+                }
+                if (/\bdj\s+[a-z0-9]/i.test(t)) return true;
+                return false;
+            },
+
+            isDurationCompatible: (trackDurationSec, candidateDurationSec) => {
+                const tDur = Number(trackDurationSec || 0);
+                const cDur = Number(candidateDurationSec || 0);
+                if (!Number.isFinite(tDur) || tDur <= 0 || !Number.isFinite(cDur) || cDur <= 0) return true;
+                return Math.abs(tDur - cDur) <= 20;
+            },
+
             parseLrc: (lrcString = '') => {
                 if (!lrcString || typeof lrcString !== 'string') return [];
                 const lines = lrcString.split('\n');
@@ -107,8 +126,14 @@
                         } catch (_) {}
                     }
 
-                    // 2. Secondary: D'Tunes LRCLIB backend proxy (/api/music/lyrics)
-                    if (!data) {
+                    // Never fall back to keyword lyrics search for mashups, remixes, slowed/reverb, or DJ edits:
+                    // if YouTube Music has no lyrics attached to this exact video_id, showing wrong lyrics from
+                    // only one half of a mashup (e.g. "Levitating" for "Levitating X Woh Ladki Jo") is broken.
+                    const isDerivative = lyricsManager.isDerivativeOrMashup(trackTitle, trackArtist);
+                    const trackDurationSec = Number(track.duration || track.duration_seconds || 0);
+
+                    // 2. Secondary (standard tracks only): D'Tunes LRCLIB backend proxy (/api/music/lyrics)
+                    if (!data && !isDerivative) {
                         try {
                             const cleanT = lyricsManager.cleanTitle(trackTitle);
                             const cleanA = lyricsManager.cleanArtist(trackArtist, trackTitle);
@@ -116,24 +141,26 @@
                                 track: cleanT,
                                 artist: cleanA,
                                 album: track.album || '',
-                                duration: String(track.duration || 0)
+                                duration: String(trackDurationSec || 0)
                             });
                             const res = await fetch(`/api/music/lyrics?${queryParams.toString()}`).catch(() => null);
                             if (res && res.ok) {
                                 const json = await res.json();
-                                if (json.success && json.lyrics) data = json.lyrics;
+                                if (json.success && json.lyrics && lyricsManager.isDurationCompatible(trackDurationSec, json.lyrics.duration)) {
+                                    data = json.lyrics;
+                                }
                             }
                         } catch (_) {}
                     }
 
-                    // 3. Tertiary: Direct LRCLIB client fallback
-                    if (!data) {
+                    // 3. Tertiary (standard tracks only): Direct LRCLIB client fallback with duration verification
+                    if (!data && !isDerivative) {
                         const cleanT = lyricsManager.cleanTitle(trackTitle);
                         const cleanA = lyricsManager.cleanArtist(trackArtist, trackTitle);
                         const directRes = await fetch(`https://lrclib.net/api/get?track_name=${encodeURIComponent(cleanT)}&artist_name=${encodeURIComponent(cleanA)}`).catch(() => null);
                         if (directRes && directRes.ok) {
                             const lrcJson = await directRes.json();
-                            if (lrcJson.syncedLyrics || lrcJson.plainLyrics || lrcJson.instrumental) {
+                            if ((lrcJson.syncedLyrics || lrcJson.plainLyrics || lrcJson.instrumental) && lyricsManager.isDurationCompatible(trackDurationSec, lrcJson.duration)) {
                                 data = {
                                     track: lrcJson.trackName || trackTitle,
                                     artist: lrcJson.artistName || trackArtist,
@@ -143,32 +170,6 @@
                                     parsedLines: lrcJson.syncedLyrics ? lyricsManager.parseLrc(lrcJson.syncedLyrics) : null,
                                     source: 'LRCLIB'
                                 };
-                            }
-                        }
-                    }
-
-                    // 4. Quaternary: Mashup / Crossover deconstruction (e.g. "Levitating X Woh Ladki Jo")
-                    if (!data && (trackTitle.includes(' X ') || trackTitle.includes(' x ') || trackTitle.includes(' vs ') || trackTitle.includes(' VS '))) {
-                        const parts = trackTitle.split(/\s+(?:[xX]|vs\.?|VS)\s+/);
-                        if (parts.length >= 2) {
-                            const firstSong = lyricsManager.cleanTitle(parts[0]);
-                            const mashupRes = await fetch(`https://lrclib.net/api/search?q=${encodeURIComponent(firstSong)}`).catch(() => null);
-                            if (mashupRes && mashupRes.ok) {
-                                const list = await mashupRes.json();
-                                if (Array.isArray(list) && list.length > 0) {
-                                    const best = list[0];
-                                    if (best.syncedLyrics || best.plainLyrics) {
-                                        data = {
-                                            track: `${firstSong} (Mashup Lead Track)`,
-                                            artist: best.artistName || trackArtist,
-                                            syncedLyrics: best.syncedLyrics || null,
-                                            plainLyrics: best.plainLyrics || null,
-                                            instrumental: false,
-                                            parsedLines: best.syncedLyrics ? lyricsManager.parseLrc(best.syncedLyrics) : null,
-                                            source: 'LRCLIB'
-                                        };
-                                    }
-                                }
                             }
                         }
                     }
@@ -225,7 +226,9 @@
                 const lyrics = lyricsManager.currentLyrics;
 
                 if (!lyrics) {
-                    const emptyHtml = '<div class="text-zinc-400 my-auto text-sm py-16 flex flex-col items-center gap-3"><svg class="w-10 h-10 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span class="font-semibold text-zinc-300">No lyrics available for this track</span><span class="text-xs text-zinc-500">Lyrics match based on track title and artist</span></div>';
+                    const isCurrentDerivative = typeof state !== 'undefined' && state.currentTrack && lyricsManager.isDerivativeOrMashup(state.currentTrack.title || state.currentTrack.name || '', state.currentTrack.artist || '');
+                    const emptySub = isCurrentDerivative ? 'Lyrics are skipped for mashups and remixes unless provided directly by YouTube Music' : 'No official lyrics found for this track';
+                    const emptyHtml = `<div class="text-zinc-400 my-auto text-sm py-16 flex flex-col items-center gap-3 text-center px-4"><svg class="w-10 h-10 text-zinc-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span class="font-semibold text-zinc-300">No lyrics available for this track</span><span class="text-xs text-zinc-500">${emptySub}</span></div>`;
                     lyricsManager.CONTAINER_IDS.forEach(id => {
                         const el = document.getElementById(id);
                         if (el) el.innerHTML = emptyHtml;
