@@ -356,9 +356,13 @@
                     ? await offlineStore.getPlayUrl(nextTrack.id).catch(() => null)
                     : null;
                 const freshDetails = nextTrack.url || offlineUrl ? null : await jiosaavnAPI.getSong(nextTrack.id);
-                const playUrl = offlineUrl || freshDetails?.url || nextTrack.url;
+                const playUrl = offlineUrl || freshDetails?.url || nextTrack.url || (nextTrack.source === 'youtube' && nextTrack.id ? `/api-v2/stream/${encodeURIComponent(nextTrack.id)}` : '');
                 if (!playUrl || state.nextTrackPreloadId !== nextTrack.id) return;
                 if (freshDetails) Object.assign(nextTrack, freshDetails, { url: playUrl });
+                // Pre-warm backend audio stream cache so next track plays instantly
+                if (!offlineUrl && nextTrack.source === 'youtube' && nextTrack.id && !isNetworkOffline()) {
+                    fetch(`/api-v2/resolve/${encodeURIComponent(nextTrack.id)}`).catch(() => {});
+                }
                 if (preloadAudio) {
                     preloadAudio.src = playUrl;
                     preloadAudio.load();
@@ -528,13 +532,40 @@
                     }
                 }
 
-                // Attempts 1 & 2: Smooth retry at current timestamp before skipping track
+                // Attempt 1: Retry native audio stream once before falling back to YouTube embed
+                if (state._audioRetryCount === 1 && state.currentTrack?.source === 'youtube' && !state.currentTrack?.isOffline && state.currentTrack?.id) {
+                    await new Promise(r => setTimeout(r, 350));
+                    const retryUrl = `/api-v2/stream/${encodeURIComponent(state.currentTrack.id)}?r=${Date.now()}`;
+                    audio.crossOrigin = 'anonymous';
+                    audio.src = retryUrl;
+                    audio.load();
+                    if (resumeTime > 0) {
+                        try { audio.currentTime = resumeTime; } catch (_) {}
+                    }
+                    if (state.playing || !state.userPaused) await audio.play();
+                    return;
+                }
+
+                // Attempt 2: Silent YouTube embed fallback only if native audio stream is unavailable
                 if (state.currentTrack?.source === 'youtube' && !state.currentTrack?.isOffline && ytPlayerReady && ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+                    window._dtunesActiveEngine = 'yt';
+                    audio.pause();
+                    _ytDesiredState = 'playing';
+                    _ytDesiredAt = performance.now();
+                    _ytClock.videoId = state.currentTrack.id;
+                    _ytClock.baseTime = resumeTime;
+                    _ytClock.basePerfMs = performance.now();
+                    _ytClock.duration = Number(state.currentTrack.duration || state.currentTrack.duration_seconds || 0);
+                    _ytClock.running = false;
+                    _ytClock.active = false;
+                    _ytClock.lastReportedTime = -1;
+                    _restoreYTVolume();
                     ytPlayer.loadVideoById({ videoId: state.currentTrack.id, startSeconds: resumeTime });
                     state.playing = true;
                     state.loading = false;
                     ui.setPlayerLoading(false);
                     ui.updatePlayBtn();
+                    startYTProgressTimer();
                     return;
                 }
 
@@ -878,42 +909,16 @@
                         }
                     }
 
-                    // YouTube Client-Side Direct Playback
-                    if (track.source === 'youtube' && !track.isOffline && ytPlayerReady && ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-                        window._dtunesActiveEngine = 'yt';
-                        audio.pause();
-                        audio.removeAttribute('src');
-                        state.loaded = true;
-                        ui.enableControls();
-                        _ytDesiredState = 'playing';
-                        _ytDesiredAt = performance.now();
-                        _ytClock.videoId = track.id;
-                        _ytClock.baseTime = 0;
-                        _ytClock.basePerfMs = performance.now();
-                        _ytClock.duration = Number(track.duration || track.duration_seconds || 0);
-                        _ytClock.running = false;
-                        _ytClock.active = false;
-                        _ytClock.lastReportedTime = -1;
-                        _restoreYTVolume();
-                        ytPlayer.loadVideoById({ videoId: track.id });
-                        state.playing = true;
-                        state.loading = false;
-                        ui.setPlayerLoading(false);
-                        ui.updatePlayBtn();
-                        ui.updateMetadata(state.currentTrack);
-                        ui.renderQueue();
-                        startYTProgressTimer();
-                        primeNextTrack();
-                        if (typeof lyricsManager !== 'undefined') lyricsManager.fetchLyricsForTrack(state.currentTrack);
-                        if (typeof viz !== 'undefined') viz.start();
-
-                        const trackWithTime = { ...state.currentTrack, playedAt: new Date().toISOString() };
-                        state.playHistory = state.playHistory.filter(t => t.id !== track.id);
-                        state.playHistory.unshift(trackWithTime);
-                        if (state.playHistory.length > 100) state.playHistory.pop();
-                        try { localStorage.setItem('playHistory', JSON.stringify(state.playHistory)); } catch (_) {}
-                        ui.renderHistory();
-                        persist.save();
+                    // Native HTML5 <audio> streaming via /api-v2/stream/{id} (supports iOS background play, lock-screen controls, EQ & live visualizer)
+                    // YouTube embed is only used automatically as a silent fallback inside recoverFromAudioError if the stream proxy fails.
+                    if (track.source === 'youtube' && !track.isOffline && track.id) {
+                        const nativeStreamUrl = (track.url && String(track.url).includes('/api-v2/stream/'))
+                            ? track.url
+                            : `/api-v2/stream/${encodeURIComponent(track.id)}`;
+                        track.url = nativeStreamUrl;
+                        track.play_url = nativeStreamUrl;
+                        state.currentTrack = { ...state.currentTrack, url: nativeStreamUrl, play_url: nativeStreamUrl };
+                        await setupAndStartPlayback(nativeStreamUrl);
                         return;
                     }
 

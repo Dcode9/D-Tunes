@@ -309,3 +309,11 @@ def test_format_timed_lyrics_converts_ms_to_lrc():
     ]
     out = v2._format_timed_lyrics(lines)
     assert out == "[00:09.20] First line\n[01:05.43] Second line"
+
+
+def test_cap_range_header_supports_ios_and_vercel_chunks():
+    assert v2._cap_range_header(None, max_bytes=1024) == "bytes=0-1023"
+    assert v2._cap_range_header("bytes=0-", max_bytes=1024) == "bytes=0-1023"
+    assert v2._cap_range_header("bytes=0-1", max_bytes=1024) == "bytes=0-1"
+    assert v2._cap_range_header("bytes=1024-", max_bytes=1024) == "bytes=1024-2047"
+    assert v2._cap_range_header("bytes=0-99999", max_bytes=1024) == "bytes=0-1023"

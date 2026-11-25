@@ -157,7 +157,11 @@ YTDLP_PROXY: Optional[str] = os.environ.get("YTDLP_PROXY")
 YTDLP_FORMAT: str = os.environ.get("YTDLP_FORMAT", "bestaudio[ext=m4a]/bestaudio/best")
 YTDLP_PLAYER_CLIENT: str = os.environ.get("YTDLP_PLAYER_CLIENT", "visionos,android,tv_samsung")
 
+STREAM_RANGE_MAX_BYTES = 2 * 1024 * 1024  # 2 MiB per chunk (fits under Vercel 4.5MB limit & streams smoothly on iOS Safari)
+
 CLIENT_CANDIDATES: list[list[str]] = [
+    ["ios"],
+    ["android_vr"],
     ["visionos"],
     ["android"],
     ["tv_samsung"],
@@ -495,7 +499,8 @@ def _resolve_invidious_sync(video_id: str) -> tuple[Optional[StreamInfo], Option
                 if not audio:
                     errs.append(f"{inst}: no audio stream")
                     continue
-                best = max(audio, key=lambda a: int(a.get("bitrate") or 0))
+                m4a_audio = [a for a in audio if "mp4" in a.get("type", "").lower() or "m4a" in a.get("type", "").lower()]
+                best = max(m4a_audio or audio, key=lambda a: int(a.get("bitrate") or 0))
                 stream_url = best["url"]
                 ext = "m4a" if "mp4" in best.get("type", "").lower() else "webm"
                 content_type = _EXT_TO_CONTENT_TYPE.get(ext, "audio/mp4")
@@ -511,6 +516,53 @@ def _resolve_invidious_sync(video_id: str) -> tuple[Optional[StreamInfo], Option
                     title=title,
                     artist=artist,
                     artwork=artwork,
+                    duration=int(duration) if duration else None,
+                ), None)
+            except Exception as e:
+                errs.append(f"{inst}: {e}")
+                continue
+    return (None, "; ".join(errs))
+
+
+_DEFAULT_PIPED_INSTANCES = [
+    "https://pipedapi.kavin.rocks",
+    "https://pipedapi.adminforge.de",
+    "https://api.piped.private.coffee",
+]
+PIPED_INSTANCES: list[str] = [
+    u.strip().rstrip("/")
+    for u in os.environ.get("PIPED_INSTANCES", "").split(",")
+    if u.strip()
+] or list(_DEFAULT_PIPED_INSTANCES)
+
+
+def _resolve_piped_sync(video_id: str) -> tuple[Optional[StreamInfo], Optional[str]]:
+    errs = []
+    with httpx.Client(timeout=4.0, follow_redirects=True) as client:
+        for inst in PIPED_INSTANCES:
+            try:
+                res = client.get(f"{inst}/streams/{video_id}")
+                if res.status_code != 200:
+                    errs.append(f"{inst}: HTTP {res.status_code}")
+                    continue
+                data = res.json()
+                streams = [s for s in (data.get("audioStreams") or []) if isinstance(s, dict) and s.get("url")]
+                if not streams:
+                    errs.append(f"{inst}: no audio stream")
+                    continue
+                m4a_streams = [s for s in streams if "mp4" in str(s.get("mimeType", "")).lower() or "m4a" in str(s.get("format", "")).lower()]
+                best = max(m4a_streams or streams, key=lambda s: int(s.get("bitrate") or 0))
+                mime = str(best.get("mimeType") or "").lower()
+                ext = "m4a" if ("mp4" in mime or "m4a" in str(best.get("format") or "").lower()) else "webm"
+                content_type = _EXT_TO_CONTENT_TYPE.get(ext, "audio/mp4")
+                duration = data.get("duration")
+                return (StreamInfo(
+                    url=best["url"],
+                    ext=ext,
+                    content_type=content_type,
+                    title=data.get("title") or "Unknown",
+                    artist=data.get("uploader") or "Unknown Artist",
+                    artwork=data.get("thumbnailUrl") or "",
                     duration=int(duration) if duration else None,
                 ), None)
             except Exception as e:
@@ -582,12 +634,17 @@ def resolve_sync(video_id: str) -> StreamInfo:
             last_err = exc
             continue
 
-    # Layer 2: Invidious high-availability API fallback for datacenter IPs
+    # Layer 2: Piped API fallback (returns clean M4A streams without datacenter bot checks)
+    piped_info, piped_err = _resolve_piped_sync(video_id)
+    if piped_info:
+        return piped_info
+
+    # Layer 3: Invidious API fallback
     fallback_info, inv_err = _resolve_invidious_sync(video_id)
     if fallback_info:
         return fallback_info
 
-    raise RuntimeError(f"Could not resolve stream URL for {video_id}: ytdlp=[{last_err}]; invidious=[{inv_err}]")
+    raise RuntimeError(f"Could not resolve stream URL for {video_id}: ytdlp=[{last_err}]; piped=[{piped_err}]; invidious=[{inv_err}]")
 
 
 # ---------------------------------------------------------------------------
@@ -685,10 +742,27 @@ async def _resolve_with_retry(video_id: str) -> tuple[StreamInfo, bool]:
         return info, False
 
 
+def _cap_range_header(range_header: Optional[str], max_bytes: int = STREAM_RANGE_MAX_BYTES) -> str:
+    """Cap open-ended or oversized Range requests to max_bytes so serverless hosts and iOS Safari stream smoothly."""
+    if not range_header:
+        return f"bytes=0-{max_bytes - 1}"
+    m = re.match(r"^bytes=(\d+)-(\d*)$", range_header.strip(), re.IGNORECASE)
+    if not m:
+        return range_header
+    start = int(m.group(1))
+    end_str = m.group(2)
+    if not end_str:
+        return f"bytes={start}-{start + max_bytes - 1}"
+    end = int(end_str)
+    if end - start + 1 > max_bytes:
+        end = start + max_bytes - 1
+    return f"bytes={start}-{end}"
+
+
 async def _stream_proxy(video_id: str, request: Request, allow_re_resolve: bool = True) -> StreamingResponse:
     info, _ = await _resolve_with_retry(video_id)
 
-    range_header = request.headers.get("range")
+    range_header = _cap_range_header(request.headers.get("range"))
     if_range = request.headers.get("if-range")
 
     headers_to_upstream: dict[str, str] = {"User-Agent": _UPSTREAM_UA}
