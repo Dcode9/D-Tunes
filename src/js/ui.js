@@ -166,6 +166,10 @@
                     setTimeout(resizeCanvas, 320);
                 } else {
                     document.body.classList.remove('mobile-player-open');
+                    if (state.songDetailsExpanded) {
+                        state.songDetailsExpanded = false;
+                        document.getElementById('info-island')?.classList.remove('details-expanded');
+                    }
                 }
                 updateMarquees();
                 setTimeout(updateMarquees, 120);
@@ -2278,12 +2282,29 @@ const mPlayBtn = document.getElementById('m-icon-play');
                     modal.classList.add('hidden');
                 }
             },
-            switchMobilePlayerTab: (tab) => {
-                const mobileTabs = ['track', 'queue', 'history', 'lyrics'];
-                const tabIndex = Math.max(0, mobileTabs.indexOf(tab));
-                document.body.dataset.mobileTab = tab;
+            syncMobilePlayerTabs: () => {
                 const tabSwitch = document.querySelector('.mobile-player-tabs');
-                if (tabSwitch) tabSwitch.style.setProperty('--seg-index', String(tabIndex));
+                if (!tabSwitch) return;
+                const lyricsBtn = document.getElementById('m-tab-lyrics');
+                const lyricsVisible = Boolean(lyricsBtn && !lyricsBtn.classList.contains('lyrics-unavailable'));
+                const visibleTabs = lyricsVisible ? ['track', 'queue', 'history', 'lyrics'] : ['track', 'queue', 'history'];
+                tabSwitch.style.setProperty('--seg-count', String(visibleTabs.length));
+                const current = document.body.dataset.mobileTab || 'track';
+                const idx = Math.max(0, visibleTabs.indexOf(current));
+                tabSwitch.style.setProperty('--seg-index', String(idx));
+            },
+            switchMobilePlayerTab: (tab) => {
+                const lyricsBtn = document.getElementById('m-tab-lyrics');
+                const lyricsVisible = Boolean(lyricsBtn && !lyricsBtn.classList.contains('lyrics-unavailable'));
+                const mobileTabs = lyricsVisible ? ['track', 'queue', 'history', 'lyrics'] : ['track', 'queue', 'history'];
+                const resolvedTab = (tab === 'lyrics' && !lyricsVisible) ? 'track' : tab;
+                const tabIndex = Math.max(0, mobileTabs.indexOf(resolvedTab));
+                document.body.dataset.mobileTab = resolvedTab;
+                const tabSwitch = document.querySelector('.mobile-player-tabs');
+                if (tabSwitch) {
+                    tabSwitch.style.setProperty('--seg-count', String(mobileTabs.length));
+                    tabSwitch.style.setProperty('--seg-index', String(tabIndex));
+                }
                 document.querySelectorAll('.mobile-tab-btn').forEach(btn => {
                     const isCurrent = btn.id === `m-tab-${tab}`;
                     btn.classList.toggle('is-active', isCurrent);
@@ -2558,6 +2579,12 @@ const mPlayBtn = document.getElementById('m-icon-play');
                 if (e) {
                     try { e.stopPropagation(); } catch (_) {}
                 }
+                const isMobile = typeof deviceMode !== 'undefined' && deviceMode.isMobileUI && deviceMode.isMobileUI();
+                if (isMobile && !document.body.classList.contains('mobile-player-open')) {
+                    if (state.currentTrack) ui.toggleMobilePlayer(true);
+                    return;
+                }
+
                 const infoIsland = document.getElementById('info-island');
                 const queueWrap = document.getElementById('queue-wrapper');
                 if (!infoIsland) return;
@@ -2573,16 +2600,20 @@ const mPlayBtn = document.getElementById('m-icon-play');
                 if (!willOpen) {
                     infoIsland.classList.remove('details-expanded');
                     queueWrap?.classList.remove('has-song-details');
-                    ui.adjustQueueMaxHeight();
-                    if (!state.queueExpanded) {
-                        document.body.classList.remove('queue-sidebar-active');
+                    if (!isMobile) {
+                        ui.adjustQueueMaxHeight();
+                        if (!state.queueExpanded) {
+                            document.body.classList.remove('queue-sidebar-active');
+                        }
                     }
                     return;
                 }
 
                 infoIsland.classList.add('details-expanded');
-                queueWrap?.classList.add('has-song-details');
-                document.body.classList.add('queue-sidebar-active');
+                if (!isMobile) {
+                    queueWrap?.classList.add('has-song-details');
+                    document.body.classList.add('queue-sidebar-active');
+                }
                 await ui.loadSongDetails(state.currentTrack);
             },
             loadSongDetails: async (track) => {
@@ -2942,6 +2973,11 @@ const mPlayBtn = document.getElementById('m-icon-play');
                 list.addEventListener('pointerdown', onPointerDown);
             },
             toggleFullscreenPlayer: (forceState) => {
+                if (typeof deviceMode !== 'undefined' && deviceMode.isMobileUI && deviceMode.isMobileUI()) {
+                    const willExpand = (typeof forceState === 'boolean') ? forceState : !document.body.classList.contains('mobile-player-open');
+                    ui.toggleMobilePlayer(willExpand);
+                    return;
+                }
                 const fsEl = document.getElementById('fullscreen-player');
                 const fsContainer = document.getElementById('fullscreen-container');
                 if (!fsEl || !fsContainer) return;

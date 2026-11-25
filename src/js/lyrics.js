@@ -119,14 +119,25 @@
             },
 
             setIndicator: (hasLyrics) => {
+                const available = Boolean(hasLyrics);
                 const dot = document.getElementById('lyrics-indicator-dot');
                 if (dot) {
-                    dot.style.opacity = hasLyrics ? '1' : '0';
+                    dot.style.opacity = available ? '1' : '0';
                 }
                 const badge = document.getElementById('lyrics-sync-badge');
                 if (badge) {
                     const isSynced = Boolean(lyricsManager.currentLyrics?.syncedLyrics);
                     badge.classList.toggle('hidden', !isSynced);
+                }
+                const btnLyrics = document.getElementById('btn-lyrics');
+                if (btnLyrics) btnLyrics.classList.toggle('lyrics-unavailable', !available);
+                const mobileTabLyrics = document.getElementById('m-tab-lyrics');
+                if (mobileTabLyrics) mobileTabLyrics.classList.toggle('lyrics-unavailable', !available);
+                if (typeof ui !== 'undefined' && typeof ui.syncMobilePlayerTabs === 'function') {
+                    ui.syncMobilePlayerTabs();
+                }
+                if (!available && document.body?.dataset?.mobileTab === 'lyrics' && typeof ui !== 'undefined' && typeof ui.switchMobilePlayerTab === 'function') {
+                    ui.switchMobilePlayerTab('track');
                 }
             },
 

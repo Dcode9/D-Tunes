@@ -3409,10 +3409,10 @@ html[data-ui-mode="desktop"] #queue-wrapper.queue-expanded #history-list {
     transition: transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease !important;
 }
 
-body.queue-sidebar-active .home-signin-banner-btn,
-body.queue-sidebar-active #home-signin-banner-btn,
-body.queue-sidebar-active #ai-hub-container div.p-6 > button,
-body.queue-sidebar-active #ai-hub-container div.md\:p-8 > button {
+html[data-ui-mode="desktop"] body.queue-sidebar-active .home-signin-banner-btn,
+html[data-ui-mode="desktop"] body.queue-sidebar-active #home-signin-banner-btn,
+html[data-ui-mode="desktop"] body.queue-sidebar-active #ai-hub-container div.p-6 > button,
+html[data-ui-mode="desktop"] body.queue-sidebar-active #ai-hub-container div.md\:p-8 > button {
     transform: translateX(-390px);
 }
 
@@ -4168,3 +4168,744 @@ body.queue-sidebar-active #ai-hub-container div.md\:p-8 > button {
 
 /* Hidden edge blurs skip rendering entirely (the real optical filter is not free) */
 .row-blur-left.edge-hidden, .row-blur-right.edge-hidden { visibility: hidden; transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear 0.22s; }
+
+
+/* ==========================================================================
+   MOBILE MEZZOTINT DESIGN SYSTEM & DEEP RESPONSIVE OVERHAUL (Beta 1.4.5+)
+   Brings the mobile experience into full parity with the D'UI Mezzotint
+   design language (floating optical glass pills, pitch-black canvas, crisp
+   monochrome accents, bezel-less song cards) and fixes Beta 1.4.5 DOM drift
+   in the expanded mobile player, search, context menu, and modals.
+   ========================================================================== */
+
+/* --- 1. Main Scroll Container & Safe Areas --- */
+html[data-ui-mode="mobile"] #main-container {
+    padding-top: calc(74px + env(safe-area-inset-top)) !important;
+    padding-bottom: calc(176px + env(safe-area-inset-bottom)) !important;
+}
+
+/* --- 2. Floating Mezzotint Top Header --- */
+html[data-ui-mode="mobile"] header.glass-panel {
+    top: calc(8px + env(safe-area-inset-top)) !important;
+    left: 12px !important;
+    right: 12px !important;
+    height: 52px !important;
+    padding: 0 10px 0 14px !important;
+    border-radius: 9999px !important;
+    justify-content: space-between !important;
+    background: var(--mezzotint-bg) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    box-shadow: var(--mezzotint-shadow) !important;
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease !important;
+}
+
+html[data-ui-mode="mobile"] header.glass-panel::before {
+    opacity: 0.36 !important;
+}
+
+html[data-ui-mode="mobile"] #app-logo {
+    margin: 0 !important;
+    gap: 8px !important;
+}
+
+html[data-ui-mode="mobile"] #app-logo-img {
+    width: 28px !important;
+    height: 28px !important;
+}
+
+html[data-ui-mode="mobile"] #app-logo > span {
+    font-size: 1rem !important;
+}
+
+html[data-ui-mode="mobile"] #header-account {
+    display: flex !important;
+    width: auto !important;
+    gap: 6px !important;
+    align-items: center !important;
+}
+
+html[data-ui-mode="mobile"] #dverse-header-auth-button {
+    display: none !important;
+}
+
+html[data-ui-mode="mobile"] #btn-header-avatar {
+    width: 34px !important;
+    height: 34px !important;
+}
+
+html[data-ui-mode="mobile"] #profile-dropdown {
+    right: 0 !important;
+    top: calc(100% + 10px) !important;
+    width: min(268px, calc(100vw - 24px)) !important;
+    z-index: 260 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-search-open header.glass-panel {
+    transform: translateY(calc(-100% - env(safe-area-inset-top) - 18px)) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* --- 3. Floating Mezzotint Bottom Navigation Dock --- */
+html[data-ui-mode="mobile"] #mobile-nav {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+    height: auto !important;
+    border-radius: 9999px !important;
+    padding: 5px 6px !important;
+    background: var(--mezzotint-bg) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    box-shadow: var(--mezzotint-shadow) !important;
+    overflow: hidden !important;
+    transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease !important;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background-image: var(--mezzotint-grain-overlay);
+    background-repeat: repeat;
+    background-size: 160px 160px;
+    opacity: 0.34;
+    mix-blend-mode: overlay;
+    z-index: 0;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav > button {
+    position: relative;
+    z-index: 1;
+    border-radius: 9999px !important;
+    padding: 7px 4px !important;
+    gap: 3px !important;
+    color: rgba(255, 255, 255, 0.56) !important;
+    transition: color 0.2s ease, background-color 0.22s ease, transform 0.14s ease !important;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav > button svg {
+    width: 21px !important;
+    height: 21px !important;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav > button.active {
+    color: #ffffff !important;
+    background: rgba(255, 255, 255, 0.14) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16) !important;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav > button:active {
+    transform: scale(0.93) !important;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav .mobile-nav-label {
+    font-size: 9.5px !important;
+    letter-spacing: 0.05em !important;
+}
+
+/* Hide bottom dock cleanly during search, keyboard, or expanded player */
+html[data-ui-mode="mobile"] body.mobile-search-open #mobile-nav,
+html[data-ui-mode="mobile"] body.mobile-keyboard-open #mobile-nav,
+html[data-ui-mode="mobile"] body.mobile-player-open #mobile-nav {
+    transform: translateY(calc(100% + 28px)) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* --- 4. Floating Mezzotint Mini-Player Pill (Collapsed) --- */
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #player-footer {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: calc(80px + env(safe-area-inset-bottom)) !important;
+    gap: 0 !important;
+    z-index: 110 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-search-open:not(.mobile-player-open) #player-footer {
+    bottom: calc(12px + env(safe-area-inset-bottom) + var(--mobile-keyboard-lift, 0px)) !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #info-island {
+    border-radius: 9999px !important;
+    padding: 5px 8px 5px 6px !important;
+    background: var(--mezzotint-bg) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    box-shadow: var(--mezzotint-shadow) !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #info-island::before {
+    opacity: 0.36 !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #album-art-wrapper {
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 9999px !important;
+    overflow: hidden !important;
+    flex-shrink: 0 !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #curr-art-img {
+    border-radius: 9999px !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #p-like-btn {
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 9999px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-shrink: 0 !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #info-island button[onclick*="player.togglePlay"] {
+    width: 40px !important;
+    height: 40px !important;
+    margin-left: 4px !important;
+    border-radius: 9999px !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+    border: 1px solid rgba(255, 255, 255, 0.18) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: transform 0.16s ease, background-color 0.2s ease !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #info-island button[onclick*="player.togglePlay"]:active {
+    transform: scale(0.9) !important;
+    background: rgba(255, 255, 255, 0.2) !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #info-island button[onclick*="player.togglePlay"] svg {
+    width: 20px !important;
+    height: 20px !important;
+}
+
+html[data-ui-mode="mobile"] .art-fullscreen-btn {
+    display: none !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #song-details-drawer {
+    display: none !important;
+}
+
+/* --- 5. Rebuilt Mezzotint Mobile Expanded Player --- */
+html[data-ui-mode="mobile"] body.mobile-player-open #player-footer {
+    background: radial-gradient(circle at 50% 10%, color-mix(in srgb, var(--accent-color, #7cc0ff) 24%, #111218), #050508 68%) !important;
+    padding: calc(10px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom)) !important;
+    isolation: isolate;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-footer::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: var(--mezzotint-grain-overlay);
+    background-repeat: repeat;
+    background-size: 160px 160px;
+    opacity: 0.34;
+    mix-blend-mode: overlay;
+    z-index: 0;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-footer > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Header with subtle grabber + Mezzotint round icon buttons + segmented pill */
+html[data-ui-mode="mobile"] body.mobile-player-open .mobile-player-header {
+    position: relative !important;
+    padding: 14px 0 10px !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+    gap: 8px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open .mobile-player-header::before {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 38px;
+    height: 4px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.26);
+    pointer-events: none;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open .mobile-player-header > button {
+    width: 40px !important;
+    height: 40px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-shrink: 0 !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.13) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    color: rgba(255, 255, 255, 0.88) !important;
+}
+
+/* CRITICAL FIX: Stack album art above track metadata inside #info-island-compact-row */
+html[data-ui-mode="mobile"] body.mobile-player-open #info-island {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #info-island::before {
+    display: none !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #info-island-compact-row {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    gap: 18px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #album-art-hit {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #album-art-wrapper {
+    width: min(calc(100vw - 48px), calc(100dvh - 348px), 356px) !important;
+    height: min(calc(100vw - 48px), calc(100dvh - 348px), 356px) !important;
+    margin: 6px auto 0 !important;
+    border-radius: 26px !important;
+    overflow: visible !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open .album-art-card,
+html[data-ui-mode="mobile"] body.mobile-player-open .album-art-card img {
+    border-radius: 26px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-track-meta {
+    width: 100% !important;
+    margin-left: 0 !important;
+    padding: 0 2px !important;
+    gap: 12px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #p-title {
+    font-size: 1.35rem !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.02em !important;
+    line-height: 1.28 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #p-artist {
+    font-size: 0.94rem !important;
+    color: rgba(255, 255, 255, 0.65) !important;
+    font-weight: 500 !important;
+    margin-top: 3px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #p-like-btn {
+    width: 44px !important;
+    height: 44px !important;
+    transform: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 9999px !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #p-like-btn svg {
+    width: 21px !important;
+    height: 21px !important;
+}
+
+/* Song Intel drawer inside expanded mobile player */
+html[data-ui-mode="mobile"] body.mobile-player-open #info-island.details-expanded #song-details-drawer {
+    background: rgba(14, 14, 18, 0.88) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    border-radius: 1.25rem !important;
+    padding: 0.4rem 0.75rem 0.65rem !important;
+    margin-top: 0.65rem !important;
+    max-height: 220px !important;
+    overflow-y: auto !important;
+}
+
+/* CRITICAL FIX: Rebuild #player-card controls layout via CSS Grid + display:contents
+   Handles Beta 1.4.5 DOM (#player-left-group, dividers, #player-center-group, #player-right-group)
+   without touching desktop layout or duplicating controls. */
+html[data-ui-mode="mobile"] body.mobile-player-open #player-card {
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    grid-template-rows: auto auto !important;
+    row-gap: 14px !important;
+    column-gap: 4px !important;
+    align-items: center !important;
+    justify-items: center !important;
+    width: 100% !important;
+    height: auto !important;
+    padding: 6px 0 4px !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-radius: 0 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-card::before {
+    display: none !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-card > .w-px,
+html[data-ui-mode="mobile"] body.mobile-player-open #player-right-group {
+    display: none !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-left-group,
+html[data-ui-mode="mobile"] body.mobile-player-open #player-left-group > div,
+html[data-ui-mode="mobile"] body.mobile-player-open #player-center-group {
+    display: contents !important;
+}
+
+/* Row 1: Full-width Mezzotint Waveform Seekbar */
+html[data-ui-mode="mobile"] body.mobile-player-open #seek-bar-container {
+    grid-column: 1 / -1 !important;
+    grid-row: 1 !important;
+    width: 100% !important;
+    height: 46px !important;
+    border-radius: 9999px !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    margin: 0 !important;
+}
+
+/* Row 2: Canonical 5-button Transport Deck: [Shuffle] [Prev] [PLAY] [Next] [Repeat] */
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-shuffle {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    width: 44px !important;
+    height: 44px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 9999px !important;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-prev {
+    grid-column: 2 !important;
+    grid-row: 2 !important;
+    width: 48px !important;
+    height: 48px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 9999px !important;
+    color: #ffffff !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-prev svg,
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-next svg {
+    width: 24px !important;
+    height: 24px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-play {
+    grid-column: 3 !important;
+    grid-row: 2 !important;
+    width: 66px !important;
+    height: 66px !important;
+    border-radius: 9999px !important;
+    background: rgba(255, 255, 255, 0.14) !important;
+    border: 1px solid rgba(255, 255, 255, 0.28) !important;
+    box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.78), inset 0 1px 0 rgba(255, 255, 255, 0.32) !important;
+    backdrop-filter: blur(14px) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+    color: #ffffff !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-play .pp-glyph {
+    width: 26px !important;
+    height: 26px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-next {
+    grid-column: 4 !important;
+    grid-row: 2 !important;
+    width: 48px !important;
+    height: 48px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 9999px !important;
+    color: #ffffff !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-repeat {
+    grid-column: 5 !important;
+    grid-row: 2 !important;
+    width: 44px !important;
+    height: 44px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 9999px !important;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-shuffle.active-state,
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-repeat.active-state {
+    color: #ffffff !important;
+    background: rgba(255, 255, 255, 0.14) !important;
+}
+
+/* Compact transport deck when browsing Queue, History, or Lyrics tabs */
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #player-card,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #player-card,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #player-card {
+    row-gap: 8px !important;
+    padding: 10px 0 2px !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #seek-bar-container,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #seek-bar-container,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #seek-bar-container {
+    height: 32px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #btn-play,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #btn-play,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #btn-play {
+    width: 52px !important;
+    height: 52px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #btn-play .pp-glyph,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #btn-play .pp-glyph,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #btn-play .pp-glyph {
+    width: 21px !important;
+    height: 21px !important;
+}
+
+@media (max-height: 700px) {
+    html[data-ui-mode="mobile"] body.mobile-player-open #album-art-wrapper {
+        width: min(56vw, 224px) !important;
+        height: min(56vw, 224px) !important;
+    }
+    html[data-ui-mode="mobile"] body.mobile-player-open #info-island-compact-row {
+        gap: 12px !important;
+    }
+    html[data-ui-mode="mobile"] body.mobile-player-open #player-card {
+        row-gap: 10px !important;
+    }
+}
+
+/* --- 6. Clean Unified Mobile Search Bar & Dropdown --- */
+html[data-ui-mode="mobile"] #search-positioner,
+html[data-ui-mode="mobile"] body.mobile-search-open #search-positioner {
+    top: calc(8px + env(safe-area-inset-top, 0px)) !important;
+    bottom: auto !important;
+    left: 12px !important;
+    right: 12px !important;
+    padding: 0 !important;
+    z-index: 150 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-search-open #search-shell {
+    width: 100% !important;
+    min-height: 50px !important;
+    border-radius: 9999px !important;
+    background: var(--mezzotint-bg) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    box-shadow: var(--mezzotint-shadow) !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-search-open #search-input {
+    height: 48px !important;
+    background: transparent !important;
+    border: none !important;
+    padding-left: 2.5rem !important;
+    padding-right: 4.5rem !important;
+    font-size: 0.92rem !important;
+}
+
+html[data-ui-mode="mobile"] .mobile-search-cancel {
+    right: 0.45rem !important;
+    padding: 6px 12px !important;
+    border-radius: 9999px !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    color: #ffffff !important;
+    font-size: 0.72rem !important;
+    font-weight: 700 !important;
+}
+
+html[data-ui-mode="mobile"] #search-dropdown .search-results-content {
+    background: rgba(10, 10, 14, 0.94) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    box-shadow: var(--mezzotint-shadow) !important;
+    border-radius: 1.5rem !important;
+}
+
+/* --- 7. Mobile Song Cards (Bezel-less Mezzotint Polish) --- */
+@media (max-width: 767px) {
+    :root {
+        --dtunes-card-radius: 1.35rem;
+    }
+    .scroll-card {
+        flex-basis: calc((100% - 1.5rem) / 2.25);
+    }
+    .row-blur-left,
+    .row-blur-right {
+        width: 18px !important;
+    }
+}
+
+@media (hover: none) {
+    .sc-meta {
+        padding: 0.62rem 2.35rem 0.75rem 0.75rem;
+    }
+    .sc-menu-btn {
+        right: 0.45rem;
+        bottom: 0.5rem;
+        width: 30px;
+        height: 30px;
+        background: rgba(0, 0, 0, 0.52);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+}
+
+html[data-ui-mode="mobile"] .sc-meta {
+    padding: 0.62rem 2.35rem 0.75rem 0.75rem !important;
+}
+
+html[data-ui-mode="mobile"] .sc-card:active {
+    transform: scale(0.97) !important;
+    transition: transform 0.14s ease !important;
+}
+
+/* --- 8. Mobile Context Menu -> Native Mezzotint Bottom Action Sheet --- */
+html[data-ui-mode="mobile"] body.mobile-context-open::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.52);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 340;
+    pointer-events: none;
+}
+
+html[data-ui-mode="mobile"] #context-menu {
+    left: 10px !important;
+    right: 10px !important;
+    top: auto !important;
+    bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+    width: auto !important;
+    max-height: 75dvh !important;
+    overflow-y: auto !important;
+    border-radius: 1.75rem !important;
+    padding: 1.35rem 0.65rem 0.75rem !important;
+    z-index: 350 !important;
+    background: rgba(12, 12, 16, 0.96) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.14) !important;
+    animation: mobile-sheet-slide-up 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-ui-mode="mobile"] #context-menu::after {
+    content: "";
+    position: absolute;
+    top: 9px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 38px;
+    height: 4px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.25);
+    z-index: 3;
+    pointer-events: none;
+}
+
+html[data-ui-mode="mobile"] #context-menu button {
+    min-height: 46px !important;
+    padding: 0.7rem 0.9rem !important;
+    font-size: 0.9rem !important;
+    border-radius: 1rem !important;
+    gap: 0.85rem !important;
+}
+
+html[data-ui-mode="mobile"] #context-menu button:active {
+    background: rgba(255, 255, 255, 0.12) !important;
+    color: #ffffff !important;
+}
+
+/* --- 9. Mobile Modal Layering & Ergonomics (Always Above Expanded Player) --- */
+html[data-ui-mode="mobile"] #profile-modal,
+html[data-ui-mode="mobile"] #playlist-modal,
+html[data-ui-mode="mobile"] #vibe-mix-modal,
+html[data-ui-mode="mobile"] #playlist-selector-modal,
+html[data-ui-mode="mobile"] #spotify-modal,
+html[data-ui-mode="mobile"] #sleep-timer-modal,
+html[data-ui-mode="mobile"] #playlist-editor-modal,
+html[data-ui-mode="mobile"] #changelog-modal,
+html[data-ui-mode="mobile"] #ai-report-modal,
+html[data-ui-mode="mobile"] #review-submit-modal {
+    z-index: 320 !important;
+    padding: 12px !important;
+}
+
+html[data-ui-mode="mobile"] #equalizer-modal {
+    z-index: 360 !important;
+    padding: 12px !important;
+}
+
+html[data-ui-mode="mobile"] #view-library .library-hero {
+    padding: 1.25rem !important;
+    border-radius: 1.5rem !important;
+}
+
+html[data-ui-mode="mobile"] #library-nav-tabs {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+html[data-ui-mode="mobile"] #library-nav-tabs::-webkit-scrollbar {
+    display: none;
+}

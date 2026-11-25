@@ -153,7 +153,7 @@
 
     <script defer src="src/js/preload.js?v=1.6.9"></script>
 
-    <link rel="stylesheet" href="src/css/styles.css?v=1.6.9">
+    <link rel="stylesheet" href="src/css/styles.css?v=1.7.0">
     <script>
       (function () {
         try {
@@ -1269,8 +1269,8 @@
             <div class="flex flex-col md:flex-row gap-8">
                 <div class="md:w-[30%] flex-shrink-0 md:sticky md:top-32 self-start h-auto md:max-h-[calc(100vh-10rem)] overflow-y-auto custom-scrollbar pb-8">
                     <div class="flex flex-col items-center md:items-start text-center md:text-left gap-4 hover-pause">
-                        <button class="w-12 h-12 rounded-full glass-panel hover:bg-white/10 flex items-center justify-center text-white transition mb-2 hidden md:flex" onclick="ui.switchView('library')">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                        <button class="self-start w-10 h-10 md:w-12 md:h-12 rounded-full glass-panel hover:bg-white/10 flex items-center justify-center text-white transition mb-1 md:mb-2 active:scale-95" onclick="ui.switchView('library')" aria-label="Back to Library">
+                            <svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
                         </button>
                         <div id="pl-view-art" class="w-48 h-48 md:w-full md:aspect-square rounded-2xl shadow-2xl flex items-center justify-center text-5xl md:text-6xl font-bold text-white shadow-black/50 overflow-hidden">
                             <!-- Injected by JS -->
@@ -1323,8 +1323,8 @@
             <div class="flex flex-col md:flex-row gap-8">
                 <div class="md:w-[30%] flex-shrink-0 md:sticky md:top-32 self-start h-auto md:max-h-[calc(100vh-10rem)] overflow-y-auto custom-scrollbar pb-8">
                     <div class="flex flex-col items-center md:items-start text-center md:text-left gap-4 hover-pause">
-                        <button class="w-12 h-12 rounded-full glass-panel hover:bg-white/10 flex items-center justify-center text-white transition mb-2 hidden md:flex" onclick="history.back() || ui.switchView('home')">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                        <button class="self-start w-10 h-10 md:w-12 md:h-12 rounded-full glass-panel hover:bg-white/10 flex items-center justify-center text-white transition mb-1 md:mb-2 active:scale-95" onclick="history.back() || ui.switchView('home')" aria-label="Go back">
+                            <svg class="w-5 h-5 md:w-6 md:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
                         </button>
                         <div class="w-48 h-48 md:w-full md:aspect-square rounded-2xl shadow-2xl overflow-hidden border border-white/10 bg-gray-900">
                             <img id="album-view-art" src="" class="w-full h-full object-cover" alt="Album Cover">
@@ -1417,7 +1417,7 @@
             <h2 class="text-2xl md:text-3xl font-bold text-white mb-8 tracking-tight relative z-20">Settings</h2>
             <div class="changelog-glass-card p-6 md:p-8 rounded-3xl max-w-2xl relative z-10 border border-white/10 flex flex-col gap-6">
                 <!-- D'Verse Cloud Card -->
-                <div class="p-4 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-between gap-4">
+                <div class="p-4 rounded-2xl bg-white/[0.04] border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
                     <div class="min-w-0">
                         <div class="flex items-center gap-2 mb-1">
                             <span class="w-2 h-2 rounded-full bg-zinc-400" id="set-cloud-dot"></span>
@@ -1464,7 +1464,7 @@
 
                 <!-- Reset Data Card -->
                 <div class="border-t border-white/10 pt-6">
-                    <div class="flex items-center justify-between gap-4 rounded-2xl border border-red-500/20 bg-red-500/5 p-4">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 rounded-2xl border border-red-500/20 bg-red-500/5 p-4">
                         <div>
                             <h3 class="text-sm font-semibold text-red-400 mb-0.5">Reset D'Tunes Cache</h3>
                             <p class="text-xs text-zinc-400">Clear cached playlists, playback history, queue, and preferences from this browser.</p>
@@ -1570,7 +1570,7 @@
             <button class="mobile-collapse-btn text-gray-300 hover:text-white transition p-2 rounded-full bg-white/10 active:scale-95" onclick="ui.toggleMobilePlayer(false)" aria-label="Collapse player">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/></svg>
             </button>
-            <div class="mobile-player-tabs segmented-tabs" role="tablist" aria-label="Player sections" style="--seg-count:4;">
+            <div class="mobile-player-tabs segmented-tabs" role="tablist" aria-label="Player sections" style="--seg-count:3;">
                 <button id="m-tab-track" class="mobile-tab-btn is-active" role="tab" aria-selected="true" onclick="ui.switchMobilePlayerTab('track')">Playing</button>
                 <button id="m-tab-queue" class="mobile-tab-btn" role="tab" aria-selected="false" onclick="ui.switchMobilePlayerTab('queue')">Queue</button>
                 <button id="m-tab-history" class="mobile-tab-btn" role="tab" aria-selected="false" onclick="ui.switchMobilePlayerTab('history')">History</button>
