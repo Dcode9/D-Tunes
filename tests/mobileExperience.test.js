@@ -106,7 +106,7 @@ test('Mobile JS & HTML: playlist cards, recent searches, lyrics tab sync, back b
     assert.ok(html.includes('aria-label="Back to Library"'), 'Playlist view must expose a mobile-visible Back button');
     assert.ok(html.includes('aria-label="Go back"'), 'Album view must expose a mobile-visible Back button');
     assert.ok(html.includes('style="--seg-count:3;"'), 'Mobile player tabs must default to 3 visible tabs before lyrics load');
-    assert.ok(sw.includes('dtunes-shell-v1.4.13-mobile-motion'), 'Service worker shell cache version must be bumped');
+    assert.ok(sw.includes('dtunes-shell-v1.4.14-quicksearch-album-creator'), 'Service worker shell cache version must be bumped');
 });
 
 test('Mobile Motion & Search Cleanup: sliding dock pill, FLIP player morph & clean search header', () => {
@@ -123,4 +123,21 @@ test('Mobile Motion & Search Cleanup: sliding dock pill, FLIP player morph & cle
 
     assert.ok(css.includes('html[data-ui-mode="mobile"] #search-view-header'), 'Redundant Search title and Report row must be hidden on mobile');
     assert.ok(html.includes('id="search-history-section"') && html.indexOf('id="btn-clear-search-history"') > html.indexOf('id="search-history-section"'), 'Clear History button must live in the Recent Searches header row');
+});
+
+test('Mobile Quick Search, Mezzotint Album View & Playlist Creator Redesign', () => {
+    const css = read('src/css/styles.css');
+    const html = read('index.html');
+    const search = read('src/js/search.js');
+    const ui = read('src/js/ui.js');
+
+    assert.match(
+        css,
+        /html\[data-ui-mode="mobile"\]\s+body\.mobile-search-open\s+#search-shell\s*\{[^}]*overflow:\s*visible\s*!important/s,
+        'Mobile search shell must set overflow: visible when open so quick search dropdown is not clipped'
+    );
+    assert.ok(search.includes('quick-search-all-btn'), 'Quick search must include a See all results action button');
+    assert.ok(html.includes('class="album-hero-card'), 'Album detail view must use Mezzotint album-hero-card');
+    assert.ok(ui.includes("document.getElementById('album-hero-ambient')"), 'openAlbum must sync ambient album backdrop');
+    assert.ok(html.includes('mezzotint-modal-card') && html.includes('id="playlist-modal"'), 'Playlist creator modal must use Mezzotint modal card');
 });

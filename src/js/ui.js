@@ -1249,6 +1249,8 @@
                     let durationStr = totalSec > 3600 ? `${Math.floor(totalSec / 3600)} hr ${Math.floor((totalSec % 3600) / 60)} min` : `${Math.floor(totalSec / 60)} min`;
                     if (metaEl) metaEl.textContent = `${year ? year + ' • ' : ''}${songs.length} tracks • ${durationStr}`;
                     if (artEl) artEl.src = img;
+                    const ambientEl = document.getElementById('album-hero-ambient');
+                    if (ambientEl) ambientEl.src = img;
 
                     if (songs.length === 0) {
                         if (listEl) listEl.innerHTML = '<p class="text-gray-400 py-4">No songs found in this album.</p>';

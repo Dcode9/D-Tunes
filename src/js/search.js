@@ -155,10 +155,16 @@
                             results.innerHTML = '<div class="p-4 text-center text-zinc-400 text-sm font-medium">No songs found</div>';
                             return;
                         }
+                        const safeQ = utils.escapeHtml(requestedQuery);
+                        const jsQ = utils.escapeJs(requestedQuery);
                         results.innerHTML = songs.map(song => {
                             const storeId = songStore.add(song);
                             return ui.createPlayerListPill(song, `ui.playFromQuickSearch('${storeId}')`, 'quicksearch');
-                        }).join('');
+                        }).join('') + `
+                        <button type="button" class="quick-search-all-btn" onclick="document.getElementById('search-dropdown')?.classList.remove('active'); document.getElementById('search-input')?.blur(); searchManager.performFullSearch('${jsQ}');">
+                            <span>See all results for "${safeQ}"</span>
+                            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                        </button>`;
                         stripTouchHoverClasses();
                         updateMarquees();
                     }, deviceMode.isMobileUI() ? 120 : 180);
