@@ -1345,62 +1345,70 @@
                 if (!grid && !fullGrid) return;
                 let html = '';
 
-                // Create Playlist Action Card
+                // Create Playlist Mezzotint Action Card
                 html += `
-                <div class="scroll-card glass-panel p-3 rounded-2xl transition hover-pause group relative flex flex-col w-full cursor-pointer border border-dashed border-white/20 hover:border-white/40 bg-white/[0.02]" onclick="ui.toggleModal(true)">
-                    <div class="relative aspect-square rounded-xl overflow-hidden mb-3 shadow-md flex items-center justify-center bg-white/5 border border-white/10 group-hover:bg-white/10 transition">
-                        <span class="w-12 h-12 rounded-full bg-white text-black flex items-center justify-center group-hover:scale-110 transition shadow-lg">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+                <div class="pl-card pl-action-card pl-action-card--create group" onclick="ui.toggleModal(true)">
+                    <div class="pl-action-top">
+                        <span class="pl-action-badge bg-white text-black shadow-lg">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
                         </span>
+                        <span class="pl-action-tag">New</span>
                     </div>
-                    <div class="w-full min-w-0 flex-1">
-                        <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">Create Playlist</h3></div>
-                        <p class="text-xs text-zinc-400 mt-0.5">New mix</p>
+                    <div class="pl-action-meta">
+                        <div class="marquee-container w-full"><h3 class="pl-action-title marquee-text">Create Playlist</h3></div>
+                        <p class="pl-action-sub">Start a fresh mix</p>
                     </div>
                 </div>`;
 
-                // Vibe Mix Card
+                // Vibe Mix Mezzotint Action Card
                 html += `
-                <div class="scroll-card glass-panel p-3 rounded-2xl transition hover-pause group relative flex flex-col w-full cursor-pointer border border-white/10 hover:border-white/20 bg-white/[0.02]" onclick="ui.toggleVibeMixModal(true)">
-                    <div class="relative aspect-square rounded-xl overflow-hidden mb-3 shadow-md flex items-center justify-center bg-gradient-to-br from-zinc-800/80 to-zinc-950 border border-white/10 group-hover:border-white/20 transition">
-                        <span class="relative w-12 h-12 rounded-full bg-white/15 border border-white/20 text-white flex items-center justify-center group-hover:scale-110 transition">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                <div class="pl-card pl-action-card pl-action-card--vibe group" onclick="ui.toggleVibeMixModal(true)">
+                    <div class="pl-action-top">
+                        <span class="pl-action-badge bg-white/12 border border-white/20 text-white">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
                         </span>
+                        <span class="pl-action-tag">AI</span>
                     </div>
-                    <div class="w-full min-w-0 flex-1">
-                        <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">Vibe Mix</h3></div>
-                        <p class="text-xs text-zinc-400 mt-0.5">Curate any mood</p>
+                    <div class="pl-action-meta">
+                        <div class="marquee-container w-full"><h3 class="pl-action-title marquee-text">Vibe Mix</h3></div>
+                        <p class="pl-action-sub">Curate any mood</p>
                     </div>
                 </div>`;
 
-                // Spotify Import Card
+                // Spotify Import Mezzotint Action Card
                 html += `
-                <div class="scroll-card glass-panel p-3 rounded-2xl transition hover-pause group relative flex flex-col w-full cursor-pointer border border-white/10 hover:border-white/20" onclick="ui.toggleSpotifyModal(true)">
-                    <div class="relative aspect-square rounded-xl overflow-hidden mb-3 shadow-md flex items-center justify-center bg-[#181818] border border-[#1DB954]/20 group-hover:border-[#1DB954]/50 transition">
-                        <svg viewBox="0 0 24 24" width="44" height="44" fill="#1DB954" class="opacity-80 group-hover:opacity-100 group-hover:scale-110 transition"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.24 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.6.18-1.2.72-1.38 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.239.54-.959.72-1.56.3z"/></svg>
+                <div class="pl-card pl-action-card pl-action-card--spotify group" onclick="ui.toggleSpotifyModal(true)">
+                    <div class="pl-action-top">
+                        <span class="pl-action-badge bg-[#1DB954]/18 border border-[#1DB954]/35 text-[#1DB954]">
+                            <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.24 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.6.18-1.2.72-1.38 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.239.54-.959.72-1.56.3z"/></svg>
+                        </span>
+                        <span class="pl-action-tag text-[#1DB954] border-[#1DB954]/25 bg-[#1DB954]/10">Import</span>
                     </div>
-                    <div class="w-full min-w-0 flex-1">
-                        <div class="marquee-container w-full"><h3 class="font-bold text-[#1DB954] text-sm marquee-text">Import Spotify</h3></div>
-                        <p class="text-xs text-zinc-400 mt-0.5">Connect Account</p>
+                    <div class="pl-action-meta">
+                        <div class="marquee-container w-full"><h3 class="pl-action-title text-[#1DB954] marquee-text">Import Spotify</h3></div>
+                        <p class="pl-action-sub">Bring your playlists</p>
                     </div>
                 </div>`;
 
                 Object.keys(state.playlists).forEach(name => {
                     const style = ui.getPlaylistStyle(name);
+                    const count = state.playlists[name].length;
                     html += `
-                    <div class="scroll-card glass-panel p-3 rounded-2xl transition hover-pause group relative flex flex-col w-full cursor-pointer border border-white/10 hover:border-white/20" onclick="ui.openPlaylist('${utils.escapeJs(name)}')">
-                        <div class="relative aspect-square rounded-xl overflow-hidden mb-3 shadow-md flex items-center justify-center text-4xl font-bold ${style.bg}">
+                    <div class="pl-card group" onclick="ui.openPlaylist('${utils.escapeJs(name)}')">
+                        <div class="pl-user-art ${style.bg}">
                             ${style.customHtml || style.icon}
-                            <div class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition">
-                                <span class="bg-white text-black font-bold p-3 rounded-full shadow-xl transform scale-75 group-hover:scale-100 transition"><svg width="24" height="24" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></span>
-                            </div>
+                            <span class="pl-user-play" aria-hidden="true">
+                                <svg width="22" height="22" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                            </span>
                         </div>
-                        <button class="absolute top-4 right-4 p-1.5 bg-black/60 backdrop-blur-md rounded-full text-white opacity-100 md:opacity-0 md:group-hover:opacity-100 transition shadow-lg hover:bg-white/20 z-10" onclick="event.stopPropagation(); ctxMenu.showPlaylist(event, '${utils.escapeJs(name)}')">
-                            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M3 9.5a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3zm5 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z"/></svg>
-                        </button>
-                        <div class="w-full min-w-0 flex-1">
-                            <div class="marquee-container w-full"><h3 class="font-bold text-white text-sm marquee-text">${utils.escapeHtml(name)}</h3></div>
-                            <p class="text-xs text-zinc-400 mt-0.5">${state.playlists[name].length} tracks</p>
+                        <div class="pl-user-meta">
+                            <div class="min-w-0 flex-1">
+                                <div class="marquee-container w-full"><h3 class="sc-title marquee-text">${utils.escapeHtml(name)}</h3></div>
+                                <p class="sc-artist mt-0.5">${count} ${count === 1 ? 'track' : 'tracks'}</p>
+                            </div>
+                            <button type="button" class="pl-user-menu-btn" onclick="event.stopPropagation(); ctxMenu.showPlaylist(event, '${utils.escapeJs(name)}')" title="Playlist options" aria-label="Playlist options">
+                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
+                            </button>
                         </div>
                     </div>`;
                 });

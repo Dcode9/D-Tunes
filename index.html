@@ -153,7 +153,7 @@
 
     <script defer src="src/js/preload.js?v=1.6.9"></script>
 
-    <link rel="stylesheet" href="src/css/styles.css?v=1.7.0">
+    <link rel="stylesheet" href="src/css/styles.css?v=1.7.1">
     <script>
       (function () {
         try {
@@ -164,7 +164,7 @@
         } catch (_) {}
       })();
     </script>
-    <link rel="stylesheet" href="src/css/glass-ios.css?v=1.0.0">
+    <link rel="stylesheet" href="src/css/glass-ios.css?v=1.0.1">
 
 </head>
 <body>
@@ -343,19 +343,19 @@
     <!-- EQUALIZER MODAL -->
     <div id="equalizer-modal" class="fixed inset-0 z-[310] flex items-center justify-center bg-black/75 backdrop-blur-md hidden" onclick="if(event.target === this) ui.toggleEqualizerModal(false)">
         <div class="changelog-glass-card p-6 w-full max-w-2xl shadow-2xl border border-white/10 transform transition-all flex flex-col max-h-[92vh] overflow-hidden mx-4">
-            <div class="flex items-center justify-between gap-3 mb-4 flex-shrink-0">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center text-white shadow-lg">
+            <div class="flex items-center justify-between gap-2 mb-4 flex-shrink-0">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-9 h-9 md:w-10 md:h-10 rounded-2xl bg-white/10 border border-white/15 flex items-center justify-center text-white shadow-lg flex-shrink-0">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>
                     </div>
-                    <div>
-                        <h3 class="text-xl font-bold text-white tracking-tight">Master Equalizer</h3>
-                        <p class="text-xs text-zinc-400">10-Band Acoustic Tone Engine</p>
+                    <div class="min-w-0">
+                        <h3 class="text-base md:text-xl font-bold text-white tracking-tight truncate">Master Equalizer</h3>
+                        <p class="text-[11px] md:text-xs text-zinc-400 truncate">10-Band Acoustic Tone Engine</p>
                     </div>
                 </div>
-                <div class="flex items-center gap-2">
-                    <button onclick="ui.resetEqualizer()" class="text-xs font-semibold px-3.5 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-zinc-200 hover:text-white transition active:scale-95">Reset to Flat</button>
-                    <button onclick="ui.toggleEqualizerModal(false)" class="text-zinc-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition active:scale-95" aria-label="Close Equalizer">
+                <div class="flex items-center gap-1.5 flex-shrink-0">
+                    <button onclick="ui.resetEqualizer()" class="text-xs font-semibold px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-zinc-200 hover:text-white transition active:scale-95 whitespace-nowrap">Reset</button>
+                    <button onclick="ui.toggleEqualizerModal(false)" class="text-zinc-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition active:scale-95 flex-shrink-0" aria-label="Close Equalizer">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                     </button>
                 </div>
