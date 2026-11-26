@@ -3,8 +3,12 @@
         // ============================================
         const audio = document.getElementById('audio-el');
         const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        audio.crossOrigin = 'anonymous';
-        audio.setAttribute('crossorigin', 'anonymous');
+        if (!isMobileDevice) {
+            audio.crossOrigin = 'anonymous';
+            audio.setAttribute('crossorigin', 'anonymous');
+        } else {
+            audio.removeAttribute('crossorigin');
+        }
         audio.setAttribute('playsinline', '');
         audio.setAttribute('webkit-playsinline', '');
         audio.preload = 'auto';
@@ -536,9 +540,9 @@
                 if (state._audioRetryCount === 1 && state.currentTrack?.source === 'youtube' && !state.currentTrack?.isOffline && state.currentTrack?.id) {
                     await new Promise(r => setTimeout(r, 350));
                     const retryUrl = `/api-v2/stream/${encodeURIComponent(state.currentTrack.id)}?r=${Date.now()}`;
-                    audio.crossOrigin = 'anonymous';
+                    if (!isMobileDevice) audio.crossOrigin = 'anonymous'; else audio.removeAttribute('crossorigin');
                     audio.src = retryUrl;
-                    audio.load();
+                    if (!isMobileDevice) audio.load();
                     if (resumeTime > 0) {
                         try { audio.currentTime = resumeTime; } catch (_) {}
                     }
@@ -785,10 +789,16 @@
                     if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
                         try { ytPlayer.pauseVideo(); } catch (_) {}
                     }
-                    audio.crossOrigin = 'anonymous';
+                    if (!isMobileDevice) {
+                        audio.crossOrigin = 'anonymous';
+                    } else {
+                        audio.removeAttribute('crossorigin');
+                    }
                     audio.preload = 'auto';
                     audio.src = urlToPlay;
-                    audio.load();
+                    if (!isMobileDevice) {
+                        audio.load();
+                    }
 
                     state.loaded = true;
                     ui.enableControls();

@@ -6,7 +6,7 @@
  * which loads the same origin). Downloaded songs are handled separately by
  * src/js/offline.js. Bump VERSION to publish a new shell.
  */
-const VERSION = 'dtunes-shell-v1.4.10-song-card-text';
+const VERSION = 'dtunes-shell-v1.5.0-ios-native-audio';
 const NETWORK_TIMEOUT_MS = 3000;
 
 // Same-origin shell assets (no query strings; lookups ignore the ?v= cache-buster).
@@ -106,6 +106,10 @@ function isCacheableSaavnImage(url, request) {
 }
 
 function shouldSkip(url, request) {
+  // Never intercept API calls, audio/video streams, or Range requests (breaks iOS Safari CoreMedia & background play)
+  if (url.pathname.startsWith('/api-v2/') || url.pathname.startsWith('/api/')) return true;
+  if (request && (request.destination === 'audio' || request.destination === 'video')) return true;
+  if (request && request.headers && request.headers.has('range')) return true;
   if (NO_CACHE.test(url.pathname)) return true;
   if (NO_CACHE_HOSTS.test(url.hostname)) {
     // Album/artist artwork comes from saavn CDNs; cache only the images.

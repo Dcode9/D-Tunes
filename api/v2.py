@@ -571,9 +571,102 @@ def _resolve_piped_sync(video_id: str) -> tuple[Optional[StreamInfo], Optional[s
     return (None, "; ".join(errs))
 
 
+_INNERTUBE_CLIENTS = [
+    {
+        "clientName": "ANDROID_VR",
+        "clientVersion": "1.60.19",
+        "deviceMake": "Oculus",
+        "deviceModel": "Quest 3",
+        "osName": "Android",
+        "osVersion": "12L",
+        "androidSdkVersion": 32,
+        "hl": "en",
+        "gl": "US",
+        "ua": "com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip",
+    },
+    {
+        "clientName": "IOS",
+        "clientVersion": "20.10.4",
+        "deviceMake": "Apple",
+        "deviceModel": "iPhone16,2",
+        "osName": "iPhone",
+        "osVersion": "18.3.2.22D82",
+        "hl": "en",
+        "gl": "US",
+        "ua": "com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)",
+    },
+]
+
+
+def _resolve_innertube_sync(video_id: str) -> tuple[Optional[StreamInfo], Optional[str]]:
+    errs = []
+    with httpx.Client(timeout=5.0, follow_redirects=True) as client:
+        for cfg in _INNERTUBE_CLIENTS:
+            try:
+                client_ctx = {k: v for k, v in cfg.items() if k != "ua"}
+                payload = {
+                    "videoId": video_id,
+                    "context": {"client": client_ctx},
+                    "contentCheckOk": True,
+                    "racyCheckOk": True,
+                }
+                res = client.post(
+                    "https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
+                    json=payload,
+                    headers={
+                        "User-Agent": cfg["ua"],
+                        "Content-Type": "application/json",
+                        "Origin": "https://www.youtube.com",
+                    },
+                )
+                if res.status_code != 200:
+                    errs.append(f"{cfg['clientName']}: HTTP {res.status_code}")
+                    continue
+                data = res.json()
+                status = (data.get("playabilityStatus") or {}).get("status")
+                if status != "OK":
+                    errs.append(f"{cfg['clientName']}: {status}")
+                    continue
+                streaming = data.get("streamingData") or {}
+                adaptive = streaming.get("adaptiveFormats") or []
+                audio_fmts = [
+                    f for f in adaptive
+                    if isinstance(f, dict) and f.get("url") and str(f.get("mimeType", "")).startswith("audio/")
+                ]
+                if not audio_fmts:
+                    errs.append(f"{cfg['clientName']}: no direct audio url")
+                    continue
+                m4a_fmts = [f for f in audio_fmts if "audio/mp4" in str(f.get("mimeType", "")).lower()]
+                best = max(m4a_fmts or audio_fmts, key=lambda f: int(f.get("bitrate") or 0))
+                mime = str(best.get("mimeType") or "").lower()
+                ext = "m4a" if "mp4" in mime else "webm"
+                content_type = _EXT_TO_CONTENT_TYPE.get(ext, "audio/mp4")
+                vd = data.get("videoDetails") or {}
+                thumbs = (vd.get("thumbnail") or {}).get("thumbnails") or []
+                artwork = thumbs[-1].get("url", "") if thumbs and isinstance(thumbs[-1], dict) else ""
+                dur_raw = vd.get("lengthSeconds")
+                return (StreamInfo(
+                    url=best["url"],
+                    ext=ext,
+                    content_type=content_type,
+                    title=vd.get("title") or "Unknown",
+                    artist=vd.get("author") or "Unknown Artist",
+                    artwork=artwork,
+                    duration=int(dur_raw) if dur_raw and str(dur_raw).isdigit() else None,
+                ), None)
+            except Exception as e:
+                errs.append(f"{cfg['clientName']}: {e}")
+    return (None, "; ".join(errs))
+
+
 def resolve_sync(video_id: str) -> StreamInfo:
     if not is_valid_video_id(video_id):
         raise ValueError(f"Invalid video ID: {video_id!r}")
+
+    # Layer 0: Fast direct InnerTube ANDROID_VR / IOS resolver (clean M4A for iOS Safari)
+    it_info, it_err = _resolve_innertube_sync(video_id)
+    if it_info:
+        return it_info
 
     url = f"https://www.youtube.com/watch?v={video_id}"
     last_err: Optional[Exception] = None
@@ -793,7 +886,7 @@ async def _stream_proxy(video_id: str, request: Request, allow_re_resolve: bool 
     resp_headers: dict[str, str] = {
         "Content-Type": info.content_type,
         "Accept-Ranges": "bytes",
-        "Cache-Control": "no-store",
+        "Cache-Control": "private, max-age=300",
     }
     for h in ("content-length", "content-range", "content-type"):
         if h in upstream.headers:
