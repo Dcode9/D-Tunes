@@ -69,10 +69,11 @@ html[data-os="ios"][data-ui-mode="mobile"] header.glass-panel {
     top: calc(8px + env(safe-area-inset-top)) !important;
     left: 12px !important;
     right: 12px !important;
-    border-radius: 22px !important;
+    height: 52px !important;
+    border-radius: 9999px !important;
     border: 1px solid var(--ios-glass-line) !important;
-    padding-top: 10px !important;
-    padding-bottom: 10px !important;
+    padding: 0 10px 0 14px !important;
+    overflow: hidden !important;
 }
 
 /* ---- Bottom nav -> floating glass pill ---- */
@@ -145,9 +146,9 @@ html[data-os="ios"] #btn-play {
 
 /* ---- Fullscreen mobile player ---- */
 html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open #player-footer {
-    background: radial-gradient(circle at 50% 8%, color-mix(in srgb, var(--accent-color, #22d3ee) 30%, #18181f), #08080b 74%) !important;
-    backdrop-filter: blur(30px) saturate(1.6) !important;
-    -webkit-backdrop-filter: blur(30px) saturate(1.6) !important;
+    background: radial-gradient(circle at 50% 8%, color-mix(in srgb, var(--accent-color, #7cc0ff) 26%, #14141c), #06060a 72%) !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
 
 html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open #album-art-wrapper,
@@ -237,4 +238,27 @@ html[data-os="ios"][data-ui-mode="mobile"] #search-dropdown .search-results-cont
         backdrop-filter: none;
         -webkit-backdrop-filter: none;
     }
+}
+
+/* Ensure iOS expanded mobile player keeps clean transparent controls & rounded-square art */
+html[data-os="ios"][data-ui-mode="mobile"] body:not(.mobile-player-open) #player-card {
+    display: none !important;
+}
+html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open #player-card {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-radius: 0 !important;
+}
+html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open #player-card::after {
+    display: none !important;
+}
+html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open #album-art-wrapper,
+html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open #album-art-wrapper img,
+html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open #curr-art-img,
+html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open .album-art-card,
+html[data-os="ios"][data-ui-mode="mobile"] body.mobile-player-open .album-art-card img {
+    border-radius: 26px !important;
 }

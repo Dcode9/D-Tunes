@@ -5,10 +5,15 @@
             activeStoreId: null, activePlaylistName: null,
             init: () => {
                 const menu = document.getElementById('context-menu');
-                document.addEventListener('click', (e) => { 
-                    menu.classList.add('hidden'); 
-                    if (!e.target.closest('#profile-dropdown') && !e.target.closest('[onclick*="profile-dropdown"]')) {
-                        document.getElementById('profile-dropdown').classList.add('hidden');
+                const closeMenu = () => {
+                    menu.classList.add('hidden');
+                    document.body.classList.remove('mobile-context-open');
+                };
+                ctxMenu.close = closeMenu;
+                document.addEventListener('click', (e) => {
+                    closeMenu();
+                    if (!e.target.closest('#profile-dropdown') && !e.target.closest('#btn-header-avatar') && !e.target.closest('[onclick*="toggleProfileDropdown"]')) {
+                        document.getElementById('profile-dropdown')?.classList.add('hidden');
                     }
                 });
                 document.getElementById('cm-play-next').onclick = () => { const s = songStore.get(ctxMenu.activeStoreId); if(s) player.addNext(s); };
@@ -83,14 +88,40 @@
                     dislikeLabel.textContent = (player.isDisliked && player.isDisliked(song.id)) ? 'Remove from hidden' : "Don't recommend this";
                 }
                 document.getElementById('cm-song-options').classList.remove('hidden'); document.getElementById('cm-playlist-options').classList.add('hidden');
-                menu.classList.remove('hidden'); const x = Math.min(event.clientX, window.innerWidth - 200); const y = Math.min(event.clientY, window.innerHeight - 150);
-                menu.style.left = `${x}px`; menu.style.top = `${y}px`;
+                menu.classList.remove('hidden');
+                if (typeof deviceMode !== 'undefined' && deviceMode.isMobileUI && deviceMode.isMobileUI()) {
+                    menu.style.left = '';
+                    menu.style.top = '';
+                    document.body.classList.add('mobile-context-open');
+                } else {
+                    const mw = menu.offsetWidth || 220;
+                    const mh = menu.offsetHeight || 280;
+                    const cx = (event && typeof event.clientX === 'number') ? event.clientX : 16;
+                    const cy = (event && typeof event.clientY === 'number') ? event.clientY : 16;
+                    const x = Math.max(12, Math.min(cx, window.innerWidth - mw - 12));
+                    const y = Math.max(12, Math.min(cy, window.innerHeight - mh - 12));
+                    menu.style.left = `${x}px`;
+                    menu.style.top = `${y}px`;
+                }
             },
             showPlaylist: (event, playlistName) => {
                 ctxMenu.activePlaylistName = playlistName; const menu = document.getElementById('context-menu');
                 document.getElementById('cm-song-options').classList.add('hidden'); document.getElementById('cm-playlist-options').classList.remove('hidden');
-                menu.classList.remove('hidden'); const x = Math.min(event.clientX, window.innerWidth - 200); const y = Math.min(event.clientY, window.innerHeight - 150);
-                menu.style.left = `${x}px`; menu.style.top = `${y}px`;
+                menu.classList.remove('hidden');
+                if (typeof deviceMode !== 'undefined' && deviceMode.isMobileUI && deviceMode.isMobileUI()) {
+                    menu.style.left = '';
+                    menu.style.top = '';
+                    document.body.classList.add('mobile-context-open');
+                } else {
+                    const mw = menu.offsetWidth || 220;
+                    const mh = menu.offsetHeight || 280;
+                    const cx = (event && typeof event.clientX === 'number') ? event.clientX : 16;
+                    const cy = (event && typeof event.clientY === 'number') ? event.clientY : 16;
+                    const x = Math.max(12, Math.min(cx, window.innerWidth - mw - 12));
+                    const y = Math.max(12, Math.min(cy, window.innerHeight - mh - 12));
+                    menu.style.left = `${x}px`;
+                    menu.style.top = `${y}px`;
+                }
             },
             showPlaylistSelector: () => {
                 const song = songStore.get(ctxMenu.activeStoreId); if(!song) return;

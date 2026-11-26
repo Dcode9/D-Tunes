@@ -1748,7 +1748,7 @@
         }
 
         html[data-ui-mode="mobile"] body:not(.mobile-player-open) #player-card {
-            display: none;
+            display: none !important;
         }
 
         html[data-ui-mode="mobile"] #info-island {
@@ -2346,64 +2346,7 @@ html[data-ui-mode="mobile"] body.mobile-player-open #info-island button[onclick*
     display: none !important;
 }
 
-/* Player Card Controls (Seekbar + Buttons) */
-html[data-ui-mode="mobile"] body.mobile-player-open #player-card {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    padding: 0 !important;
-    gap: 8px !important;
-    height: auto !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open #player-card > div:nth-child(2) {
-    order: 1 !important;
-    width: 100% !important;
-    margin: 0 !important;
-    border: none !important;
-    padding: 0 !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open #seek-bar-container {
-    height: 44px !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open #seek-time-row {
-    display: flex !important;
-    padding: 0 4px !important;
-    font-size: 11.5px !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open #player-card > div:nth-child(1) {
-    order: 2 !important;
-    width: 100% !important;
-    justify-content: space-between !important;
-    align-items: center !important;
-    gap: 12px !important;
-    padding: 6px 12px !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open #player-card > div:nth-child(1) button {
-    width: 46px !important;
-    height: 46px !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    border-radius: 9999px !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open #player-card > div:nth-child(1) #btn-play {
-    width: 66px !important;
-    height: 66px !important;
-    background: #0d0d12 !important;
-    color: #ffffff !important;
-    border: 1px solid rgba(255, 255, 255, 0.25) !important;
-    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.9), inset 0 1px 1px rgba(255, 255, 255, 0.5) !important;
-}
-
-html[data-ui-mode="mobile"] body.mobile-player-open #player-card > div:nth-child(3) {
-    display: none !important;
-}
+/* Player Card Controls handled cleanly by Mobile Mezzotint CSS Grid below */
 
 html[data-ui-mode="mobile"] body.mobile-player-open .mobile-queue-btn {
     display: none !important;
@@ -2617,13 +2560,7 @@ html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #mo
     display: none !important;
 }
 
-html[data-ui-mode="mobile"] body.mobile-player-open:not([data-mobile-tab="queue"]):not([data-mobile-tab="history"]):not([data-mobile-tab="lyrics"]) #player-card,
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="track"] #player-card {
-    display: flex !important;
-    flex-direction: column !important;
-    width: 100% !important;
-    flex-shrink: 0 !important;
-}
+/* #player-card display & order handled by Mobile Mezzotint Grid */
 
 /* 2. Queue Tab */
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #player-active-area,
@@ -2671,13 +2608,7 @@ html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #qu
     padding: 8px 2px 24px !important;
 }
 
-/* Player controls always pinned to bottom in queue tab */
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #player-card {
-    display: flex !important;
-    flex-direction: column !important;
-    width: 100% !important;
-    flex-shrink: 0 !important;
-}
+/* #player-card display & order handled by Mobile Mezzotint Grid */
 
 /* 3. History Tab */
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #player-active-area,
@@ -2725,13 +2656,7 @@ html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #
     padding: 8px 2px 24px !important;
 }
 
-/* Player controls always pinned to bottom in history tab */
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #player-card {
-    display: flex !important;
-    flex-direction: column !important;
-    width: 100% !important;
-    flex-shrink: 0 !important;
-}
+/* #player-card display & order handled by Mobile Mezzotint Grid */
 
 /* 4. Lyrics Tab */
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #player-active-area,
@@ -2740,13 +2665,7 @@ html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] .m
     display: none !important;
 }
 
-/* Player controls always pinned to bottom in lyrics tab */
-html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #player-card {
-    display: flex !important;
-    flex-direction: column !important;
-    width: 100% !important;
-    flex-shrink: 0 !important;
-}
+/* #player-card display & order handled by Mobile Mezzotint Grid */
 
 html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #mobile-lyrics-container {
     display: flex !important;
@@ -2784,7 +2703,7 @@ button, input[type="range"], a, .scroll-card, .song-pill {
         /* ========================================================
            REDESIGNED PILL PLAYER BAR & CUSTOM SLIDERS
            ======================================================== */
-        #player-card {
+        html[data-ui-mode="desktop"] #player-card {
             border-radius: 9999px !important;
             height: 58px !important;
             padding-left: 5.2px !important;
@@ -3409,10 +3328,10 @@ html[data-ui-mode="desktop"] #queue-wrapper.queue-expanded #history-list {
     transition: transform 0.42s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.2s ease, opacity 0.2s ease, box-shadow 0.2s ease !important;
 }
 
-body.queue-sidebar-active .home-signin-banner-btn,
-body.queue-sidebar-active #home-signin-banner-btn,
-body.queue-sidebar-active #ai-hub-container div.p-6 > button,
-body.queue-sidebar-active #ai-hub-container div.md\:p-8 > button {
+html[data-ui-mode="desktop"] body.queue-sidebar-active .home-signin-banner-btn,
+html[data-ui-mode="desktop"] body.queue-sidebar-active #home-signin-banner-btn,
+html[data-ui-mode="desktop"] body.queue-sidebar-active #ai-hub-container div.p-6 > button,
+html[data-ui-mode="desktop"] body.queue-sidebar-active #ai-hub-container div.md\:p-8 > button {
     transform: translateX(-390px);
 }
 
@@ -4168,3 +4087,1274 @@ body.queue-sidebar-active #ai-hub-container div.md\:p-8 > button {
 
 /* Hidden edge blurs skip rendering entirely (the real optical filter is not free) */
 .row-blur-left.edge-hidden, .row-blur-right.edge-hidden { visibility: hidden; transition: opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s linear 0.22s; }
+
+
+/* ==========================================================================
+   MOBILE MEZZOTINT DESIGN SYSTEM & DEEP RESPONSIVE OVERHAUL (Beta 1.4.5+)
+   Brings the mobile experience into full parity with the D'UI Mezzotint
+   design language (floating optical glass pills, pitch-black canvas, crisp
+   monochrome accents, bezel-less song cards) and fixes Beta 1.4.5 DOM drift
+   in the expanded mobile player, search, context menu, and modals.
+   ========================================================================== */
+
+/* --- 1. Main Scroll Container & Safe Areas --- */
+html[data-ui-mode="mobile"] #main-container {
+    padding-top: calc(74px + env(safe-area-inset-top)) !important;
+    padding-bottom: calc(176px + env(safe-area-inset-bottom)) !important;
+}
+
+/* --- 2. Floating Mezzotint Top Header --- */
+html[data-ui-mode="mobile"] header.glass-panel {
+    top: calc(8px + env(safe-area-inset-top)) !important;
+    left: 12px !important;
+    right: 12px !important;
+    height: 52px !important;
+    padding: 0 10px 0 14px !important;
+    border-radius: 9999px !important;
+    justify-content: space-between !important;
+    background: var(--mezzotint-bg) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    box-shadow: var(--mezzotint-shadow) !important;
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease !important;
+}
+
+html[data-ui-mode="mobile"] header.glass-panel::before {
+    opacity: 0.36 !important;
+}
+
+html[data-ui-mode="mobile"] #app-logo {
+    margin: 0 !important;
+    gap: 8px !important;
+}
+
+html[data-ui-mode="mobile"] #app-logo-img {
+    width: 28px !important;
+    height: 28px !important;
+}
+
+html[data-ui-mode="mobile"] #app-logo > span {
+    font-size: 1rem !important;
+}
+
+html[data-ui-mode="mobile"] #header-account {
+    display: flex !important;
+    width: auto !important;
+    gap: 6px !important;
+    align-items: center !important;
+}
+
+html[data-ui-mode="mobile"] #dverse-header-auth-button {
+    display: none !important;
+}
+
+html[data-ui-mode="mobile"] #btn-header-avatar {
+    width: 34px !important;
+    height: 34px !important;
+}
+
+html[data-ui-mode="mobile"] #profile-dropdown {
+    right: 0 !important;
+    top: calc(100% + 10px) !important;
+    width: min(268px, calc(100vw - 24px)) !important;
+    z-index: 260 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-search-open header.glass-panel {
+    transform: translateY(calc(-100% - env(safe-area-inset-top) - 18px)) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* --- 3. Floating Mezzotint Bottom Navigation Dock --- */
+html[data-ui-mode="mobile"] #mobile-nav {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+    height: auto !important;
+    border-radius: 9999px !important;
+    padding: 5px 6px !important;
+    background: var(--mezzotint-bg) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    box-shadow: var(--mezzotint-shadow) !important;
+    overflow: hidden !important;
+    transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.22s ease !important;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background-image: var(--mezzotint-grain-overlay);
+    background-repeat: repeat;
+    background-size: 160px 160px;
+    opacity: 0.34;
+    mix-blend-mode: overlay;
+    z-index: 0;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav > button {
+    position: relative;
+    z-index: 1;
+    border-radius: 9999px !important;
+    padding: 7px 4px !important;
+    gap: 3px !important;
+    color: rgba(255, 255, 255, 0.56) !important;
+    transition: color 0.2s ease, background-color 0.22s ease, transform 0.14s ease !important;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav > button svg {
+    width: 21px !important;
+    height: 21px !important;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav > button.active {
+    color: #ffffff !important;
+    background: rgba(255, 255, 255, 0.14) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16) !important;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav > button:active {
+    transform: scale(0.93) !important;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav .mobile-nav-label {
+    font-size: 9.5px !important;
+    letter-spacing: 0.05em !important;
+}
+
+/* Hide bottom dock cleanly during search, keyboard, or expanded player */
+html[data-ui-mode="mobile"] body.mobile-search-open #mobile-nav,
+html[data-ui-mode="mobile"] body.mobile-keyboard-open #mobile-nav,
+html[data-ui-mode="mobile"] body.mobile-player-open #mobile-nav {
+    transform: translateY(calc(100% + 28px)) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* --- 4. Floating Mezzotint Mini-Player Pill (Collapsed) --- */
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #player-footer {
+    left: 12px !important;
+    right: 12px !important;
+    bottom: calc(80px + env(safe-area-inset-bottom)) !important;
+    gap: 0 !important;
+    z-index: 110 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-search-open:not(.mobile-player-open) #player-footer {
+    bottom: calc(12px + env(safe-area-inset-bottom) + var(--mobile-keyboard-lift, 0px)) !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #info-island {
+    border-radius: 9999px !important;
+    padding: 5px 8px 5px 6px !important;
+    background: var(--mezzotint-bg) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    box-shadow: var(--mezzotint-shadow) !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #info-island::before {
+    opacity: 0.36 !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #album-art-wrapper {
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 9999px !important;
+    overflow: hidden !important;
+    flex-shrink: 0 !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #curr-art-img {
+    border-radius: 9999px !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #p-like-btn {
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 9999px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-shrink: 0 !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #info-island button[onclick*="player.togglePlay"] {
+    width: 40px !important;
+    height: 40px !important;
+    margin-left: 4px !important;
+    border-radius: 9999px !important;
+    background: rgba(255, 255, 255, 0.12) !important;
+    border: 1px solid rgba(255, 255, 255, 0.18) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2) !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    transition: transform 0.16s ease, background-color 0.2s ease !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #info-island button[onclick*="player.togglePlay"]:active {
+    transform: scale(0.9) !important;
+    background: rgba(255, 255, 255, 0.2) !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #info-island button[onclick*="player.togglePlay"] svg {
+    width: 20px !important;
+    height: 20px !important;
+}
+
+html[data-ui-mode="mobile"] .art-fullscreen-btn {
+    display: none !important;
+}
+
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #song-details-drawer {
+    display: none !important;
+}
+
+/* --- 5. Rebuilt Mezzotint Mobile Expanded Player --- */
+html[data-ui-mode="mobile"] body.mobile-player-open #player-footer {
+    background: radial-gradient(circle at 50% 10%, color-mix(in srgb, var(--accent-color, #7cc0ff) 24%, #111218), #050508 68%) !important;
+    padding: calc(10px + env(safe-area-inset-top)) 20px calc(16px + env(safe-area-inset-bottom)) !important;
+    isolation: isolate;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-footer::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: var(--mezzotint-grain-overlay);
+    background-repeat: repeat;
+    background-size: 160px 160px;
+    opacity: 0.34;
+    mix-blend-mode: overlay;
+    z-index: 0;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-footer > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* Header with subtle grabber + Mezzotint round icon buttons + segmented pill */
+html[data-ui-mode="mobile"] body.mobile-player-open .mobile-player-header {
+    position: relative !important;
+    padding: 14px 0 10px !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+    gap: 8px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open .mobile-player-header::before {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 38px;
+    height: 4px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.26);
+    pointer-events: none;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open .mobile-player-header > button {
+    width: 40px !important;
+    height: 40px !important;
+    padding: 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-shrink: 0 !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.13) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    color: rgba(255, 255, 255, 0.88) !important;
+}
+
+/* CRITICAL FIX: Stack album art above track metadata inside #info-island-compact-row */
+html[data-ui-mode="mobile"] body.mobile-player-open #info-island {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #info-island::before {
+    display: none !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #info-island-compact-row {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    gap: 18px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #album-art-hit {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #album-art-wrapper {
+    width: min(calc(100vw - 48px), calc(100dvh - 348px), 356px) !important;
+    height: min(calc(100vw - 48px), calc(100dvh - 348px), 356px) !important;
+    margin: 6px auto 0 !important;
+    border-radius: 26px !important;
+    overflow: visible !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open .album-art-card,
+html[data-ui-mode="mobile"] body.mobile-player-open .album-art-card img {
+    border-radius: 26px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-track-meta {
+    width: 100% !important;
+    margin-left: 0 !important;
+    padding: 0 2px !important;
+    gap: 12px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #p-title {
+    font-size: 1.35rem !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.02em !important;
+    line-height: 1.28 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #p-artist {
+    font-size: 0.94rem !important;
+    color: rgba(255, 255, 255, 0.65) !important;
+    font-weight: 500 !important;
+    margin-top: 3px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #p-like-btn {
+    width: 44px !important;
+    height: 44px !important;
+    transform: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border-radius: 9999px !important;
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #p-like-btn svg {
+    width: 21px !important;
+    height: 21px !important;
+}
+
+/* Song Intel drawer inside expanded mobile player */
+html[data-ui-mode="mobile"] body.mobile-player-open #info-island.details-expanded #song-details-drawer {
+    background: rgba(14, 14, 18, 0.88) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    border-radius: 1.25rem !important;
+    padding: 0.4rem 0.75rem 0.65rem !important;
+    margin-top: 0.65rem !important;
+    max-height: 220px !important;
+    overflow-y: auto !important;
+}
+
+/* CRITICAL FIX: Rebuild #player-card controls layout via CSS Grid + display:contents
+   Handles Beta 1.4.5 DOM (#player-left-group, dividers, #player-center-group, #player-right-group)
+   without touching desktop layout or duplicating controls. */
+html[data-ui-mode="mobile"] body.mobile-player-open #player-card {
+    display: grid !important;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) !important;
+    grid-template-rows: auto auto !important;
+    row-gap: 14px !important;
+    column-gap: 4px !important;
+    align-items: center !important;
+    justify-items: center !important;
+    width: 100% !important;
+    height: auto !important;
+    padding: 6px 0 4px !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border-radius: 0 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-card::before {
+    display: none !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-card > .w-px,
+html[data-ui-mode="mobile"] body.mobile-player-open #player-right-group {
+    display: none !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #player-left-group,
+html[data-ui-mode="mobile"] body.mobile-player-open #player-left-group > div,
+html[data-ui-mode="mobile"] body.mobile-player-open #player-center-group {
+    display: contents !important;
+}
+
+/* Row 1: Full-width Mezzotint Waveform Seekbar */
+html[data-ui-mode="mobile"] body.mobile-player-open #seek-bar-container {
+    grid-column: 1 / -1 !important;
+    grid-row: 1 !important;
+    width: 100% !important;
+    height: 46px !important;
+    border-radius: 9999px !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    margin: 0 !important;
+}
+
+/* Row 2: Canonical 5-button Transport Deck: [Shuffle] [Prev] [PLAY] [Next] [Repeat] */
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-shuffle {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    width: 44px !important;
+    height: 44px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 9999px !important;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-prev {
+    grid-column: 2 !important;
+    grid-row: 2 !important;
+    width: 48px !important;
+    height: 48px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 9999px !important;
+    color: #ffffff !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-prev svg,
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-next svg {
+    width: 24px !important;
+    height: 24px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-play {
+    grid-column: 3 !important;
+    grid-row: 2 !important;
+    width: 66px !important;
+    height: 66px !important;
+    border-radius: 9999px !important;
+    background: rgba(255, 255, 255, 0.14) !important;
+    border: 1px solid rgba(255, 255, 255, 0.28) !important;
+    box-shadow: 0 16px 36px -6px rgba(0, 0, 0, 0.78), inset 0 1px 0 rgba(255, 255, 255, 0.32) !important;
+    backdrop-filter: blur(14px) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+    color: #ffffff !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-play .pp-glyph {
+    width: 26px !important;
+    height: 26px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-next {
+    grid-column: 4 !important;
+    grid-row: 2 !important;
+    width: 48px !important;
+    height: 48px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 9999px !important;
+    color: #ffffff !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-repeat {
+    grid-column: 5 !important;
+    grid-row: 2 !important;
+    width: 44px !important;
+    height: 44px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border-radius: 9999px !important;
+    color: rgba(255, 255, 255, 0.65);
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-shuffle.active-state,
+html[data-ui-mode="mobile"] body.mobile-player-open #btn-repeat.active-state {
+    color: #ffffff !important;
+    background: rgba(255, 255, 255, 0.14) !important;
+}
+
+/* Compact transport deck when browsing Queue, History, or Lyrics tabs */
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #player-card,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #player-card,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #player-card {
+    row-gap: 8px !important;
+    padding: 10px 0 2px !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #seek-bar-container,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #seek-bar-container,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #seek-bar-container {
+    height: 32px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #btn-play,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #btn-play,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #btn-play {
+    width: 52px !important;
+    height: 52px !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="queue"] #btn-play .pp-glyph,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="history"] #btn-play .pp-glyph,
+html[data-ui-mode="mobile"] body.mobile-player-open[data-mobile-tab="lyrics"] #btn-play .pp-glyph {
+    width: 21px !important;
+    height: 21px !important;
+}
+
+@media (max-height: 700px) {
+    html[data-ui-mode="mobile"] body.mobile-player-open #album-art-wrapper {
+        width: min(56vw, 224px) !important;
+        height: min(56vw, 224px) !important;
+    }
+    html[data-ui-mode="mobile"] body.mobile-player-open #info-island-compact-row {
+        gap: 12px !important;
+    }
+    html[data-ui-mode="mobile"] body.mobile-player-open #player-card {
+        row-gap: 10px !important;
+    }
+}
+
+/* --- 6. Clean Unified Mobile Search Bar & Dropdown --- */
+html[data-ui-mode="mobile"] #search-positioner,
+html[data-ui-mode="mobile"] body.mobile-search-open #search-positioner {
+    top: calc(8px + env(safe-area-inset-top, 0px)) !important;
+    bottom: auto !important;
+    left: 12px !important;
+    right: 12px !important;
+    padding: 0 !important;
+    z-index: 150 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-search-open #search-shell {
+    width: 100% !important;
+    min-height: 50px !important;
+    border-radius: 9999px !important;
+    background: var(--mezzotint-bg) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    box-shadow: var(--mezzotint-shadow) !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-search-open #search-input {
+    height: 48px !important;
+    background: transparent !important;
+    border: none !important;
+    padding-left: 2.5rem !important;
+    padding-right: 4.5rem !important;
+    font-size: 0.92rem !important;
+}
+
+html[data-ui-mode="mobile"] .mobile-search-cancel {
+    right: 0.45rem !important;
+    padding: 6px 12px !important;
+    border-radius: 9999px !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    color: #ffffff !important;
+    font-size: 0.72rem !important;
+    font-weight: 700 !important;
+}
+
+html[data-ui-mode="mobile"] #search-dropdown .search-results-content {
+    background: rgba(10, 10, 14, 0.94) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    box-shadow: var(--mezzotint-shadow) !important;
+    border-radius: 1.5rem !important;
+}
+
+/* --- 7. Mobile Song Cards (Bezel-less Mezzotint Polish) --- */
+@media (max-width: 767px) {
+    :root {
+        --dtunes-card-radius: 1.35rem;
+    }
+    .scroll-card {
+        flex-basis: calc((100% - 1.5rem) / 2.25);
+    }
+    .row-blur-left,
+    .row-blur-right {
+        width: 18px !important;
+    }
+}
+
+@media (hover: none) {
+    .sc-meta {
+        padding: 0.62rem 2.35rem 0.75rem 0.75rem;
+    }
+    .sc-menu-btn {
+        right: 0.45rem;
+        bottom: 0.5rem;
+        width: 30px;
+        height: 30px;
+        background: rgba(0, 0, 0, 0.52);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+}
+
+html[data-ui-mode="mobile"] .sc-meta {
+    padding: 0.62rem 2.35rem 0.75rem 0.75rem !important;
+}
+
+html[data-ui-mode="mobile"] .sc-card:active {
+    transform: scale(0.97) !important;
+    transition: transform 0.14s ease !important;
+}
+
+/* --- 8. Mobile Context Menu -> Native Mezzotint Bottom Action Sheet --- */
+html[data-ui-mode="mobile"] body.mobile-context-open::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.52);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 340;
+    pointer-events: none;
+}
+
+html[data-ui-mode="mobile"] #context-menu {
+    left: 10px !important;
+    right: 10px !important;
+    top: auto !important;
+    bottom: calc(10px + env(safe-area-inset-bottom)) !important;
+    width: auto !important;
+    max-height: 75dvh !important;
+    overflow-y: auto !important;
+    border-radius: 1.75rem !important;
+    padding: 1.35rem 0.65rem 0.75rem !important;
+    z-index: 350 !important;
+    background: rgba(12, 12, 16, 0.96) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.14) !important;
+    animation: mobile-sheet-slide-up 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html[data-ui-mode="mobile"] #context-menu::after {
+    content: "";
+    position: absolute;
+    top: 9px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 38px;
+    height: 4px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.25);
+    z-index: 3;
+    pointer-events: none;
+}
+
+html[data-ui-mode="mobile"] #context-menu button {
+    min-height: 46px !important;
+    padding: 0.7rem 0.9rem !important;
+    font-size: 0.9rem !important;
+    border-radius: 1rem !important;
+    gap: 0.85rem !important;
+}
+
+html[data-ui-mode="mobile"] #context-menu button:active {
+    background: rgba(255, 255, 255, 0.12) !important;
+    color: #ffffff !important;
+}
+
+/* --- 9. Mobile Modal Layering & Ergonomics (Always Above Expanded Player) --- */
+html[data-ui-mode="mobile"] #profile-modal,
+html[data-ui-mode="mobile"] #playlist-modal,
+html[data-ui-mode="mobile"] #vibe-mix-modal,
+html[data-ui-mode="mobile"] #playlist-selector-modal,
+html[data-ui-mode="mobile"] #spotify-modal,
+html[data-ui-mode="mobile"] #sleep-timer-modal,
+html[data-ui-mode="mobile"] #playlist-editor-modal,
+html[data-ui-mode="mobile"] #changelog-modal,
+html[data-ui-mode="mobile"] #ai-report-modal,
+html[data-ui-mode="mobile"] #review-submit-modal {
+    z-index: 320 !important;
+    padding: 12px !important;
+}
+
+html[data-ui-mode="mobile"] #equalizer-modal {
+    z-index: 360 !important;
+    padding: 12px !important;
+}
+
+html[data-ui-mode="mobile"] #view-library .library-hero {
+    padding: 1.25rem !important;
+    border-radius: 1.5rem !important;
+}
+
+html[data-ui-mode="mobile"] #library-nav-tabs {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+html[data-ui-mode="mobile"] #library-nav-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+
+/* ==========================================================================
+   PRECISION POLISH PASS (iOS Safari + Expanded Player + Playlist Cards)
+   ========================================================================== */
+
+/* 1. Prevent WebKit square backdrop-filter bleed behind floating mobile header */
+html[data-ui-mode="mobile"] #main-container {
+    padding-top: calc(82px + env(safe-area-inset-top)) !important;
+}
+
+html[data-ui-mode="mobile"] header.glass-panel {
+    overflow: hidden !important;
+    isolation: isolate;
+    -webkit-mask-image: -webkit-radial-gradient(white, black);
+}
+
+html[data-ui-mode="mobile"] #profile-dropdown {
+    position: fixed !important;
+    top: calc(68px + env(safe-area-inset-top)) !important;
+    right: 12px !important;
+    left: auto !important;
+    z-index: 330 !important;
+}
+
+/* 2. Guarantee desktop #player-card NEVER appears when mobile player is collapsed */
+html[data-ui-mode="mobile"] body:not(.mobile-player-open) #player-card {
+    display: none !important;
+}
+
+/* 3. Expanded Mobile Player: rounded-square album art edge-to-edge (NOT circle inside square) */
+html[data-ui-mode="mobile"] body.mobile-player-open #album-art-wrapper,
+html[data-ui-mode="mobile"] body.mobile-player-open #album-art-wrapper img,
+html[data-ui-mode="mobile"] body.mobile-player-open #curr-art-img,
+html[data-ui-mode="mobile"] body.mobile-player-open .album-art-card,
+html[data-ui-mode="mobile"] body.mobile-player-open .album-art-card img {
+    border-radius: 26px !important;
+}
+
+/* 4. Expanded Mobile Player: explicit vertical order so controls are ALWAYS at the bottom on ALL 4 tabs */
+html[data-ui-mode="mobile"] body.mobile-player-open .mobile-player-header {
+    order: 1 !important;
+}
+html[data-ui-mode="mobile"] body.mobile-player-open #queue-anchor {
+    order: 2 !important;
+}
+html[data-ui-mode="mobile"] body.mobile-player-open #mobile-lyrics-container {
+    order: 2 !important;
+    min-height: 0 !important;
+}
+html[data-ui-mode="mobile"] body.mobile-player-open #player-card {
+    order: 10 !important;
+    flex-shrink: 0 !important;
+    margin-top: auto !important;
+}
+
+/* 5. Equalizer Modal Mobile Polish */
+html[data-ui-mode="mobile"] #equalizer-modal > div {
+    padding: 1.15rem !important;
+    border-radius: 1.5rem !important;
+    margin: 0 !important;
+    max-height: 88dvh !important;
+}
+html[data-ui-mode="mobile"] #equalizer-modal .eq-bands {
+    padding: 1rem 0.9rem 0.85rem !important;
+    gap: 0.45rem !important;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* 6. Redesigned Mezzotint Playlist Cards (Desktop & Mobile) */
+.pl-card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--dtunes-card-radius, 1.5rem);
+    background: #0a0a0e;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    box-shadow: 0 12px 28px -12px rgba(0, 0, 0, 0.72);
+    cursor: pointer;
+    isolation: isolate;
+    contain: layout paint style;
+    transition: border-color 0.24s ease, transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.24s ease;
+    user-select: none;
+}
+.pl-card:hover {
+    border-color: rgba(255, 255, 255, 0.24);
+    box-shadow: 0 18px 38px -12px rgba(0, 0, 0, 0.85);
+}
+.pl-card:active {
+    transform: scale(0.975);
+}
+.pl-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background-image: var(--mezzotint-grain-overlay);
+    background-repeat: repeat;
+    background-size: 160px 160px;
+    opacity: 0.34;
+    mix-blend-mode: overlay;
+    z-index: 2;
+}
+
+/* Action cards (Create Playlist, Vibe Mix, Import Spotify) - unified Mezzotint surface, no nested box-in-box */
+.pl-action-card {
+    aspect-ratio: 1 / 1.12;
+    padding: 1.1rem;
+    justify-content: space-between;
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.06) 0%, rgba(12, 12, 16, 0.94) 68%);
+}
+.pl-action-card--create {
+    background: radial-gradient(circle at 25% 20%, rgba(255, 255, 255, 0.12), transparent 62%),
+                linear-gradient(180deg, rgba(18, 18, 24, 0.92), rgba(8, 8, 12, 0.98));
+}
+.pl-action-card--vibe {
+    background: radial-gradient(circle at 28% 18%, rgba(124, 192, 255, 0.22), transparent 62%),
+                radial-gradient(circle at 80% 85%, rgba(139, 92, 246, 0.16), transparent 60%),
+                linear-gradient(180deg, rgba(14, 16, 24, 0.94), rgba(8, 8, 12, 0.98));
+}
+.pl-action-card--spotify {
+    background: radial-gradient(circle at 28% 20%, rgba(29, 185, 84, 0.24), transparent 62%),
+                linear-gradient(180deg, rgba(10, 20, 15, 0.94), rgba(8, 10, 10, 0.98));
+    border-color: rgba(29, 185, 84, 0.22);
+}
+.pl-action-card--spotify:hover {
+    border-color: rgba(29, 185, 84, 0.45);
+}
+
+.pl-action-top {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.pl-action-badge {
+    width: 46px;
+    height: 46px;
+    border-radius: 9999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.24s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.pl-card:hover .pl-action-badge {
+    transform: scale(1.08);
+}
+.pl-action-tag {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 3px 9px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.72);
+}
+.pl-action-meta {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.pl-action-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    color: #ffffff;
+    line-height: 1.25;
+}
+.pl-action-sub {
+    font-size: 0.74rem;
+    color: rgba(255, 255, 255, 0.58);
+    line-height: 1.3;
+}
+
+/* User Playlist Cards - Bezel-less Mezzotint art feathering matching .sc-card */
+.pl-user-art {
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
+    font-weight: 800;
+    -webkit-mask-image: linear-gradient(to bottom, #000 76%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 76%, transparent 100%);
+}
+.pl-user-meta {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0.55rem 0.9rem 0.85rem;
+    background: linear-gradient(to bottom, transparent, rgba(6, 6, 10, 0.72));
+}
+.pl-user-play {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%) scale(0.88);
+    width: 52px;
+    height: 52px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.22s ease, transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: none;
+    z-index: 4;
+}
+.pl-card:hover .pl-user-play {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+.pl-user-menu-btn {
+    width: 30px;
+    height: 30px;
+    border-radius: 9999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.78);
+    transition: background-color 0.18s ease, color 0.18s ease;
+}
+.pl-user-menu-btn:hover {
+    background: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+}
+
+@media (max-width: 767px) {
+    .pl-action-card {
+        aspect-ratio: 1 / 1.05;
+        padding: 0.9rem;
+    }
+    .pl-action-badge {
+        width: 40px;
+        height: 40px;
+    }
+    .pl-action-title {
+        font-size: 0.88rem;
+    }
+    .pl-user-meta {
+        padding: 0.5rem 0.75rem 0.75rem;
+    }
+}
+
+/* 7. Recent Search Mezzotint Pill Row */
+.recent-search-pill {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 58px;
+    border-radius: 9999px;
+    padding: 5px 8px 5px 6px;
+    background: var(--mezzotint-bg);
+    backdrop-filter: var(--dtunes-optical-filter);
+    -webkit-backdrop-filter: var(--dtunes-optical-filter);
+    border: 1px solid var(--mezzotint-border);
+    box-shadow: 0 10px 28px -8px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+.recent-search-pill:hover {
+    border-color: rgba(255, 255, 255, 0.22);
+    background: rgba(20, 20, 26, 0.85);
+}
+.recent-search-pill .np-art,
+.recent-search-pill img {
+    border-radius: 9999px !important;
+}
+
+
+/* ==========================================================================
+   MOBILE MOTION SYSTEM: SLIDING DOCK PILL, PILL-TO-FULLSCREEN MORPH & SEARCH
+   ========================================================================== */
+
+/* 1. Sliding Glass Pill Indicator inside Floating Bottom Dock */
+#mobile-nav-indicator {
+    display: none;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav {
+    position: fixed !important;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav-indicator {
+    display: block;
+    position: absolute;
+    top: 5px;
+    bottom: 5px;
+    left: 6px;
+    width: calc((100% - 12px) / 4);
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 4px 16px rgba(0, 0, 0, 0.35);
+    transform: translate3d(calc(var(--nav-index, 0) * 100%), 0, 0);
+    transition: transform 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+    will-change: transform;
+    pointer-events: none;
+    z-index: 0;
+}
+
+html[data-ui-mode="mobile"] #mobile-nav > button.active {
+    background: transparent !important;
+    box-shadow: none !important;
+    color: #ffffff !important;
+}
+
+@keyframes mobile-nav-icon-pop {
+    0% { transform: scale(0.84); }
+    55% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+html[data-ui-mode="mobile"] #mobile-nav > button.nav-pop svg,
+html[data-ui-mode="mobile"] #mobile-nav > button.nav-pop > div {
+    animation: mobile-nav-icon-pop 0.36s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 2. GPU-Composited 60/120fps Expanded Mobile Player Sheet Transition */
+html[data-ui-mode="mobile"] body.mobile-player-open #player-footer {
+    animation: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    contain: layout paint style;
+    will-change: transform;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+}
+
+/* 3. Clean Mobile Search Screen: remove redundant Search title & Report pill, lift filters up */
+html[data-ui-mode="mobile"] #search-view-header {
+    display: none !important;
+}
+
+html[data-ui-mode="mobile"] #view-search {
+    padding-top: 0 !important;
+}
+
+html[data-ui-mode="mobile"] #search-filter-bar {
+    margin-top: -6px !important;
+    margin-bottom: 18px !important;
+    padding-top: 2px;
+    padding-bottom: 2px;
+}
+
+html[data-ui-mode="mobile"] .search-filter-pill {
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.22s ease, color 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
+}
+
+html[data-ui-mode="mobile"] .search-filter-pill:active {
+    transform: scale(0.93);
+}
+
+@keyframes mobile-fade-rise {
+    0% { opacity: 0; transform: translate3d(0, 10px, 0); }
+    100% { opacity: 1; transform: translate3d(0, 0, 0); }
+}
+
+html[data-ui-mode="mobile"] #view-search:not(.hidden) #search-filter-bar {
+    animation: mobile-fade-rise 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+html[data-ui-mode="mobile"] #view-search:not(.hidden) #search-history-section {
+    animation: mobile-fade-rise 0.32s cubic-bezier(0.22, 1, 0.36, 1) 0.04s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html[data-ui-mode="mobile"] #mobile-nav-indicator,
+    html[data-ui-mode="mobile"] #main-container {
+        transition: none !important;
+    }
+    html[data-ui-mode="mobile"] #view-search:not(.hidden) #search-filter-bar,
+    html[data-ui-mode="mobile"] #view-search:not(.hidden) #search-history-section {
+        animation: none !important;
+    }
+}
+
+
+/* ==========================================================================
+   MOBILE QUICK SEARCH FIX + MEZZOTINT ALBUM HERO & PLAYLIST CREATOR
+   ========================================================================== */
+
+/* 1. CRITICAL FIX: Unclip #search-dropdown inside #search-shell on mobile */
+html[data-ui-mode="mobile"] body.mobile-search-open #search-shell {
+    overflow: visible !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-search-open #search-dropdown {
+    position: absolute !important;
+    top: calc(100% + 10px) !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    z-index: 180 !important;
+}
+
+html[data-ui-mode="mobile"] body.mobile-search-open #search-dropdown .search-results-content {
+    padding: 8px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+    max-height: calc(100dvh - 154px - var(--mobile-keyboard-lift, 0px)) !important;
+    background: rgba(10, 10, 14, 0.96) !important;
+    backdrop-filter: var(--dtunes-optical-filter) !important;
+    -webkit-backdrop-filter: var(--dtunes-optical-filter) !important;
+    border: 1px solid var(--mezzotint-border) !important;
+    box-shadow: 0 24px 60px -10px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+    border-radius: 1.5rem !important;
+}
+
+.quick-search-all-btn {
+    width: 100%;
+    margin-top: 4px;
+    padding: 10px 16px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    cursor: pointer;
+    transition: background-color 0.18s ease, transform 0.15s ease;
+}
+.quick-search-all-btn:hover {
+    background: rgba(255, 255, 255, 0.14);
+}
+.quick-search-all-btn:active {
+    transform: scale(0.98);
+}
+
+/* 2. Mezzotint Modal Card (Playlist Creator & Playlist Editor) */
+.mezzotint-modal-card {
+    background: rgba(12, 12, 16, 0.94);
+    backdrop-filter: var(--dtunes-optical-filter);
+    -webkit-backdrop-filter: var(--dtunes-optical-filter);
+    border: 1px solid var(--mezzotint-border);
+    box-shadow: 0 28px 70px -14px rgba(0, 0, 0, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    border-radius: 1.75rem;
+    position: relative;
+    overflow: hidden;
+    isolation: isolate;
+}
+.mezzotint-modal-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background-image: var(--mezzotint-grain-overlay);
+    background-repeat: repeat;
+    background-size: 160px 160px;
+    opacity: 0.36;
+    mix-blend-mode: overlay;
+    z-index: 0;
+}
+.mezzotint-modal-card > * {
+    position: relative;
+    z-index: 1;
+}
+
+/* 3. Mezzotint Editorial Album Hero Card (Desktop & Mobile) */
+.album-hero-card {
+    border-radius: 1.75rem;
+    background: rgba(12, 12, 16, 0.88);
+    border: 1px solid var(--mezzotint-border);
+    box-shadow: 0 24px 60px -16px rgba(0, 0, 0, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+    isolation: isolate;
+}
+.album-hero-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background-image: var(--mezzotint-grain-overlay);
+    background-repeat: repeat;
+    background-size: 160px 160px;
+    opacity: 0.34;
+    mix-blend-mode: overlay;
+    z-index: 2;
+}
+.album-hero-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(10, 10, 14, 0.35) 0%, rgba(8, 8, 12, 0.86) 62%, rgba(6, 6, 10, 0.96) 100%);
+    z-index: 1;
+}
+.album-hero-ambient-img {
+    position: absolute;
+    inset: -20%;
+    width: 140%;
+    height: 140%;
+    object-fit: cover;
+    filter: blur(42px) saturate(1.6) brightness(0.65);
+    opacity: 0.65;
+    pointer-events: none;
+    z-index: 0;
+}
+.album-hero-ambient-img[src=""] {
+    opacity: 0;
+}

@@ -155,10 +155,16 @@
                             results.innerHTML = '<div class="p-4 text-center text-zinc-400 text-sm font-medium">No songs found</div>';
                             return;
                         }
+                        const safeQ = utils.escapeHtml(requestedQuery);
+                        const jsQ = utils.escapeJs(requestedQuery);
                         results.innerHTML = songs.map(song => {
                             const storeId = songStore.add(song);
                             return ui.createPlayerListPill(song, `ui.playFromQuickSearch('${storeId}')`, 'quicksearch');
-                        }).join('');
+                        }).join('') + `
+                        <button type="button" class="quick-search-all-btn" onclick="document.getElementById('search-dropdown')?.classList.remove('active'); document.getElementById('search-input')?.blur(); searchManager.performFullSearch('${jsQ}');">
+                            <span>See all results for "${safeQ}"</span>
+                            <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.2"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3"/></svg>
+                        </button>`;
                         stripTouchHoverClasses();
                         updateMarquees();
                     }, deviceMode.isMobileUI() ? 120 : 180);
@@ -265,30 +271,38 @@
                     const storeId = songStore.add(song);
                     const blocked = ui.isOfflineUnavailable(song);
                     const rowClass = blocked
-                        ? 'relative overflow-hidden rounded-2xl mb-2 group select-none flex-shrink-0 w-full flex items-center'
-                        : 'swipe-song relative overflow-hidden rounded-2xl mb-2 group select-none flex-shrink-0 w-full flex items-center';
+                        ? 'np-row relative overflow-hidden rounded-full mb-2 group select-none flex-shrink-0 w-full flex items-center'
+                        : 'swipe-song np-row relative overflow-hidden rounded-full mb-2 group select-none flex-shrink-0 w-full flex items-center';
                     const cardClass = blocked
-                        ? 'glass-panel rounded-2xl p-2 pr-3 flex items-center shadow-2xl w-full border border-white/10 bg-[#121212]/95 opacity-45 grayscale cursor-not-allowed relative z-10'
-                        : 'swipe-song-card glass-panel rounded-2xl p-2 pr-3 flex items-center shadow-2xl w-full border border-white/10 transition-colors bg-[#121212]/95 cursor-pointer relative z-10';
+                        ? 'recent-search-pill opacity-45 grayscale cursor-not-allowed relative z-10'
+                        : 'swipe-song-card recent-search-pill cursor-pointer relative z-10';
                     const playAttr = blocked ? '' : `onclick="searchManager.playRecentSearch('${storeId}')" ondblclick="player.likeSong('${utils.escapeJs(song.id)}')"`;
+                    const fallbackArt = typeof FALLBACK_ART !== 'undefined' ? FALLBACK_ART : 'DTunes.svg';
+                    const safeImg = utils.sanitizeImageUrl ? utils.sanitizeImageUrl(song.img || fallbackArt) : (song.img || fallbackArt);
                     return `
                     <div class="${rowClass}" data-store-id="${storeId}">
-                        <div class="swipe-reveal-left absolute inset-y-0 left-0 flex items-center overflow-hidden pointer-events-none rounded-2xl z-0 bg-emerald-600 text-white font-bold text-xs" style="width:0px;">
+                        <div class="swipe-reveal-left absolute inset-y-0 left-0 flex items-center overflow-hidden pointer-events-none rounded-full z-0 bg-emerald-600 text-white font-bold text-xs" style="width:0px;">
                             <div class="swipe-reveal-content flex items-center gap-2 px-4 whitespace-nowrap min-w-max h-full">
                                 <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7"/></svg>
                                 <span class="swipe-reveal-text font-bold text-xs tracking-wide">Play Next</span>
                             </div>
                         </div>
-                        <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-2xl z-0 bg-white/20 text-white font-bold text-xs" style="width:0px;">
+                        <div class="swipe-reveal-right absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden pointer-events-none rounded-full z-0 bg-white/20 text-white font-bold text-xs" style="width:0px;">
                             <div class="swipe-reveal-content flex items-center justify-end gap-2 px-4 whitespace-nowrap min-w-max h-full">
                                 <span class="swipe-reveal-text font-bold text-xs tracking-wide">Add to Queue</span>
                                 <svg class="swipe-reveal-icon w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10m-10 4h6"/></svg>
                             </div>
                         </div>
                         <div class="${cardClass}" ${playAttr} ${blocked ? 'aria-disabled="true" title="Not downloaded — unavailable offline"' : ''}>
-                            ${ui.createSongPillInner(song)}
+                            <div class="np-art">
+                                <img src="${safeImg}" onerror="this.onerror=null;this.src='${fallbackArt}'" class="np-art-img" loading="lazy" decoding="async" alt="">
+                            </div>
+                            <div class="np-copy">
+                                <div class="marquee-container w-full"><div class="np-title marquee-text">${utils.escapeHtml(song.name || song.title || 'Unknown')}</div></div>
+                                <div class="marquee-container w-full"><div class="np-artist marquee-text">${utils.escapeHtml(song.artist || 'Unknown')}</div></div>
+                            </div>
                             ${blocked ? ui.notDownloadedBadge('ml-1') : ''}
-                            <button class="p-2 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition flex-shrink-0 ml-1" onclick="event.stopPropagation(); searchManager.removeFromSearchHistory('${utils.escapeJs(song.id)}')" title="Remove from recent searches" aria-label="Remove from recent searches">
+                            <button class="w-9 h-9 flex items-center justify-center text-zinc-400 hover:text-white rounded-full hover:bg-white/10 active:scale-90 transition flex-shrink-0 ml-1" onclick="event.stopPropagation(); searchManager.removeFromSearchHistory('${utils.escapeJs(song.id)}')" title="Remove from recent searches" aria-label="Remove from recent searches">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                             </button>
                         </div>
