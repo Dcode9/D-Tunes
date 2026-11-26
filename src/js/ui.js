@@ -176,12 +176,7 @@
                 if (expand) {
                     if (!state.currentTrack) return;
                     ui.closeMobileSearch();
-
-                    // Measure collapsed mini-player pill before expanding for FLIP pill-to-fullscreen morph
-                    const pillRect = (!document.body.classList.contains('mobile-player-open') && island)
-                        ? island.getBoundingClientRect()
-                        : null;
-
+                    const alreadyOpen = document.body.classList.contains('mobile-player-open') && !document.body.classList.contains('mobile-player-closing');
                     document.body.classList.remove('mobile-player-closing');
                     document.body.classList.add('mobile-player-open');
                     ui.switchMobilePlayerTab('track');
@@ -189,44 +184,32 @@
                     if (ui.initQueuePointerReorder) ui.initQueuePointerReorder();
                     if (state.fullscreenMode && ui.updateFullscreenQueue) ui.updateFullscreenQueue();
 
-                    if (footer && pillRect && pillRect.width > 40 && pillRect.height > 20 && !reducedMotion) {
-                        const vw = window.innerWidth || 390;
-                        const vh = window.innerHeight || 844;
-                        const dx = (pillRect.left + pillRect.width / 2) - (vw / 2);
-                        const dy = (pillRect.top + pillRect.height / 2) - (vh / 2);
-                        const sx = Math.max(0.35, Math.min(1, pillRect.width / vw));
-                        const sy = Math.max(0.06, Math.min(0.25, pillRect.height / vh));
-
-                        document.body.classList.add('mobile-player-morphing');
+                    if (footer && !alreadyOpen && !reducedMotion) {
                         footer.style.transition = 'none';
-                        footer.style.transformOrigin = 'center center';
-                        footer.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(${sx}, ${sy})`;
-                        footer.style.borderRadius = '36px';
-                        footer.style.opacity = '0.78';
-                        void footer.offsetWidth;
-
+                        footer.style.transform = 'translate3d(0, 100%, 0)';
+                        void footer.offsetHeight;
                         requestAnimationFrame(() => {
                             if (ui._mobileMorphToken !== token) return;
-                            footer.style.transition = 'transform 0.44s cubic-bezier(0.22, 1, 0.36, 1), border-radius 0.44s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.28s ease';
-                            footer.style.transform = 'translate3d(0, 0, 0) scale(1, 1)';
-                            footer.style.borderRadius = '0px';
-                            footer.style.opacity = '1';
+                            footer.style.transition = 'transform 0.34s cubic-bezier(0.22, 1, 0.36, 1)';
+                            footer.style.transform = 'translate3d(0, 0, 0)';
                             setTimeout(() => {
                                 if (ui._mobileMorphToken !== token) return;
-                                document.body.classList.remove('mobile-player-morphing');
                                 footer.style.transition = '';
                                 footer.style.transform = '';
-                                footer.style.transformOrigin = '';
-                                footer.style.borderRadius = '';
-                                footer.style.opacity = '';
                                 resizeCanvas();
-                            }, 460);
+                                updateMarquees();
+                            }, 360);
                         });
                     } else {
-                        requestAnimationFrame(resizeCanvas);
+                        if (footer) {
+                            footer.style.transition = '';
+                            footer.style.transform = '';
+                        }
+                        requestAnimationFrame(() => {
+                            resizeCanvas();
+                            updateMarquees();
+                        });
                     }
-                    setTimeout(resizeCanvas, 120);
-                    setTimeout(resizeCanvas, 340);
                 } else {
                     if (!document.body.classList.contains('mobile-player-open')) return;
                     if (state.songDetailsExpanded) {
@@ -235,30 +218,25 @@
                     }
 
                     if (footer && !reducedMotion) {
-                        document.body.classList.add('mobile-player-morphing', 'mobile-player-closing');
-                        footer.style.transformOrigin = 'center center';
-                        footer.style.transition = 'transform 0.32s cubic-bezier(0.32, 0.72, 0, 1), border-radius 0.32s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.24s ease';
-                        footer.style.transform = 'translate3d(0, 40%, 0) scale(0.92, 0.12)';
-                        footer.style.borderRadius = '36px';
-                        footer.style.opacity = '0';
-
+                        document.body.classList.add('mobile-player-closing');
+                        footer.style.transition = 'transform 0.26s cubic-bezier(0.32, 0.72, 0, 1)';
+                        footer.style.transform = 'translate3d(0, 100%, 0)';
                         setTimeout(() => {
                             if (ui._mobileMorphToken !== token) return;
-                            document.body.classList.remove('mobile-player-open', 'mobile-player-morphing', 'mobile-player-closing');
+                            document.body.classList.remove('mobile-player-open', 'mobile-player-closing');
                             footer.style.transition = '';
                             footer.style.transform = '';
-                            footer.style.transformOrigin = '';
-                            footer.style.borderRadius = '';
-                            footer.style.opacity = '';
                             updateMarquees();
-                        }, 310);
+                        }, 270);
                     } else {
-                        document.body.classList.remove('mobile-player-open', 'mobile-player-morphing', 'mobile-player-closing');
+                        document.body.classList.remove('mobile-player-open', 'mobile-player-closing');
+                        if (footer) {
+                            footer.style.transition = '';
+                            footer.style.transform = '';
+                        }
+                        updateMarquees();
                     }
                 }
-                updateMarquees();
-                setTimeout(updateMarquees, 120);
-                setTimeout(updateMarquees, 460);
             },
 
             openMobileSearch: () => {

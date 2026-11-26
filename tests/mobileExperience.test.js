@@ -106,7 +106,7 @@ test('Mobile JS & HTML: playlist cards, recent searches, lyrics tab sync, back b
     assert.ok(html.includes('aria-label="Back to Library"'), 'Playlist view must expose a mobile-visible Back button');
     assert.ok(html.includes('aria-label="Go back"'), 'Album view must expose a mobile-visible Back button');
     assert.ok(html.includes('style="--seg-count:3;"'), 'Mobile player tabs must default to 3 visible tabs before lyrics load');
-    assert.ok(sw.includes('dtunes-shell-v1.4.14-quicksearch-album-creator'), 'Service worker shell cache version must be bumped');
+    assert.ok(sw.includes('dtunes-shell-v1.4.15-mobile-smooth-sheet'), 'Service worker shell cache version must be bumped');
 });
 
 test('Mobile Motion & Search Cleanup: sliding dock pill, FLIP player morph & clean search header', () => {
@@ -118,8 +118,8 @@ test('Mobile Motion & Search Cleanup: sliding dock pill, FLIP player morph & cle
     assert.ok(css.includes('translate3d(calc(var(--nav-index, 0) * 100%), 0, 0)'), 'Bottom dock indicator must glide smoothly via --nav-index');
     assert.ok(ui.includes("nav.style.setProperty('--nav-index'"), 'setMobileNavActive must update --nav-index');
 
-    assert.ok(ui.includes("document.body.classList.add('mobile-player-morphing')"), 'toggleMobilePlayer must perform FLIP pill-to-fullscreen morph');
-    assert.ok(ui.includes("document.body.classList.add('mobile-player-morphing', 'mobile-player-closing')"), 'toggleMobilePlayer must perform reverse morph on close');
+    assert.ok(ui.includes("footer.style.transform = 'translate3d(0, 100%, 0)'"), 'toggleMobilePlayer must use GPU-only translate3d sheet transition');
+    assert.ok(css.includes('backdrop-filter: none !important;'), 'Expanded opaque mobile player sheet must disable backdrop-filter to stay 60/120fps on iOS');
 
     assert.ok(css.includes('html[data-ui-mode="mobile"] #search-view-header'), 'Redundant Search title and Report row must be hidden on mobile');
     assert.ok(html.includes('id="search-history-section"') && html.indexOf('id="btn-clear-search-history"') > html.indexOf('id="search-history-section"'), 'Clear History button must live in the Recent Searches header row');
