@@ -6,7 +6,7 @@
  * which loads the same origin). Downloaded songs are handled separately by
  * src/js/offline.js. Bump VERSION to publish a new shell.
  */
-const VERSION = 'dtunes-shell-v1.5.2-fast-stream-fallback';
+const VERSION = 'dtunes-shell-v1.5.3-pure-native-audio';
 const NETWORK_TIMEOUT_MS = 3000;
 
 // Same-origin shell assets (no query strings; lookups ignore the ?v= cache-buster).

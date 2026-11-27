@@ -364,3 +364,65 @@ def test_stream_backend_redirect_and_config(monkeypatch):
         assert redir.status_code == 307
         assert redir.headers["location"] == "https://stream.example.com/api-v2/stream/dQw4w9WgXcQ"
         assert "no-store" in redir.headers["cache-control"]
+
+
+def test_saavn_audio_bridge_matches_standard_track_and_guards_mashups():
+    assert v2._is_derivative_title("Levitating Mashup (Slowed)") is True
+    assert v2._is_derivative_title("Laal Pari") is False
+
+    meta = v2.Track(
+        id="FXxuVh9KIPs",
+        title="Laal Pari",
+        artist="Yo Yo Honey Singh, Simar Kaur",
+        artwork="https://yt3.googleusercontent.com/abc=w544-h544-c-l90-rj",
+        duration=256,
+        source="youtube",
+    )
+    fake_payload = {
+        "data": {
+            "results": [
+                {
+                    "name": "Laal Pari (From \"Housefull 5\")",
+                    "duration": 256,
+                    "artists": {"primary": [{"name": "Yo Yo Honey Singh"}, {"name": "Simar Kaur"}]},
+                    "downloadUrl": [{"quality": "320kbps", "url": "https://aac.saavncdn.com/test/laal_pari_320.mp4"}],
+                    "image": [{"quality": "500x500", "url": "https://c.saavncdn.com/test/laal_pari_500x500.jpg"}],
+                }
+            ]
+        }
+    }
+
+    class FakeResp:
+        status_code = 200
+        def json(self):
+            return fake_payload
+
+    class FakeClient:
+        def __init__(self, *a, **kw):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def get(self, *a, **kw):
+            return FakeResp()
+
+    with patch.object(v2.httpx, "Client", FakeClient):
+        info, err = v2._resolve_saavn_bridge_sync("FXxuVh9KIPs", meta)
+        assert err is None
+        assert info is not None
+        assert info.url.endswith("laal_pari_320.mp4")
+        assert info.content_type == "audio/mp4"
+        assert info.artwork == meta.artwork
+
+        remix_meta = v2.Track(
+            id="x1y2z3a4b5c",
+            title="Laal Pari x Espresso Mashup",
+            artist="DJ Mix",
+            artwork="https://i.ytimg.com/vi/x1y2z3a4b5c/hq720.jpg",
+            duration=210,
+            source="youtube",
+        )
+        rejected_info, rejected_err = v2._resolve_saavn_bridge_sync("x1y2z3a4b5c", remix_meta)
+        assert rejected_info is None
+        assert rejected_err is not None

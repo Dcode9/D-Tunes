@@ -2296,8 +2296,7 @@
                         });
                         if (!(typeof isPlaybackPending !== 'undefined' && isPlaybackPending && !state.userPaused)) {
                             const audioEl = document.getElementById('audio-el');
-                            const isYT = typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt';
-                            const isRunning = isYT ? Boolean(state.playing) : Boolean(state.playing || (audioEl && !audioEl.paused && !audioEl.ended));
+                            const isRunning = Boolean(state.playing || (audioEl && !audioEl.paused && !audioEl.ended));
                             navigator.mediaSession.playbackState = isRunning ? 'playing' : 'paused';
                         }
                         if (typeof window.registerMediaSessionHandlers === 'function') {
@@ -2469,9 +2468,7 @@ const mPlayBtn = document.getElementById('m-icon-play');
                 }
             },
             updatePlayBtn: () => {
-                // Only reconcile against <audio> when <audio> is the active engine (never override YouTube IFrame playback!)
-                const isYTEngine = typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt';
-                if (state.loaded && !isPlaybackPending && !isYTEngine) {
+                if (state.loaded && !isPlaybackPending) {
                     const isAudioRunning = !audio.paused && !audio.ended;
                     if (isAudioRunning && !state.playing) {
                         state.playing = true;

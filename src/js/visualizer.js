@@ -140,8 +140,7 @@
                     lastClipProgress = currentProgress;
                 }
                 time += 0.05; let targetLow = 0, targetMid = 0;
-                const isYTEngine = typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt';
-                if (state.playing && isAudioContextInitialized && analyserData && !isYTEngine) {
+                if (state.playing && isAudioContextInitialized && analyserData) {
                     analyser.getByteFrequencyData(analyserData);
                     let sumLow = 0; for (let i = 0; i < VIZ_LOW_BINS_END; i++) sumLow += analyserData[i];
                     let sumMid = 0; for (let i = VIZ_MID_BINS_START; i < VIZ_MID_BINS_END; i++) sumMid += analyserData[i];

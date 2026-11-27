@@ -88,21 +88,24 @@ test('D-Tunes API v2: no stale JIOSAAVN_API references remain and album/artist e
   assert.ok(apiContent.includes('getArtist:'), 'api.js must implement getArtist');
 });
 
-test('D-Tunes API v2: lyrics, playhead, timer, and YT player adapter stay in sync', () => {
+test('D-Tunes API v2: lyrics, playhead, timer, and native audio engine stay in sync', () => {
   const lyricsContent = fs.readFileSync(path.join(__dirname, '../src/js/lyrics.js'), 'utf8');
   assert.ok(!lyricsContent.includes("getElementById('audio')"), "lyrics.js must not query nonexistent id='audio'");
   assert.ok(lyricsContent.includes("getElementById('audio-el')"), "lyrics.js must query id='audio-el'");
-  assert.ok(lyricsContent.includes('_ytPlayerInstance'), 'lyrics.js must read YT player time when YouTube is active');
+  assert.ok(lyricsContent.includes('getActivePlaybackClock'), 'lyrics.js must read shared native playback clock');
+  assert.ok(!lyricsContent.includes('_ytPlayerInstance'), 'lyrics.js must not reference removed YouTube IFrame instance');
 
   const mainContent = fs.readFileSync(path.join(__dirname, '../src/js/main.js'), 'utf8');
   assert.ok(!mainContent.includes('lyricsManager.syncTime(cur, true)'), 'tickPlayhead must not force-scroll lyrics at 60fps');
+  assert.ok(mainContent.includes('sleepTimer.onTrackEnded'), 'native audio ended handler must honor sleepTimer.onTrackEnded');
+  assert.ok(mainContent.includes("recommendationEvents.record('play_complete'"), 'native audio timeupdate must record play_complete');
 
   const timerContent = fs.readFileSync(path.join(__dirname, '../src/js/timer.js'), 'utf8');
   assert.ok(timerContent.includes('player.setVolume'), 'timer.js must route volume fades through player.setVolume');
 
-  const playerContent = fs.readFileSync(path.join(__dirname, '../src/js/player.js'), 'utf8');
-  assert.ok(playerContent.includes('sleepTimer.onTrackEnded'), 'YT player ENDED handler must honor sleepTimer.onTrackEnded');
-  assert.ok(playerContent.includes("recommendationEvents.record('play_complete'"), 'YT progress timer must record play_complete');
+  const html = fs.readFileSync(path.join(__dirname, '../index.html'), 'utf8');
+  assert.ok(!html.includes('yt-player-host'), 'index.html must not contain hidden yt-player-host iframe container');
+  assert.ok(!html.includes('youtube.com/iframe_api'), 'index.html must not load youtube.com/iframe_api');
 });
 
 test('D-Tunes API v2: legacy JioSaavn migration layer is wired across api, player, dverseClient, and v2.py', () => {
@@ -149,11 +152,18 @@ test('D-Tunes API v2: dedicated stream host routing, mobile CORS hygiene, and 1:
   assert.ok(playerJs.includes('applyAudioCorsPolicy'), 'player.js must centralize mobile/desktop CORS policy');
   assert.ok(playerJs.includes('registerMediaSessionHandlers'), 'player.js must expose registerMediaSessionHandlers');
   assert.ok(playerJs.includes('attemptNativeAudio'), 'player.js must use bounded attemptNativeAudio recovery');
-  assert.ok(playerJs.includes('startYTPlayback'), 'player.js must share clean startYTPlayback fallback');
+  assert.ok(!playerJs.includes('startYTPlayback'), 'player.js must not include YouTube IFrame fallback');
+  assert.ok(!playerJs.includes('YT.Player'), 'player.js must not instantiate YT.Player');
   assert.doesNotMatch(playerJs, /recoverFromAudioError[\s\S]*?audio\.crossOrigin\s*=\s*['"]anonymous['"]/,
     'recoverFromAudioError must not bypass mobile CORS policy');
 
   const uiJs = fs.readFileSync(path.join(__dirname, '../src/js/ui.js'), 'utf8');
+  const desktopJs = fs.readFileSync(path.join(__dirname, '../src/js/desktop.js'), 'utf8');
+  const visualizerJs = fs.readFileSync(path.join(__dirname, '../src/js/visualizer.js'), 'utf8');
+  const stateJs = fs.readFileSync(path.join(__dirname, '../src/js/state.js'), 'utf8');
+  for (const [name, content] of [['player.js', playerJs], ['ui.js', uiJs], ['desktop.js', desktopJs], ['visualizer.js', visualizerJs], ['state.js', stateJs]]) {
+    assert.ok(!content.includes("_dtunesActiveEngine === 'yt'"), `${name} must not branch on YouTube IFrame engine`);
+  }
   assert.ok(!uiJs.includes("type: 'image/png'\n"), 'ui.js must not hardcode image/png for JPEG YouTube thumbnails');
 
   const utilsJs = fs.readFileSync(path.join(__dirname, '../src/js/utils.js'), 'utf8');

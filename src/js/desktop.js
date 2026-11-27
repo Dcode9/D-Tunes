@@ -470,10 +470,7 @@
     const position = (clock && Number.isFinite(clock.currentTime))
       ? Math.max(0, clock.currentTime)
       : (el && Number.isFinite(el.currentTime) ? Math.max(0, el.currentTime) : 0);
-    const isYTEngine = window._dtunesActiveEngine === 'yt';
-    const isPlaying = isYTEngine
-      ? Boolean(window.state && window.state.playing)
-      : Boolean(window.state && window.state.playing && (!el || !el.paused || window.state.loading));
+    const isPlaying = Boolean(window.state && window.state.playing && (!el || !el.paused || window.state.loading));
     api.sendMediaState({
       playing: isPlaying,
       hasTrack: Boolean(track),
