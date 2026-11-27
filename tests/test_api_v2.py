@@ -426,3 +426,13 @@ def test_saavn_audio_bridge_matches_standard_track_and_guards_mashups():
         rejected_info, rejected_err = v2._resolve_saavn_bridge_sync("x1y2z3a4b5c", remix_meta)
         assert rejected_info is None
         assert rejected_err is not None
+
+        vevo_meta = v2.Track(
+            id="4NRXx6U8ABQ",
+            title="The Weeknd - Blinding Lights (Official Video)",
+            artist="TheWeekndVEVO",
+            artwork="https://i.ytimg.com/vi/4NRXx6U8ABQ/hq720.jpg",
+            duration=204,
+            source="youtube",
+        )
+        assert v2._normalize_artist_hint(vevo_meta.artist) == "The Weeknd"

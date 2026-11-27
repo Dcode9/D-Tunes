@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from collections import OrderedDict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import asynccontextmanager
 import hashlib
 import logging
@@ -772,7 +772,7 @@ def _get_youtube_visitor_data() -> str:
         if val and now < exp:
             return val
     try:
-        with httpx.Client(timeout=2.0, follow_redirects=True) as client:
+        with httpx.Client(timeout=1.4, follow_redirects=True) as client:
             res = client.get("https://www.youtube.com/sw.js_data", headers={"User-Agent": _UPSTREAM_UA})
             if res.status_code == 200:
                 m = re.search(r'"(Cg[A-Za-z0-9%_-]{10,})"', res.text)
@@ -789,7 +789,7 @@ def _get_youtube_visitor_data() -> str:
 def _resolve_innertube_sync(video_id: str) -> tuple[Optional[StreamInfo], Optional[str]]:
     errs = []
     visitor_data = _get_youtube_visitor_data()
-    with httpx.Client(timeout=3.0, follow_redirects=True) as client:
+    with httpx.Client(timeout=2.2, follow_redirects=True) as client:
         for cfg in _INNERTUBE_CLIENTS:
             try:
                 client_ctx = {k: v for k, v in cfg.items() if k != "ua"}
@@ -852,7 +852,7 @@ def _resolve_innertube_sync(video_id: str) -> tuple[Optional[StreamInfo], Option
 
 
 _CLEAN_TITLE_PARENS_RE = re.compile(
-    r"\s*[\(\[](?:official\s*(?:music\s*)?(?:video|audio|lyric\s*video|visualizer)|lyrics?|audio|hd|4k|full\s*song|video\s*song)[\)\]]",
+    r"\s*[\(\[](?:official\s*(?:music\s*)?(?:video|audio|lyric\s*video|visualizer)|lyrics?|audio|hd|4k(?:\s*remaster)?|remaster(?:ed)?|explicit|full\s*song|video\s*song)[\)\]]",
     re.IGNORECASE,
 )
 
@@ -862,6 +862,19 @@ def _clean_match_title(title: str) -> str:
     if "|" in cleaned:
         cleaned = cleaned.split("|", 1)[0].strip()
     return cleaned or str(title or "").strip()
+
+
+def _normalize_artist_hint(artist: str) -> str:
+    primary = re.split(r"[,&]|feat\.?|ft\.?", str(artist or ""), flags=re.IGNORECASE)[0].strip()
+    primary = re.sub(r"\s*-\s*Topic$", "", primary, flags=re.IGNORECASE).strip()
+    primary = re.sub(r"(?i)official$", "", primary).strip()
+    primary = re.sub(r"(?i)vevo$", "", primary).strip()
+    # Turn squashed camelCase/VEVO handles like "TheWeeknd" -> "The Weeknd" when matching artist tokens
+    if primary and " " not in primary and re.search(r"[a-z][A-Z]", primary):
+        primary = re.sub(r"([a-z])([A-Z])", r"\1 \2", primary)
+    if primary.lower() in ("unknown artist", "various artists", ""):
+        return ""
+    return primary
 
 
 def _is_derivative_title(title: str) -> bool:
@@ -875,7 +888,33 @@ def _fetch_video_metadata_sync(video_id: str) -> Optional[Track]:
     if isinstance(cached, Track):
         return cached
 
-    if get_ytmusic:
+    def _via_oembed() -> Optional[Track]:
+        try:
+            with httpx.Client(timeout=1.8, follow_redirects=True) as client:
+                res = client.get(
+                    "https://www.youtube.com/oembed",
+                    params={"url": f"https://www.youtube.com/watch?v={video_id}", "format": "json"},
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    title = str(data.get("title") or "").strip()
+                    author = re.sub(r"\s*-\s*Topic$", "", str(data.get("author_name") or ""), flags=re.IGNORECASE).strip()
+                    if title:
+                        return Track(
+                            id=video_id,
+                            title=title,
+                            artist=author or "Unknown Artist",
+                            artwork=_normalize_artwork_url(str(data.get("thumbnail_url") or "")),
+                            duration=None,
+                            source="youtube",
+                        )
+        except Exception:
+            pass
+        return None
+
+    def _via_ytm() -> Optional[Track]:
+        if not get_ytmusic:
+            return None
         try:
             ytm = get_ytmusic()
             song = ytm.get_song(video_id)
@@ -884,7 +923,7 @@ def _fetch_video_metadata_sync(video_id: str) -> Optional[Track]:
                 dur_raw = vd.get("lengthSeconds")
                 artist = re.sub(r"\s*-\s*Topic$", "", str(vd.get("author") or ""), flags=re.IGNORECASE).strip() or "Unknown Artist"
                 thumbs = (vd.get("thumbnail") or {}).get("thumbnails") or []
-                tr = Track(
+                return Track(
                     id=video_id,
                     title=str(vd.get("title")),
                     artist=artist,
@@ -892,34 +931,33 @@ def _fetch_video_metadata_sync(video_id: str) -> Optional[Track]:
                     duration=int(dur_raw) if dur_raw and str(dur_raw).isdigit() else None,
                     source="youtube",
                 )
-                track_meta_cache._set_sync(video_id, tr, META_TTL)
-                return tr
         except Exception:
             pass
+        return None
 
+    # Fetch YTM + fast oEmbed concurrently with a strict 1.8s budget so cold tracks never stall
+    pool = ThreadPoolExecutor(max_workers=2)
     try:
-        with httpx.Client(timeout=2.5, follow_redirects=True) as client:
-            res = client.get(
-                "https://www.youtube.com/oembed",
-                params={"url": f"https://www.youtube.com/watch?v={video_id}", "format": "json"},
-            )
-            if res.status_code == 200:
-                data = res.json()
-                title = str(data.get("title") or "").strip()
-                author = re.sub(r"\s*-\s*Topic$", "", str(data.get("author_name") or ""), flags=re.IGNORECASE).strip()
-                if title:
-                    tr = Track(
-                        id=video_id,
-                        title=title,
-                        artist=author or "Unknown Artist",
-                        artwork=_normalize_artwork_url(str(data.get("thumbnail_url") or "")),
-                        duration=None,
-                        source="youtube",
-                    )
-                    track_meta_cache._set_sync(video_id, tr, META_TTL)
-                    return tr
-    except Exception:
-        pass
+        ytm_fut = pool.submit(_via_ytm)
+        oembed_fut = pool.submit(_via_oembed)
+        ytm_tr: Optional[Track] = None
+        oembed_tr: Optional[Track] = None
+        try:
+            ytm_tr = ytm_fut.result(timeout=1.8)
+        except Exception:
+            ytm_tr = None
+        if isinstance(ytm_tr, Track):
+            track_meta_cache._set_sync(video_id, ytm_tr, META_TTL)
+            return ytm_tr
+        try:
+            oembed_tr = oembed_fut.result(timeout=1.5)
+        except Exception:
+            oembed_tr = None
+        if isinstance(oembed_tr, Track):
+            track_meta_cache._set_sync(video_id, oembed_tr, META_TTL)
+            return oembed_tr
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
     return None
 
 
@@ -930,9 +968,16 @@ def _resolve_saavn_bridge_sync(video_id: str, meta: Optional[Track]) -> tuple[Op
     raw_title = meta.title
     clean_title = _clean_match_title(raw_title)
     is_deriv = _is_derivative_title(raw_title)
-    primary_artist = re.split(r"[,&]|feat\.?|ft\.?", meta.artist or "", flags=re.IGNORECASE)[0].strip()
-    if primary_artist.lower() in ("unknown artist", "various artists", ""):
-        primary_artist = ""
+    primary_artist = _normalize_artist_hint(meta.artist or "")
+    # Strip leading "Artist - " prefix common on VEVO/music videos (e.g. "The Weeknd - Blinding Lights")
+    if " - " in clean_title:
+        left, right = clean_title.split(" - ", 1)
+        left_s = re.sub(r"[^a-z0-9]", "", left.lower())
+        art_s = re.sub(r"[^a-z0-9]", "", primary_artist.lower())
+        if right.strip() and ((art_s and (left_s in art_s or art_s in left_s)) or len(left.split()) <= 3):
+            if not primary_artist:
+                primary_artist = left.strip()
+            clean_title = right.strip()
     query = f"{clean_title} {primary_artist}".strip()
     if not query:
         return (None, "empty query")
@@ -1151,38 +1196,38 @@ def resolve_sync(video_id: str) -> StreamInfo:
                 continue
 
     meta = _fetch_video_metadata_sync(video_id)
+    it_info: Optional[StreamInfo] = None
+    it_err: Optional[str] = None
     saavn_err: Optional[str] = None
     audius_err: Optional[str] = None
+    piped_err: Optional[str] = None
+    inv_err: Optional[str] = None
 
-    # On unauthenticated serverless hosts (Vercel), run InnerTube + official Audio Bridge concurrently
+    # On unauthenticated serverless hosts (Vercel), race InnerTube + Audio Bridge and return first valid stream immediately
     if is_vercel_unauthed and meta and not _is_derivative_title(meta.title):
-        with ThreadPoolExecutor(max_workers=2) as pool:
+        pool = ThreadPoolExecutor(max_workers=2)
+        try:
             it_fut = pool.submit(_resolve_innertube_sync, video_id)
             saavn_fut = pool.submit(_resolve_saavn_bridge_sync, video_id, meta)
-            it_info, it_err = it_fut.result()
-            if it_info:
-                return it_info
-            saavn_info, saavn_err = saavn_fut.result()
-            if saavn_info:
-                return saavn_info
+            for fut in as_completed([it_fut, saavn_fut]):
+                info, err = fut.result()
+                if fut is it_fut:
+                    it_err = err
+                else:
+                    saavn_err = err
+                if info:
+                    return info
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
     else:
         # Direct InnerTube IOS / ANDROID_VR resolver (fast M4A for iOS Safari)
         it_info, it_err = _resolve_innertube_sync(video_id)
         if it_info:
             return it_info
 
-    # yt-dlp across mobile/VR client candidates (bounded on serverless)
-    ytdlp_candidates = CLIENT_CANDIDATES[:2] if is_vercel_unauthed else CLIENT_CANDIDATES
-    for client_list in ytdlp_candidates:
-        try:
-            return _extract_ytdlp_stream(video_id, client_list, include_cookies=False)
-        except Exception as exc:
-            last_err = exc
-            continue
-
-    # API-level Audio Bridges (JioSaavn 320kbps AAC/MP4 + Audius MP3)
+    # Fast API-level Audio Bridges (JioSaavn 320kbps AAC/MP4 + Audius MP3 for remixes/mashups/indie)
     if meta:
-        if saavn_err is None:
+        if saavn_err is None and not (is_vercel_unauthed and not _is_derivative_title(meta.title)):
             saavn_info, saavn_err = _resolve_saavn_bridge_sync(video_id, meta)
             if saavn_info:
                 return saavn_info
@@ -1190,17 +1235,31 @@ def resolve_sync(video_id: str) -> StreamInfo:
         if audius_info:
             return audius_info
 
-    # Piped & Invidious API fallbacks (run concurrently when on serverless)
+    # yt-dlp across mobile/VR client candidates (bounded to 1 client on serverless since InnerTube already ran)
+    ytdlp_candidates = CLIENT_CANDIDATES[:1] if is_vercel_unauthed else CLIENT_CANDIDATES
+    for client_list in ytdlp_candidates:
+        try:
+            return _extract_ytdlp_stream(video_id, client_list, include_cookies=False)
+        except Exception as exc:
+            last_err = exc
+            continue
+
+    # Piped & Invidious API fallbacks (race concurrently when on serverless)
     if is_vercel_unauthed:
-        with ThreadPoolExecutor(max_workers=2) as pool:
+        pool = ThreadPoolExecutor(max_workers=2)
+        try:
             piped_fut = pool.submit(_resolve_piped_sync, video_id)
             inv_fut = pool.submit(_resolve_invidious_sync, video_id)
-            piped_info, piped_err = piped_fut.result()
-            if piped_info:
-                return piped_info
-            fallback_info, inv_err = inv_fut.result()
-            if fallback_info:
-                return fallback_info
+            for fut in as_completed([piped_fut, inv_fut]):
+                info, err = fut.result()
+                if fut is piped_fut:
+                    piped_err = err
+                else:
+                    inv_err = err
+                if info:
+                    return info
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
     else:
         piped_info, piped_err = _resolve_piped_sync(video_id)
         if piped_info:
