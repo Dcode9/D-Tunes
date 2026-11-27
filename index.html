@@ -2027,7 +2027,9 @@
             <!-- Header -->
             <div class="fullscreen-header flex items-center justify-between gap-4 w-full flex-shrink-0 z-10">
                 <div class="flex items-center gap-3.5 min-w-0 max-w-[32%]">
-                    <img id="fullscreen-mini-art" src="DTunes.svg" class="w-11 h-11 rounded-xl object-cover shadow-lg border border-white/10" alt="">
+                    <div class="w-11 h-11 rounded-xl overflow-hidden shadow-lg border border-white/10 flex-shrink-0">
+                        <img id="fullscreen-mini-art" src="DTunes.svg" class="w-full h-full object-cover" alt="">
+                    </div>
                     <div class="min-w-0">
                         <div id="fullscreen-mini-title" class="text-sm font-semibold text-white truncate">Track Title</div>
                         <div id="fullscreen-mini-artist" class="text-xs text-zinc-400 truncate mt-0.5">Artist</div>

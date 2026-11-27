@@ -317,3 +317,49 @@ def test_cap_range_header_supports_ios_and_vercel_chunks():
     assert v2._cap_range_header("bytes=0-1", max_bytes=1024) == "bytes=0-1"
     assert v2._cap_range_header("bytes=1024-", max_bytes=1024) == "bytes=1024-2047"
     assert v2._cap_range_header("bytes=0-99999", max_bytes=1024) == "bytes=0-1023"
+
+
+def test_artwork_normalization_forces_square_google_crop_and_prefers_letterbox_free_ytimg():
+    assert (
+        v2._normalize_artwork_url("http://lh3.googleusercontent.com/abc=w544-h544-l90-rj")
+        == "https://lh3.googleusercontent.com/abc=w544-h544-c-l90-rj"
+    )
+    assert (
+        v2._normalize_artwork_url("https://yt3.googleusercontent.com/xyz=w1280-h720-c-l90-rj")
+        == "https://yt3.googleusercontent.com/xyz=w544-h544-c-l90-rj"
+    )
+    assert (
+        v2._normalize_artwork_url("https://lh3.googleusercontent.com/bare")
+        == "https://lh3.googleusercontent.com/bare=w544-h544-c-l90-rj"
+    )
+
+    thumbs = [
+        {"url": "https://i.ytimg.com/vi/abc12345678/hqdefault.jpg", "width": 480, "height": 360},
+        {"url": "https://i.ytimg.com/vi/abc12345678/hq720.jpg", "width": 1280, "height": 720},
+    ]
+    assert v2._pick_best_thumbnail(thumbs) == "https://i.ytimg.com/vi/abc12345678/hq720.jpg"
+
+
+def test_cookies_b64_and_pot_provider_opts(monkeypatch):
+    import base64
+    encoded = base64.b64encode(b"# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\txyz\n").decode()
+    monkeypatch.setenv("YTDLP_COOKIES_B64", encoded)
+    monkeypatch.setenv("YTDLP_PO_TOKEN", "web.gvs+abc123")
+    monkeypatch.setenv("YTDLP_POT_PROVIDER_URL", "http://127.0.0.1:4416")
+    opts = v2._base_opts(player_client=["mweb"], include_cookies=True)
+    assert opts["extractor_args"]["youtube"]["po_token"] == ["web.gvs+abc123"]
+    assert opts["extractor_args"]["youtubepot-bgutilhttp"]["base_url"] == ["http://127.0.0.1:4416"]
+    assert os.path.exists(opts["cookiefile"])
+
+
+def test_stream_backend_redirect_and_config(monkeypatch):
+    monkeypatch.setattr(v2, "STREAM_BACKEND_URL", "https://stream.example.com")
+    with TestClient(v2.app) as client:
+        cfg = client.get("/api-v2/config")
+        assert cfg.status_code == 200
+        assert cfg.json()["stream_base_url"] == "https://stream.example.com"
+
+        redir = client.get("/api-v2/stream/dQw4w9WgXcQ", follow_redirects=False)
+        assert redir.status_code == 307
+        assert redir.headers["location"] == "https://stream.example.com/api-v2/stream/dQw4w9WgXcQ"
+        assert "no-store" in redir.headers["cache-control"]

@@ -126,6 +126,10 @@
         ];
         const FALLBACK_ART = 'DTunes.svg';
 
+        const GOOGLE_ARTWORK_HOST_RE = /(googleusercontent\.com|ggpht\.com)/i;
+        const GOOGLE_WH_PARAM_RE = /=w\d+-h\d+(?:-[^/?#]*)?/i;
+        const GOOGLE_S_PARAM_RE = /=s\d+(?:-[^/?#]*)?/i;
+
         const sanitizeImageUrl = (value) => {
             let url = String(value || '').trim();
             if (!url || url === 'undefined' || url === 'null') {
@@ -133,6 +137,26 @@
             }
             if (url.startsWith('http://')) {
                 url = 'https://' + url.slice(7);
+            }
+            if (GOOGLE_ARTWORK_HOST_RE.test(url)) {
+                const ensureCropFlags = (tail) => {
+                    const parts = tail.split('-').filter(Boolean);
+                    if (!parts.includes('c')) parts.unshift('c');
+                    return parts.join('-');
+                };
+                if (GOOGLE_WH_PARAM_RE.test(url)) {
+                    url = url.replace(GOOGLE_WH_PARAM_RE, (m) => {
+                        const tail = m.replace(/^=w\d+-h\d+/i, '');
+                        return `=w544-h544-${ensureCropFlags(tail)}`;
+                    });
+                } else if (GOOGLE_S_PARAM_RE.test(url)) {
+                    url = url.replace(GOOGLE_S_PARAM_RE, (m) => {
+                        const tail = m.replace(/^=s\d+/i, '');
+                        return `=w544-h544-${ensureCropFlags(tail)}`;
+                    });
+                } else if (!/=[^/]*$/.test(url)) {
+                    url = `${url}=w544-h544-c-l90-rj`;
+                }
             }
             return url;
         };

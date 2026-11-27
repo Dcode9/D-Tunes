@@ -6,6 +6,7 @@ without storing files to disk. Supports HTTP Range requests (206 Partial Content
 from __future__ import annotations
 
 import asyncio
+import base64
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -13,6 +14,7 @@ import hashlib
 import logging
 import os
 import re
+import shutil
 import tempfile
 import threading
 import time
@@ -21,7 +23,7 @@ from typing import Any, Optional
 import httpx
 from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel, field_validator
 import yt_dlp
 
@@ -71,6 +73,9 @@ class HealthResponse(BaseModel):
     status: str
     ytdlp_version: Optional[str] = None
     ytdlp_available: bool
+    stream_base_url: Optional[str] = None
+    cookies_configured: bool = False
+    pot_configured: bool = False
 
 
 class ResolveResponse(BaseModel):
@@ -149,15 +154,39 @@ def is_valid_browse_id(browse_id: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# yt-dlp Service Layer
+# yt-dlp Service Layer & Dedicated Stream Host Config
 # ---------------------------------------------------------------------------
 
+def _normalize_stream_backend_url(raw: str) -> str:
+    url = (raw or "").strip().rstrip("/")
+    for suffix in ("/api-v2", "/api/v2", "/api"):
+        if url.endswith(suffix):
+            url = url[: -len(suffix)].rstrip("/")
+            break
+    return url
+
+
+STREAM_BACKEND_URL: str = _normalize_stream_backend_url(
+    os.environ.get("STREAM_BACKEND_URL") or os.environ.get("YTDLP_STREAM_BACKEND_URL") or ""
+)
 YTDLP_COOKIES_FILE: Optional[str] = os.environ.get("YTDLP_COOKIES_FILE")
+YTDLP_COOKIES_B64: Optional[str] = os.environ.get("YTDLP_COOKIES_B64")
 YTDLP_PROXY: Optional[str] = os.environ.get("YTDLP_PROXY")
-YTDLP_FORMAT: str = os.environ.get("YTDLP_FORMAT", "bestaudio[ext=m4a]/bestaudio/best")
+YTDLP_PO_TOKEN: Optional[str] = os.environ.get("YTDLP_PO_TOKEN")
+YTDLP_POT_PROVIDER_URL: str = (
+    os.environ.get("YTDLP_POT_PROVIDER_URL")
+    or os.environ.get("BGUTIL_POT_URL")
+    or ""
+).strip().rstrip("/")
+YTDLP_JS_RUNTIMES: Optional[str] = os.environ.get("YTDLP_JS_RUNTIMES")
+YTDLP_FORMAT: str = os.environ.get(
+    "YTDLP_FORMAT",
+    "bestaudio[ext=m4a]/bestaudio[acodec^=mp4a]/bestaudio[ext=mp3]/bestaudio/best",
+)
 YTDLP_PLAYER_CLIENT: str = os.environ.get("YTDLP_PLAYER_CLIENT", "visionos,android,tv_samsung")
 
-STREAM_RANGE_MAX_BYTES = 2 * 1024 * 1024  # 2 MiB per chunk (fits under Vercel 4.5MB limit & streams smoothly on iOS Safari)
+_DEFAULT_RANGE_MAX = 2 * 1024 * 1024 if os.environ.get("VERCEL") else 4 * 1024 * 1024
+STREAM_RANGE_MAX_BYTES = int(os.environ.get("STREAM_RANGE_MAX_BYTES", str(_DEFAULT_RANGE_MAX)))
 
 CLIENT_CANDIDATES: list[list[str]] = [
     ["ios"],
@@ -165,6 +194,13 @@ CLIENT_CANDIDATES: list[list[str]] = [
     ["visionos"],
     ["android"],
     ["tv_samsung"],
+]
+
+AUTH_CLIENT_CANDIDATES: list[list[str]] = [
+    ["tv_embedded"],
+    ["mweb"],
+    ["web_safari"],
+    ["web"],
 ]
 
 _cookies_lock = threading.Lock()
@@ -196,27 +232,79 @@ def _ensure_cookies_file(cookies_text: str) -> Optional[str]:
                     pass
             return None
 
-def _base_opts(player_client: Optional[list[str]] = None) -> dict:
+
+def _resolve_cookies_path() -> Optional[str]:
+    if YTDLP_COOKIES_FILE and os.path.exists(YTDLP_COOKIES_FILE):
+        return YTDLP_COOKIES_FILE
+    cookies_text = os.environ.get("YTDLP_COOKIES")
+    if cookies_text and cookies_text.strip():
+        return _ensure_cookies_file(cookies_text)
+    cookies_b64 = os.environ.get("YTDLP_COOKIES_B64") or YTDLP_COOKIES_B64
+    if cookies_b64 and cookies_b64.strip():
+        try:
+            decoded = base64.b64decode(cookies_b64.strip()).decode("utf-8")
+            if decoded.strip():
+                return _ensure_cookies_file(decoded)
+        except Exception as exc:
+            logger.warning("Failed to decode YTDLP_COOKIES_B64: %s", exc)
+    return None
+
+
+def _detect_js_runtimes() -> Optional[dict[str, dict[str, str]]]:
+    raw = (os.environ.get("YTDLP_JS_RUNTIMES") or YTDLP_JS_RUNTIMES or "").strip()
+    if raw:
+        runtimes: dict[str, dict[str, str]] = {}
+        for part in raw.split(","):
+            item = part.strip()
+            if not item:
+                continue
+            if ":" in item:
+                name, path = item.split(":", 1)
+                runtimes[name.strip()] = {"path": path.strip()} if path.strip() else {}
+            else:
+                runtimes[item] = {}
+        if runtimes:
+            return runtimes
+    for candidate in ("deno", "node"):
+        if shutil.which(candidate):
+            return {candidate: {}}
+    return None
+
+
+def _base_opts(player_client: Optional[list[str]] = None, include_cookies: bool = True) -> dict:
     clients = player_client or [c.strip() for c in YTDLP_PLAYER_CLIENT.split(",") if c.strip()]
+    youtube_args: dict[str, Any] = {"player_client": clients}
+    po_token_raw = (os.environ.get("YTDLP_PO_TOKEN") or YTDLP_PO_TOKEN or "").strip()
+    if po_token_raw:
+        tokens = [t.strip() for t in re.split(r"[\s,]+", po_token_raw) if t.strip()]
+        if tokens:
+            youtube_args["po_token"] = tokens
+
+    extractor_args: dict[str, Any] = {"youtube": youtube_args}
+    pot_url = (
+        os.environ.get("YTDLP_POT_PROVIDER_URL")
+        or os.environ.get("BGUTIL_POT_URL")
+        or YTDLP_POT_PROVIDER_URL
+        or ""
+    ).strip().rstrip("/")
+    if pot_url:
+        extractor_args["youtubepot-bgutilhttp"] = {"base_url": [pot_url]}
+
     opts: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
         "noplaylist": True,
         "cachedir": "/tmp/ytdlp-cache",
-        "extractor_args": {
-            "youtube": {
-                "player_client": clients
-            }
-        },
+        "extractor_args": extractor_args,
     }
-    if YTDLP_COOKIES_FILE and os.path.exists(YTDLP_COOKIES_FILE):
-        opts["cookiefile"] = YTDLP_COOKIES_FILE
-    cookies_text = os.environ.get("YTDLP_COOKIES")
-    if cookies_text and not opts.get("cookiefile"):
-        cookies_path = _ensure_cookies_file(cookies_text)
+    if include_cookies:
+        cookies_path = _resolve_cookies_path()
         if cookies_path:
             opts["cookiefile"] = cookies_path
+    js_runtimes = _detect_js_runtimes()
+    if js_runtimes:
+        opts["js_runtimes"] = js_runtimes
     if YTDLP_PROXY:
         opts["proxy"] = YTDLP_PROXY
     return opts
@@ -227,6 +315,75 @@ def get_ytdlp_version() -> Optional[str]:
         return yt_dlp.version.__version__
     except Exception:
         return None
+
+
+_GOOGLE_ARTWORK_HOST_RE = re.compile(r"(googleusercontent\.com|ggpht\.com)", re.IGNORECASE)
+_GOOGLE_WH_PARAM_RE = re.compile(r"=w\d+-h\d+(?:-[^/?#]*)?", re.IGNORECASE)
+_GOOGLE_S_PARAM_RE = re.compile(r"=s\d+(?:-[^/?#]*)?", re.IGNORECASE)
+_YTIMG_WIDE_RE = re.compile(r"/(?:maxresdefault|hq720|mqdefault)\.(?:jpg|webp)", re.IGNORECASE)
+_YTIMG_LETTERBOX_RE = re.compile(r"/(?:hqdefault|sddefault|default)\.(?:jpg|webp)", re.IGNORECASE)
+
+
+def _normalize_artwork_url(url: str, size: int = 544) -> str:
+    """Force 1:1 square center-crop on Google CDN URLs and normalize scheme."""
+    clean = (url or "").strip()
+    if not clean:
+        return ""
+    if clean.startswith("http://"):
+        clean = "https://" + clean[7:]
+    if _GOOGLE_ARTWORK_HOST_RE.search(clean):
+        def _rewrite_wh(match: re.Match[str]) -> str:
+            suffix = match.group(0)
+            tail = re.sub(r"^=w\d+-h\d+", "", suffix, flags=re.IGNORECASE)
+            parts = [p for p in tail.split("-") if p]
+            if "c" not in parts:
+                parts.insert(0, "c")
+            return f"=w{size}-h{size}-" + "-".join(parts)
+
+        if _GOOGLE_WH_PARAM_RE.search(clean):
+            clean = _GOOGLE_WH_PARAM_RE.sub(_rewrite_wh, clean, count=1)
+        elif _GOOGLE_S_PARAM_RE.search(clean):
+            def _rewrite_s(match: re.Match[str]) -> str:
+                suffix = match.group(0)
+                tail = re.sub(r"^=s\d+", "", suffix, flags=re.IGNORECASE)
+                parts = [p for p in tail.split("-") if p]
+                if "c" not in parts:
+                    parts.insert(0, "c")
+                return f"=w{size}-h{size}-" + "-".join(parts)
+
+            clean = _GOOGLE_S_PARAM_RE.sub(_rewrite_s, clean, count=1)
+        elif "=" not in clean.rsplit("/", 1)[-1]:
+            clean = f"{clean}=w{size}-h{size}-c-l90-rj"
+    return clean
+
+
+def _pick_best_thumbnail(thumbnails: Any, fallback_url: str = "", size: int = 544) -> str:
+    """Select the cleanest thumbnail (preferring square Google CDN or letterbox-free 16:9)."""
+    candidates: list[tuple[tuple[int, int], str]] = []
+    if isinstance(thumbnails, list):
+        for idx, item in enumerate(thumbnails):
+            if not isinstance(item, dict):
+                continue
+            raw_url = str(item.get("url") or "").strip()
+            if not raw_url:
+                continue
+            w = int(item.get("width") or 0)
+            h = int(item.get("height") or 0)
+            area = (w * h) if (w > 0 and h > 0) else (idx + 1)
+            if _GOOGLE_ARTWORK_HOST_RE.search(raw_url) or (w > 0 and w == h):
+                tier = 3
+            elif _YTIMG_WIDE_RE.search(raw_url):
+                tier = 2
+            elif _YTIMG_LETTERBOX_RE.search(raw_url):
+                tier = 0
+            else:
+                tier = 1
+            candidates.append(((tier, area), raw_url))
+
+    if candidates:
+        candidates.sort(key=lambda pair: pair[0], reverse=True)
+        return _normalize_artwork_url(candidates[0][1], size=size)
+    return _normalize_artwork_url(fallback_url, size=size)
 
 
 def _normalize_entry(entry: dict) -> Optional[Track]:
@@ -242,15 +399,7 @@ def _normalize_entry(entry: dict) -> Optional[Track]:
         or "Unknown Artist"
     )
     duration: Optional[int] = entry.get("duration")
-    thumbnails: list = entry.get("thumbnails") or []
-    artwork: str = ""
-    if thumbnails:
-        for t in reversed(thumbnails):
-            if isinstance(t, dict) and t.get("url"):
-                artwork = t["url"]
-                break
-    if not artwork:
-        artwork = entry.get("thumbnail") or ""
+    artwork: str = _pick_best_thumbnail(entry.get("thumbnails"), str(entry.get("thumbnail") or ""))
 
     return Track(
         id=video_id,
@@ -287,12 +436,7 @@ def _normalize_ytm_track(item: dict, exclude_id: Optional[str] = None) -> Option
             except ValueError:
                 duration = None
 
-    thumbnails = item.get("thumbnails") or []
-    artwork = ""
-    if thumbnails and isinstance(thumbnails[-1], dict):
-        artwork = thumbnails[-1].get("url", "")
-        if artwork:
-            artwork = re.sub(r"=w\d+-h\d+", "=w544-h544", artwork)
+    artwork = _pick_best_thumbnail(item.get("thumbnails"))
 
     return Track(
         id=video_id,
@@ -451,9 +595,20 @@ def search_sync(query: str, limit: int = 10) -> list[Track]:
 
 
 class StreamInfo:
-    __slots__ = ("url", "ext", "content_type", "title", "artist", "artwork", "duration")
+    __slots__ = ("url", "ext", "content_type", "title", "artist", "artwork", "duration", "headers")
 
-    def __init__(self, *, url: str, ext: str, content_type: str, title: str, artist: str, artwork: str, duration: Optional[int]) -> None:
+    def __init__(
+        self,
+        *,
+        url: str,
+        ext: str,
+        content_type: str,
+        title: str,
+        artist: str,
+        artwork: str,
+        duration: Optional[int],
+        headers: Optional[dict[str, str]] = None,
+    ) -> None:
         self.url = url
         self.ext = ext
         self.content_type = content_type
@@ -461,6 +616,7 @@ class StreamInfo:
         self.artist = artist
         self.artwork = artwork
         self.duration = duration
+        self.headers = dict(headers) if headers else {}
 
 
 _EXT_TO_CONTENT_TYPE: dict[str, str] = {
@@ -506,8 +662,7 @@ def _resolve_invidious_sync(video_id: str) -> tuple[Optional[StreamInfo], Option
                 content_type = _EXT_TO_CONTENT_TYPE.get(ext, "audio/mp4")
                 title = data.get("title") or "Unknown"
                 artist = data.get("author") or "Unknown Artist"
-                thumbnails = data.get("videoThumbnails") or []
-                artwork = thumbnails[-1].get("url") if thumbnails else ""
+                artwork = _pick_best_thumbnail(thumbnails)
                 duration = data.get("lengthSeconds")
                 return (StreamInfo(
                     url=stream_url,
@@ -562,7 +717,7 @@ def _resolve_piped_sync(video_id: str) -> tuple[Optional[StreamInfo], Optional[s
                     content_type=content_type,
                     title=data.get("title") or "Unknown",
                     artist=data.get("uploader") or "Unknown Artist",
-                    artwork=data.get("thumbnailUrl") or "",
+                    artwork=_normalize_artwork_url(data.get("thumbnailUrl") or ""),
                     duration=int(duration) if duration else None,
                 ), None)
             except Exception as e:
@@ -643,7 +798,7 @@ def _resolve_innertube_sync(video_id: str) -> tuple[Optional[StreamInfo], Option
                 content_type = _EXT_TO_CONTENT_TYPE.get(ext, "audio/mp4")
                 vd = data.get("videoDetails") or {}
                 thumbs = (vd.get("thumbnail") or {}).get("thumbnails") or []
-                artwork = thumbs[-1].get("url", "") if thumbs and isinstance(thumbs[-1], dict) else ""
+                artwork = _pick_best_thumbnail(thumbs)
                 dur_raw = vd.get("lengthSeconds")
                 return (StreamInfo(
                     url=best["url"],
@@ -653,91 +808,113 @@ def _resolve_innertube_sync(video_id: str) -> tuple[Optional[StreamInfo], Option
                     artist=vd.get("author") or "Unknown Artist",
                     artwork=artwork,
                     duration=int(dur_raw) if dur_raw and str(dur_raw).isdigit() else None,
+                    headers={"User-Agent": cfg["ua"]},
                 ), None)
             except Exception as e:
                 errs.append(f"{cfg['clientName']}: {e}")
     return (None, "; ".join(errs))
 
 
+def _extract_ytdlp_stream(video_id: str, client_list: list[str], *, include_cookies: bool) -> StreamInfo:
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    opts = _base_opts(player_client=client_list, include_cookies=include_cookies)
+    opts["format"] = YTDLP_FORMAT
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+
+    if not info:
+        raise RuntimeError("Empty yt-dlp info")
+
+    requested_formats = info.get("requested_formats") or []
+    fmt = requested_formats[0] if requested_formats else info
+
+    stream_url: str = fmt.get("url") or ""
+    if not stream_url:
+        formats = info.get("formats") or []
+        audio_formats = [f for f in formats if f.get("vcodec") == "none" and f.get("url")]
+        if audio_formats:
+            m4a_audio = [
+                f for f in audio_formats
+                if f.get("ext") == "m4a" or str(f.get("acodec") or "").startswith("mp4a")
+            ]
+            fmt = max(m4a_audio or audio_formats, key=lambda a: a.get("tbr") or a.get("abr") or 0)
+            stream_url = fmt.get("url") or ""
+    if not stream_url:
+        raise RuntimeError("No stream URL in yt-dlp formats")
+
+    ext: str = fmt.get("ext") or info.get("ext") or "m4a"
+    content_type: str = _EXT_TO_CONTENT_TYPE.get(ext, "audio/mp4")
+    title: str = info.get("title") or "Unknown"
+    artist: str = info.get("artist") or info.get("creator") or info.get("uploader") or "Unknown Artist"
+    artwork: str = _pick_best_thumbnail(info.get("thumbnails"), str(info.get("thumbnail") or ""))
+    duration: Optional[int] = info.get("duration")
+
+    raw_headers = fmt.get("http_headers") or info.get("http_headers") or {}
+    clean_headers = {str(k): str(v) for k, v in raw_headers.items() if k and v} if isinstance(raw_headers, dict) else {}
+
+    return StreamInfo(
+        url=stream_url,
+        ext=ext,
+        content_type=content_type,
+        title=title,
+        artist=artist,
+        artwork=artwork,
+        duration=int(duration) if duration else None,
+        headers=clean_headers,
+    )
+
+
+def _has_cookies_or_pot() -> bool:
+    has_pot = bool(
+        (os.environ.get("YTDLP_PO_TOKEN") or YTDLP_PO_TOKEN or "").strip()
+        or (os.environ.get("YTDLP_POT_PROVIDER_URL") or os.environ.get("BGUTIL_POT_URL") or YTDLP_POT_PROVIDER_URL or "").strip()
+    )
+    return bool(_resolve_cookies_path() or has_pot)
+
+
 def resolve_sync(video_id: str) -> StreamInfo:
     if not is_valid_video_id(video_id):
         raise ValueError(f"Invalid video ID: {video_id!r}")
 
-    # Layer 0: Fast direct InnerTube ANDROID_VR / IOS resolver (clean M4A for iOS Safari)
+    last_err: Optional[Exception] = None
+    has_auth = _has_cookies_or_pot()
+
+    # When cookies / PO-token provider are configured (dedicated host), prefer authenticated yt-dlp first
+    if has_auth:
+        for client_list in AUTH_CLIENT_CANDIDATES:
+            try:
+                return _extract_ytdlp_stream(video_id, client_list, include_cookies=True)
+            except Exception as exc:
+                last_err = exc
+                continue
+
+    # Direct InnerTube ANDROID_VR / IOS resolver (fast M4A for iOS Safari)
     it_info, it_err = _resolve_innertube_sync(video_id)
     if it_info:
         return it_info
 
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    last_err: Optional[Exception] = None
-
-    # Layer 1: yt-dlp across client candidates
+    # Cookie-less yt-dlp across mobile/VR client candidates (also serves as clean fallback if cookies expire)
     for client_list in CLIENT_CANDIDATES:
         try:
-            opts = _base_opts(player_client=client_list)
-            opts["format"] = YTDLP_FORMAT
-
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=False)
-
-            if not info:
-                continue
-
-            requested_formats = info.get("requested_formats") or []
-            fmt = requested_formats[0] if requested_formats else info
-
-            stream_url: str = fmt.get("url") or ""
-            if not stream_url:
-                formats = info.get("formats") or []
-                audio_formats = [f for f in formats if f.get("vcodec") == "none" and f.get("url")]
-                if audio_formats:
-                    m4a_audio = [f for f in audio_formats if f.get("ext") == "m4a"]
-                    fmt = max(m4a_audio or audio_formats, key=lambda a: a.get("tbr") or a.get("abr") or 0)
-                    stream_url = fmt.get("url") or ""
-            if not stream_url:
-                continue
-
-            ext: str = fmt.get("ext") or info.get("ext") or "m4a"
-            content_type: str = _EXT_TO_CONTENT_TYPE.get(ext, "audio/mp4")
-
-            title: str = info.get("title") or "Unknown"
-            artist: str = info.get("artist") or info.get("creator") or info.get("uploader") or "Unknown Artist"
-            thumbnails: list = info.get("thumbnails") or []
-            artwork: str = ""
-            if thumbnails:
-                for t in reversed(thumbnails):
-                    if isinstance(t, dict) and t.get("url"):
-                        artwork = t["url"]
-                        break
-            if not artwork:
-                artwork = info.get("thumbnail") or ""
-
-            duration: Optional[int] = info.get("duration")
-
-            return StreamInfo(
-                url=stream_url,
-                ext=ext,
-                content_type=content_type,
-                title=title,
-                artist=artist,
-                artwork=artwork,
-                duration=int(duration) if duration else None,
-            )
+            return _extract_ytdlp_stream(video_id, client_list, include_cookies=False)
         except Exception as exc:
             last_err = exc
             continue
 
-    # Layer 2: Piped API fallback (returns clean M4A streams without datacenter bot checks)
+    # Piped API fallback
     piped_info, piped_err = _resolve_piped_sync(video_id)
     if piped_info:
         return piped_info
 
-    # Layer 3: Invidious API fallback
+    # Invidious API fallback
     fallback_info, inv_err = _resolve_invidious_sync(video_id)
     if fallback_info:
         return fallback_info
 
-    raise RuntimeError(f"Could not resolve stream URL for {video_id}: ytdlp=[{last_err}]; piped=[{piped_err}]; invidious=[{inv_err}]")
+    raise RuntimeError(
+        f"Could not resolve stream URL for {video_id}: innertube=[{it_err}]; ytdlp=[{last_err}]; piped=[{piped_err}]; invidious=[{inv_err}]"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -749,11 +926,25 @@ router = APIRouter()
 @router.get("/health", response_model=HealthResponse)
 async def health() -> HealthResponse:
     v = get_ytdlp_version()
+    has_pot = bool(
+        (os.environ.get("YTDLP_PO_TOKEN") or YTDLP_PO_TOKEN or "").strip()
+        or (os.environ.get("YTDLP_POT_PROVIDER_URL") or os.environ.get("BGUTIL_POT_URL") or YTDLP_POT_PROVIDER_URL or "").strip()
+    )
     return HealthResponse(
         status="ok" if v else "degraded",
         ytdlp_version=v,
         ytdlp_available=bool(v),
+        stream_base_url=STREAM_BACKEND_URL or None,
+        cookies_configured=bool(_resolve_cookies_path()),
+        pot_configured=has_pot,
     )
+
+
+@router.get("/config")
+async def stream_config() -> dict[str, Any]:
+    return {
+        "stream_base_url": STREAM_BACKEND_URL or None,
+    }
 
 
 @router.get("/search", response_model=SearchResponse)
@@ -817,18 +1008,20 @@ async def _get_resolve_lock(video_id: str) -> asyncio.Lock:
         return lock
 
 
-async def _resolve_with_retry(video_id: str) -> tuple[StreamInfo, bool]:
+async def _resolve_with_retry(video_id: str, force_refresh: bool = False) -> tuple[StreamInfo, bool]:
     cache_key = f"stream:{video_id}"
-    cached: Optional[StreamInfo] = await stream_cache.get(cache_key)
-    if cached is not None:
-        return cached, True
+    if not force_refresh:
+        cached: Optional[StreamInfo] = await stream_cache.get(cache_key)
+        if cached is not None:
+            return cached, True
 
     # Single-flight lock so concurrent requests for the same track share one extraction
     lock = await _get_resolve_lock(video_id)
     async with lock:
-        cached = await stream_cache.get(cache_key)
-        if cached is not None:
-            return cached, True
+        if not force_refresh:
+            cached = await stream_cache.get(cache_key)
+            if cached is not None:
+                return cached, True
 
         info: StreamInfo = await asyncio.to_thread(resolve_sync, video_id)
         await stream_cache.set(cache_key, info, STREAM_TTL)
@@ -852,17 +1045,47 @@ def _cap_range_header(range_header: Optional[str], max_bytes: int = STREAM_RANGE
     return f"bytes={start}-{end}"
 
 
-async def _stream_proxy(video_id: str, request: Request, allow_re_resolve: bool = True) -> StreamingResponse:
-    info, _ = await _resolve_with_retry(video_id)
-
-    range_header = _cap_range_header(request.headers.get("range"))
-    if_range = request.headers.get("if-range")
-
+def _build_upstream_headers(info: StreamInfo, range_header: Optional[str] = None, if_range: Optional[str] = None) -> dict[str, str]:
     headers_to_upstream: dict[str, str] = {"User-Agent": _UPSTREAM_UA}
+    if getattr(info, "headers", None):
+        for k, v in info.headers.items():
+            if k and v and k.lower() not in ("host", "range", "if-range", "content-length"):
+                headers_to_upstream[k] = v
     if range_header:
         headers_to_upstream["Range"] = range_header
     if if_range:
         headers_to_upstream["If-Range"] = if_range
+    return headers_to_upstream
+
+
+def _redirect_to_stream_backend(path: str, request: Request) -> RedirectResponse:
+    qs = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(
+        url=f"{STREAM_BACKEND_URL}{path}{qs}",
+        status_code=307,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+async def _stream_proxy(
+    video_id: str,
+    request: Request,
+    allow_re_resolve: bool = True,
+    force_refresh: bool = False,
+) -> StreamingResponse:
+    info, _ = await _resolve_with_retry(video_id, force_refresh=force_refresh)
+
+    raw_range = request.headers.get("range")
+    is_serverless = bool(os.environ.get("VERCEL")) or os.environ.get("STREAM_FORCE_RANGE_CAP") == "1"
+    if raw_range:
+        range_header: Optional[str] = _cap_range_header(raw_range)
+    elif is_serverless:
+        range_header = _cap_range_header(None)
+    else:
+        range_header = None
+    if_range = request.headers.get("if-range")
+
+    headers_to_upstream = _build_upstream_headers(info, range_header=range_header, if_range=if_range)
 
     client = _get_http_client()
     try:
@@ -876,19 +1099,25 @@ async def _stream_proxy(video_id: str, request: Request, allow_re_resolve: bool 
     if upstream.status_code in (403, 410) and allow_re_resolve:
         await upstream.aclose()
         await stream_cache.delete(f"stream:{video_id}")
-        return await _stream_proxy(video_id, request, allow_re_resolve=False)
+        return await _stream_proxy(video_id, request, allow_re_resolve=False, force_refresh=True)
 
     if upstream.status_code not in (200, 206):
         status_code = upstream.status_code
         await upstream.aclose()
         raise RuntimeError(f"Upstream returned HTTP {status_code}")
 
+    upstream_ct = (upstream.headers.get("content-type") or "").strip()
+    effective_ct = (
+        info.content_type
+        if not upstream_ct or "octet-stream" in upstream_ct.lower()
+        else upstream_ct
+    )
     resp_headers: dict[str, str] = {
-        "Content-Type": info.content_type,
+        "Content-Type": effective_ct,
         "Accept-Ranges": "bytes",
         "Cache-Control": "private, max-age=300",
     }
-    for h in ("content-length", "content-range", "content-type"):
+    for h in ("content-length", "content-range"):
         if h in upstream.headers:
             resp_headers[h.replace("-", "_").title().replace("_", "-")] = upstream.headers[h]
 
@@ -909,53 +1138,89 @@ async def _stream_proxy(video_id: str, request: Request, allow_re_resolve: bool 
 
 
 @router.get("/stream/{video_id}")
-async def stream(video_id: str, request: Request) -> Response:
+async def stream(video_id: str, request: Request, refresh: bool = False) -> Response:
     if not is_valid_video_id(video_id):
-        raise HTTPException(status_code=400, detail={"error": "Invalid video ID format", "code": "invalid_id"})
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "Invalid video ID format", "code": "invalid_id"},
+            headers={"Cache-Control": "no-store"},
+        )
+    if STREAM_BACKEND_URL:
+        return _redirect_to_stream_backend(f"/api-v2/stream/{video_id}", request)
     try:
-        return await _stream_proxy(video_id, request)
+        return await _stream_proxy(video_id, request, force_refresh=refresh)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail={"error": str(exc), "code": "invalid_id"})
+        raise HTTPException(
+            status_code=400,
+            detail={"error": str(exc), "code": "invalid_id"},
+            headers={"Cache-Control": "no-store"},
+        )
     except Exception as exc:
         logger.warning("Upstream proxy failed for %s: %s", video_id, exc)
-        raise HTTPException(status_code=502, detail={"error": "Upstream audio stream unavailable", "code": "proxy_error"})
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "Upstream audio stream unavailable", "code": "proxy_error"},
+            headers={"Cache-Control": "no-store"},
+        )
 
 
 @router.head("/stream/{video_id}")
-async def stream_head(video_id: str) -> Response:
+async def stream_head(video_id: str, request: Request) -> Response:
     if not is_valid_video_id(video_id):
-        raise HTTPException(status_code=400, detail={"error": "Invalid video ID format", "code": "invalid_id"})
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "Invalid video ID format", "code": "invalid_id"},
+            headers={"Cache-Control": "no-store"},
+        )
+    if STREAM_BACKEND_URL:
+        return _redirect_to_stream_backend(f"/api-v2/stream/{video_id}", request)
     try:
         info, _ = await _resolve_with_retry(video_id)
         headers: dict[str, str] = {
             "Content-Type": info.content_type,
             "Accept-Ranges": "bytes",
+            "Cache-Control": "private, max-age=300",
         }
         try:
             client = _get_http_client()
-            head_res = await client.head(info.url, headers={"User-Agent": _UPSTREAM_UA}, timeout=5.0)
+            head_res = await client.head(info.url, headers=_build_upstream_headers(info), timeout=5.0)
             if head_res.status_code in (200, 206):
                 if "content-length" in head_res.headers:
                     headers["Content-Length"] = head_res.headers["content-length"]
-                if "content-type" in head_res.headers:
-                    headers["Content-Type"] = head_res.headers["content-type"]
+                upstream_ct = (head_res.headers.get("content-type") or "").strip()
+                if upstream_ct and "octet-stream" not in upstream_ct.lower():
+                    headers["Content-Type"] = upstream_ct
         except Exception:
             pass
         return Response(status_code=200, headers=headers)
     except Exception as exc:
         logger.warning("HEAD stream failed for %s: %s", video_id, exc)
-        raise HTTPException(status_code=502, detail={"error": "Unable to resolve stream metadata", "code": "proxy_error"})
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "Unable to resolve stream metadata", "code": "proxy_error"},
+            headers={"Cache-Control": "no-store"},
+        )
 
 
 @router.get("/resolve/{video_id}", response_model=ResolveResponse)
-async def resolve(video_id: str) -> ResolveResponse:
+async def resolve(video_id: str, request: Request, refresh: bool = False) -> Any:
     if not is_valid_video_id(video_id):
-        raise HTTPException(status_code=400, detail={"error": "Invalid video ID format", "code": "invalid_id"})
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "Invalid video ID format", "code": "invalid_id"},
+            headers={"Cache-Control": "no-store"},
+        )
+    if STREAM_BACKEND_URL:
+        return _redirect_to_stream_backend(f"/api-v2/resolve/{video_id}", request)
     try:
-        info, was_cached = await _resolve_with_retry(video_id)
+        info, was_cached = await _resolve_with_retry(video_id, force_refresh=refresh)
     except Exception as exc:
         logger.warning("Resolve failed for %s: %s", video_id, exc)
-        raise HTTPException(status_code=502, detail={"error": "Unable to resolve audio stream", "code": "resolve_error"})
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "Unable to resolve audio stream", "code": "resolve_error"},
+            headers={"Cache-Control": "no-store"},
+        )
 
     return ResolveResponse(
         id=video_id,
@@ -1075,12 +1340,7 @@ async def lyrics_endpoint(video_id: str) -> dict[str, Any]:
 
 
 def _ytm_thumb(thumbnails: Any, size: int = 544) -> str:
-    if not isinstance(thumbnails, list) or not thumbnails:
-        return ""
-    url = thumbnails[-1].get("url", "") if isinstance(thumbnails[-1], dict) else ""
-    if url:
-        url = re.sub(r"=w\d+-h\d+", f"=w{size}-h{size}", url)
-    return url
+    return _pick_best_thumbnail(thumbnails, size=size)
 
 
 def _ytm_duration(item: dict) -> Optional[int]:

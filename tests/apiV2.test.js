@@ -132,3 +132,30 @@ test('D-Tunes API v2: Album and Playlist views use Mezzotint detail hero layout'
   assert.ok(css.includes('.dt-detail-hero'), 'styles.css must define .dt-detail-hero');
   assert.ok(css.includes('.dt-hero-art'), 'styles.css must define .dt-hero-art');
 });
+
+test('D-Tunes API v2: dedicated stream host routing, mobile CORS hygiene, and 1:1 square artwork', () => {
+  const vercel = JSON.parse(fs.readFileSync(path.join(__dirname, '../vercel.json'), 'utf8'));
+  const streamHeaderBlock = vercel.headers.find(h => h.source === '/api-v2/stream/(.*)');
+  assert.ok(streamHeaderBlock, 'vercel.json must define CORS headers for /api-v2/stream/(.*)');
+  assert.ok(!streamHeaderBlock.headers.some(h => h.key.toLowerCase() === 'cache-control'),
+    'vercel.json must not hardcode Cache-Control on /api-v2/stream/(.*) so 502s are never cached');
+
+  const apiJs = fs.readFileSync(path.join(__dirname, '../src/js/api.js'), 'utf8');
+  assert.ok(apiJs.includes('getStreamUrl'), 'api.js must expose getStreamUrl');
+  assert.ok(apiJs.includes('discoverStreamHost'), 'api.js must expose discoverStreamHost');
+
+  const playerJs = fs.readFileSync(path.join(__dirname, '../src/js/player.js'), 'utf8');
+  assert.ok(playerJs.includes('applyAudioCorsPolicy'), 'player.js must centralize mobile/desktop CORS policy');
+  assert.ok(playerJs.includes('registerMediaSessionHandlers'), 'player.js must expose registerMediaSessionHandlers');
+  assert.doesNotMatch(playerJs, /recoverFromAudioError[\s\S]*?audio\.crossOrigin\s*=\s*['"]anonymous['"]/,
+    'recoverFromAudioError must not bypass mobile CORS policy');
+
+  const uiJs = fs.readFileSync(path.join(__dirname, '../src/js/ui.js'), 'utf8');
+  assert.ok(!uiJs.includes("type: 'image/png'\n"), 'ui.js must not hardcode image/png for JPEG YouTube thumbnails');
+
+  const utilsJs = fs.readFileSync(path.join(__dirname, '../src/js/utils.js'), 'utf8');
+  assert.ok(utilsJs.includes('GOOGLE_ARTWORK_HOST_RE'), 'utils.js sanitizeImageUrl must normalize Google CDN artwork to 1:1 square');
+
+  const css = fs.readFileSync(path.join(__dirname, '../src/css/styles.css'), 'utf8');
+  assert.ok(css.includes('img[src*="ytimg.com"]'), 'styles.css must crop 16:9/4:3 ytimg thumbnails into 1:1 squares');
+});

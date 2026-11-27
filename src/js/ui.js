@@ -1,6 +1,14 @@
         // ============================================
         // UI & RENDERING
         // ============================================
+        const _safeArt = (value) => {
+            const fallback = typeof FALLBACK_ART !== 'undefined' ? FALLBACK_ART : 'DTunes.svg';
+            const raw = value || fallback;
+            if (typeof sanitizeImageUrl === 'function') return sanitizeImageUrl(raw);
+            if (typeof utils !== 'undefined' && typeof utils.sanitizeImageUrl === 'function') return utils.sanitizeImageUrl(raw);
+            return raw;
+        };
+
         const ui = {
             getCurrentView: () => {
                 if (!document.getElementById('view-home').classList.contains('hidden')) return 'home';
@@ -998,7 +1006,9 @@
 
                 listEl.innerHTML = ui.editingPlaylistSongs.map((song, index) => `
                     <div class="flex items-center justify-between p-2 rounded-xl bg-white/5 border border-white/5 gap-2">
-                        <img src="${song.img}" class="w-8 h-8 rounded-lg object-cover flex-shrink-0">
+                        <div class="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0">
+                            <img src="${_safeArt(song.img || song.artwork)}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover" alt="">
+                        </div>
                         <div class="flex-1 min-w-0">
                             <p class="text-xs font-bold text-white truncate">${utils.escapeHtml(song.name)}</p>
                             <p class="text-[10px] text-gray-400 truncate">${utils.escapeHtml(song.artist)}</p>
@@ -1178,7 +1188,7 @@
                     let totalSec = songs.reduce((acc, s) => acc + (parseInt(s.duration) || 0), 0);
                     let durationStr = totalSec > 3600 ? `${Math.floor(totalSec / 3600)} hr ${Math.floor((totalSec % 3600) / 60)} min` : `${Math.floor(totalSec / 60)} min`;
                     if (metaEl) metaEl.textContent = `${year ? year + ' • ' : ''}${songs.length} tracks • ${durationStr}`;
-                    if (artEl) artEl.src = img;
+                    if (artEl) artEl.src = _safeArt(img);
                     const albSummary = document.getElementById('album-tracklist-summary');
                     if (albSummary) albSummary.textContent = `${songs.length} ${songs.length === 1 ? 'track' : 'tracks'} • ${durationStr}`;
                     const albHeroBg = document.getElementById('album-hero-bg');
@@ -1262,8 +1272,9 @@
                             ? `${artistData.subscribers} Subscribers`
                             : (artistData?.fanCount ? `${parseInt(artistData.fanCount).toLocaleString()} Monthly Listeners` : 'Top Artist');
                     }
-                    if (avatarEl) avatarEl.src = img;
-                    if (heroBgEl) heroBgEl.style.backgroundImage = `url('${img}')`;
+                    const safeArtistImg = _safeArt(img);
+                    if (avatarEl) avatarEl.src = safeArtistImg;
+                    if (heroBgEl) heroBgEl.style.backgroundImage = `url('${safeArtistImg}')`;
 
                     if (followBtn) {
                         followBtn.onclick = () => {
@@ -1681,11 +1692,12 @@
             },
             createArtistCard: (artist) => {
                 const id = utils.escapeJs(artist.id || artist.name);
+                const safeArtistImg = _safeArt(artist.img || artist.artwork);
                 return `
                 <div class="scroll-card glass-panel p-3 rounded-xl transition hover-pause group relative flex flex-col w-full cursor-pointer" onclick="playContext('artist', '${id}')">
                     <div class="relative aspect-square rounded-lg overflow-hidden mb-3 bg-gray-800 shadow-md">
-                        <img src="${artist.img || FALLBACK_ART}" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" loading="lazy">
-                        <button class="absolute top-2 right-2 p-2 rounded-full bg-red-500 text-white shadow-lg" onclick="event.stopPropagation(); ui.toggleArtistLike({ id: '${id}', name: '${utils.escapeJs(artist.name)}', artist: '${utils.escapeJs(artist.artist || 'Artist')}', img: '${utils.escapeJs(artist.img || FALLBACK_ART)}', type: 'artist' })" title="Unlike artist">
+                        <img src="${safeArtistImg}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover group-hover:scale-105 transition duration-500" loading="lazy">
+                        <button class="absolute top-2 right-2 p-2 rounded-full bg-red-500 text-white shadow-lg" onclick="event.stopPropagation(); ui.toggleArtistLike({ id: '${id}', name: '${utils.escapeJs(artist.name)}', artist: '${utils.escapeJs(artist.artist || 'Artist')}', img: '${utils.escapeJs(safeArtistImg)}', type: 'artist' })" title="Unlike artist">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
                         </button>
                     </div>
@@ -1788,7 +1800,7 @@
             createNowPlayingInner: (song, artistSuffix = '', storeId = null, context = 'island') => {
                 const title = utils.escapeHtml(song.name || song.title || 'Unknown');
                 const artist = utils.escapeHtml(song.artist || 'Unknown');
-                const img = song.img || FALLBACK_ART;
+                const img = _safeArt(song.img || song.artwork);
                 const liked = typeof player !== 'undefined' && player.isLiked && player.isLiked(song.id);
                 const safeId = utils.escapeJs(song.id);
 
@@ -1868,7 +1880,7 @@
                 ` : '';
                 return `
                     <div class="w-12 h-12 rounded-xl overflow-hidden flex-shrink-0 shadow-md border border-white/20 ml-1 relative">
-                        <img src="${song.img}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover" decoding="async">
+                        <img src="${_safeArt(song.img || song.artwork)}" onerror="this.src='${FALLBACK_ART}'" class="w-full h-full object-cover" decoding="async">
                         ${isCurrent ? `<div class="absolute inset-0 bg-black/45 flex items-center justify-center">${eqMarkup}</div>` : ''}
                     </div>
                     <div class="flex-1 min-w-0 flex flex-col justify-center ml-3">
@@ -1889,7 +1901,7 @@
                 const storeId = songStore.add(song);
                 const title = utils.escapeHtml(song.name || song.title || 'Unknown');
                 const artist = utils.escapeHtml(song.artist || 'Unknown');
-                const img = song.img || FALLBACK_ART;
+                const img = _safeArt(song.img || song.artwork);
                 const safeSection = utils.escapeJs(section);
                 const safeIndex = Number(index);
 
@@ -2057,20 +2069,20 @@
             },
             createDiscoverCard: (mix) => {
                 const songs = mix.songs || [];
-                const imgs = songs.map(s => s.img).filter(Boolean).slice(0, 3);
+                const imgs = songs.map(s => _safeArt(s.img || s.artwork)).filter(u => u && u !== FALLBACK_ART).slice(0, 3);
                 
                 let collageHtml = '';
                 if (imgs.length >= 3) {
                     collageHtml = `
                     <div class="absolute top-4 right-4 w-28 h-28 pointer-events-none">
-                        <img src="${imgs[0]}" decoding="async" class="absolute top-0 right-0 w-16 h-16 rounded-xl object-cover shadow-2xl border border-white/20 transform rotate-6 z-10">
-                        <img src="${imgs[1]}" decoding="async" class="absolute top-3 right-5 w-14 h-14 rounded-xl object-cover shadow-2xl border border-white/20 transform -rotate-12 z-20">
-                        <img src="${imgs[2]}" decoding="async" class="absolute top-7 right-2 w-14 h-14 rounded-xl object-cover shadow-2xl border border-white/20 transform rotate-3 z-30">
+                        <div class="absolute top-0 right-0 w-16 h-16 rounded-xl overflow-hidden shadow-2xl border border-white/20 transform rotate-6 z-10"><img src="${imgs[0]}" decoding="async" class="w-full h-full object-cover" alt=""></div>
+                        <div class="absolute top-3 right-5 w-14 h-14 rounded-xl overflow-hidden shadow-2xl border border-white/20 transform -rotate-12 z-20"><img src="${imgs[1]}" decoding="async" class="w-full h-full object-cover" alt=""></div>
+                        <div class="absolute top-7 right-2 w-14 h-14 rounded-xl overflow-hidden shadow-2xl border border-white/20 transform rotate-3 z-30"><img src="${imgs[2]}" decoding="async" class="w-full h-full object-cover" alt=""></div>
                     </div>`;
                 } else if (imgs.length > 0) {
                     collageHtml = `
-                    <div class="absolute top-4 right-4 w-24 h-24 pointer-events-none">
-                        <img src="${imgs[0]}" decoding="async" class="w-full h-full rounded-2xl object-cover shadow-2xl border border-white/20 transform rotate-3">
+                    <div class="absolute top-4 right-4 w-24 h-24 rounded-2xl overflow-hidden shadow-2xl border border-white/20 transform rotate-3 pointer-events-none">
+                        <img src="${imgs[0]}" decoding="async" class="w-full h-full object-cover" alt="">
                     </div>`;
                 } else {
                     collageHtml = `
@@ -2184,7 +2196,7 @@
                         artist.textContent = state.currentTrack.artist;
                     }
                 }
-                if ('mediaSession' in navigator) {
+                if ('mediaSession' in navigator && !(typeof isPlaybackPending !== 'undefined' && isPlaybackPending && !state.userPaused)) {
                     navigator.mediaSession.playbackState = state.playing ? 'playing' : 'paused';
                 }
                 updateMarquees();
@@ -2222,7 +2234,7 @@
                 if (!track) return;
                 document.getElementById('p-title').textContent = track.name || track.title || 'Unknown Track'; 
                 document.getElementById('p-artist').textContent = (options.loading && !track.artist) ? 'Loading...' : (track.artist || 'Unknown Artist');
-                const safeArt = sanitizeImageUrl(track.img);
+                const safeArt = sanitizeImageUrl(track.img || track.artwork);
                 const artImg = document.getElementById('curr-art-img');
                 if (artImg) {
                     artImg.removeAttribute('crossorigin');
@@ -2259,13 +2271,22 @@
                         if (typeof window !== 'undefined' && window.location) {
                             try { artUrl = new URL(artUrl, window.location.href).href; } catch (_) {}
                         }
+                        const artLower = artUrl.toLowerCase();
+                        const artType = artLower.includes('.png')
+                            ? 'image/png'
+                            : (artLower.includes('.webp')
+                                ? 'image/webp'
+                                : (artLower.includes('.jpg') || artLower.includes('.jpeg') || artLower.includes('ytimg.com') || artLower.includes('googleusercontent.com')
+                                    ? 'image/jpeg'
+                                    : undefined));
+                        const makeArtEntry = (sizes) => (artType ? { src: artUrl, sizes, type: artType } : { src: artUrl, sizes });
                         const artworkList = [
-                            { src: artUrl, sizes: '96x96', type: 'image/png' },
-                            { src: artUrl, sizes: '128x128', type: 'image/png' },
-                            { src: artUrl, sizes: '192x192', type: 'image/png' },
-                            { src: artUrl, sizes: '256x256', type: 'image/png' },
-                            { src: artUrl, sizes: '384x384', type: 'image/png' },
-                            { src: artUrl, sizes: '512x512', type: 'image/png' }
+                            makeArtEntry('96x96'),
+                            makeArtEntry('128x128'),
+                            makeArtEntry('192x192'),
+                            makeArtEntry('256x256'),
+                            makeArtEntry('384x384'),
+                            makeArtEntry('512x512')
                         ];
                         navigator.mediaSession.metadata = new MediaMetadata({
                             title: track.name || track.title || 'Unknown Track',
@@ -2273,7 +2294,18 @@
                             album: track.album || "D'Tunes",
                             artwork: artworkList
                         });
-                        navigator.mediaSession.playbackState = (state.playing || !document.getElementById('audio-el')?.paused) ? 'playing' : 'paused';
+                        if (!(typeof isPlaybackPending !== 'undefined' && isPlaybackPending && !state.userPaused)) {
+                            const audioEl = document.getElementById('audio-el');
+                            const isYT = typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt';
+                            const isRunning = isYT ? Boolean(state.playing) : Boolean(state.playing || (audioEl && !audioEl.paused && !audioEl.ended));
+                            navigator.mediaSession.playbackState = isRunning ? 'playing' : 'paused';
+                        }
+                        if (typeof window.registerMediaSessionHandlers === 'function') {
+                            window.registerMediaSessionHandlers();
+                        }
+                        if (typeof player !== 'undefined' && typeof player.updateMediaPosition === 'function') {
+                            player.updateMediaPosition();
+                        }
                     } catch (e) {
                         console.warn('[MediaSession] Metadata update error:', e);
                     }
@@ -3080,7 +3112,9 @@ const mPlayBtn = document.getElementById('m-icon-play');
                     <div class="swipe-song np-row flex items-center justify-between p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 hover:border-white/10 transition-all cursor-pointer group" onclick="playSongById('${songStore.add(s)}')">
                         <div class="flex items-center gap-3 min-w-0">
                             <span class="text-[11px] font-mono text-zinc-500 w-5 text-center group-hover:text-white transition-colors">${idx + 1}</span>
-                            <img src="${sanitizeImageUrl(s.img || 'DTunes.svg')}" class="w-10 h-10 rounded-xl object-cover shadow-md flex-shrink-0" alt="">
+                            <div class="w-10 h-10 rounded-xl overflow-hidden shadow-md flex-shrink-0">
+                                <img src="${_safeArt(s.img || s.artwork)}" class="w-full h-full object-cover" alt="">
+                            </div>
                             <div class="min-w-0">
                                 <div class="text-xs font-semibold text-white truncate group-hover:text-white transition-colors">${utils.escapeHtml(s.name || s.title || '')}</div>
                                 <div class="text-[11px] text-zinc-400 truncate mt-0.5">${utils.escapeHtml(s.artist || '')}</div>

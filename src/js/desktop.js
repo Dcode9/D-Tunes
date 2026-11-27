@@ -459,13 +459,25 @@
     if (!isDesktop || !api.sendMediaState) return;
     const el = audioEl();
     const track = window.state && window.state.currentTrack;
-    const duration = el && Number.isFinite(el.duration) && el.duration > 0
-      ? el.duration
-      : (Number(track && track.duration) || 0);
+    const clock = (typeof window.getActivePlaybackClock === 'function')
+      ? window.getActivePlaybackClock()
+      : null;
+    const duration = (clock && Number.isFinite(clock.duration) && clock.duration > 0)
+      ? clock.duration
+      : (el && Number.isFinite(el.duration) && el.duration > 0
+        ? el.duration
+        : (Number(track && track.duration) || 0));
+    const position = (clock && Number.isFinite(clock.currentTime))
+      ? Math.max(0, clock.currentTime)
+      : (el && Number.isFinite(el.currentTime) ? Math.max(0, el.currentTime) : 0);
+    const isYTEngine = window._dtunesActiveEngine === 'yt';
+    const isPlaying = isYTEngine
+      ? Boolean(window.state && window.state.playing)
+      : Boolean(window.state && window.state.playing && (!el || !el.paused || window.state.loading));
     api.sendMediaState({
-      playing: Boolean(window.state && window.state.playing),
+      playing: isPlaying,
       hasTrack: Boolean(track),
-      position: el && Number.isFinite(el.currentTime) ? Math.max(0, el.currentTime) : 0,
+      position,
       duration,
       title: (track && (track.name || track.title)) || '',
       artist: (track && track.artist) || '',

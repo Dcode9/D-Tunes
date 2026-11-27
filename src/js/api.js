@@ -6,6 +6,47 @@
         const LEGACY_MIGRATION_STORAGE_KEY = 'dtunes_yt_migration_map_v1';
         const YT_VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 
+        const _normalizeStreamBase = (raw) => {
+            let base = String(raw || '').trim().replace(/\/+$/, '');
+            if (!base) return '';
+            base = base.replace(/\/api-v2$|\/api\/v2$|\/api$/, '');
+            return base;
+        };
+
+        let _streamBaseOrigin = (() => {
+            try {
+                if (typeof window !== 'undefined' && window.DTUNES_STREAM_BASE) {
+                    return _normalizeStreamBase(window.DTUNES_STREAM_BASE);
+                }
+                if (typeof document !== 'undefined') {
+                    const meta = document.querySelector('meta[name="dtunes-stream-base"]');
+                    if (meta && meta.content) return _normalizeStreamBase(meta.content);
+                }
+            } catch (_) {}
+            return '';
+        })();
+        let _streamConfigPromise = null;
+
+        const _discoverStreamBase = async () => {
+            if (_streamBaseOrigin) return _streamBaseOrigin;
+            if (isNetworkOffline() || typeof fetch !== 'function') return '';
+            if (!_streamConfigPromise) {
+                _streamConfigPromise = (async () => {
+                    try {
+                        const res = await fetch(`${API_V2_BASE}/config`, { cache: 'no-store' });
+                        if (res && res.ok) {
+                            const data = await res.json();
+                            if (data && data.stream_base_url) {
+                                _streamBaseOrigin = _normalizeStreamBase(data.stream_base_url);
+                            }
+                        }
+                    } catch (_) {}
+                    return _streamBaseOrigin;
+                })();
+            }
+            return _streamConfigPromise;
+        };
+
         const _loadMigrationMap = () => {
             try {
                 const raw = localStorage.getItem(LEGACY_MIGRATION_STORAGE_KEY);
@@ -307,6 +348,29 @@
                 return migrated;
             },
 
+            getStreamBaseUrl: () => {
+                return _streamBaseOrigin ? `${_streamBaseOrigin}${API_V2_BASE}` : API_V2_BASE;
+            },
+
+            getStreamUrl: (id, options = {}) => {
+                const encodedId = encodeURIComponent(String(id || '').trim());
+                const base = mediaAPI.getStreamBaseUrl();
+                const params = [];
+                if (options && options.refresh) params.push('refresh=1');
+                if (options && options.cacheBust) params.push(`r=${encodeURIComponent(String(options.cacheBust))}`);
+                const qs = params.length ? `?${params.join('&')}` : '';
+                return `${base}/stream/${encodedId}${qs}`;
+            },
+
+            getResolveUrl: (id, options = {}) => {
+                const encodedId = encodeURIComponent(String(id || '').trim());
+                const base = mediaAPI.getStreamBaseUrl();
+                const qs = options && options.refresh ? '?refresh=1' : '';
+                return `${base}/resolve/${encodedId}${qs}`;
+            },
+
+            discoverStreamHost: _discoverStreamBase,
+
             getSong: async (id) => {
                 if (!id) return null;
                 const strId = String(id).trim();
@@ -327,7 +391,8 @@
                     }
                 }
                 try {
-                    const data = await mediaAPI.fetchWithRetry(`${API_V2_BASE}/resolve/${encodeURIComponent(strId)}`);
+                    await _discoverStreamBase();
+                    const data = await mediaAPI.fetchWithRetry(mediaAPI.getResolveUrl(strId));
                     return mediaAPI.normalizeTrack(data);
                 } catch (e) {
                     return null;
@@ -397,7 +462,7 @@
                 const rawArtwork = item.artwork || item.img || fallbackImg;
                 const artwork = (typeof sanitizeImageUrl === 'function') ? sanitizeImageUrl(rawArtwork) : rawArtwork;
                 const duration = Number(item.duration) || 0;
-                const playUrl = `${API_V2_BASE}/stream/${id}`;
+                const playUrl = mediaAPI.getStreamUrl(id);
 
                 return {
                     id: id,
@@ -430,3 +495,6 @@
 
         window.mediaAPI = mediaAPI;
         window.jiosaavnAPI = mediaAPI;
+        if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+            _discoverStreamBase();
+        }

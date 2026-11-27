@@ -3,19 +3,22 @@
         // ============================================
         const audio = document.getElementById('audio-el');
         const isMobileDevice = /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-        if (!isMobileDevice) {
-            audio.crossOrigin = 'anonymous';
-            audio.setAttribute('crossorigin', 'anonymous');
-        } else {
-            audio.removeAttribute('crossorigin');
-        }
+        const applyAudioCorsPolicy = (el) => {
+            if (!el) return;
+            if (!isMobileDevice) {
+                el.crossOrigin = 'anonymous';
+                el.setAttribute('crossorigin', 'anonymous');
+            } else {
+                el.removeAttribute('crossorigin');
+            }
+        };
+        applyAudioCorsPolicy(audio);
         audio.setAttribute('playsinline', '');
         audio.setAttribute('webkit-playsinline', '');
         audio.preload = 'auto';
         const preloadAudio = isMobileDevice ? null : new Audio();
         if (preloadAudio) {
-            preloadAudio.crossOrigin = 'anonymous';
-            preloadAudio.setAttribute('crossorigin', 'anonymous');
+            applyAudioCorsPolicy(preloadAudio);
             preloadAudio.preload = 'auto';
         }
         let isPlaybackPending = false;
@@ -271,9 +274,9 @@
                             stopYTProgressTimer();
                             window._dtunesActiveEngine = 'audio';
                             if (state.currentTrack?.url) {
-                                audio.crossOrigin = 'anonymous';
+                                applyAudioCorsPolicy(audio);
                                 audio.src = state.currentTrack.url;
-                                audio.load();
+                                if (!isMobileDevice) audio.load();
                                 audio.play().catch(() => {});
                             }
                         }
@@ -359,15 +362,27 @@
                 const offlineUrl = (typeof offlineStore !== 'undefined' && offlineStore.isDownloaded(nextTrack.id))
                     ? await offlineStore.getPlayUrl(nextTrack.id).catch(() => null)
                     : null;
+                if (!offlineUrl && typeof mediaAPI !== 'undefined' && mediaAPI.discoverStreamHost) {
+                    await mediaAPI.discoverStreamHost().catch(() => {});
+                }
+                const ytStreamFallback = (nextTrack.source === 'youtube' && nextTrack.id)
+                    ? (typeof mediaAPI !== 'undefined' && mediaAPI.getStreamUrl
+                        ? mediaAPI.getStreamUrl(nextTrack.id)
+                        : `/api-v2/stream/${encodeURIComponent(nextTrack.id)}`)
+                    : '';
                 const freshDetails = nextTrack.url || offlineUrl ? null : await jiosaavnAPI.getSong(nextTrack.id);
-                const playUrl = offlineUrl || freshDetails?.url || nextTrack.url || (nextTrack.source === 'youtube' && nextTrack.id ? `/api-v2/stream/${encodeURIComponent(nextTrack.id)}` : '');
+                const playUrl = offlineUrl || freshDetails?.url || nextTrack.url || ytStreamFallback;
                 if (!playUrl || state.nextTrackPreloadId !== nextTrack.id) return;
                 if (freshDetails) Object.assign(nextTrack, freshDetails, { url: playUrl });
                 // Pre-warm backend audio stream cache so next track plays instantly
                 if (!offlineUrl && nextTrack.source === 'youtube' && nextTrack.id && !isNetworkOffline()) {
-                    fetch(`/api-v2/resolve/${encodeURIComponent(nextTrack.id)}`).catch(() => {});
+                    const resolveUrl = (typeof mediaAPI !== 'undefined' && mediaAPI.getResolveUrl)
+                        ? mediaAPI.getResolveUrl(nextTrack.id)
+                        : `/api-v2/resolve/${encodeURIComponent(nextTrack.id)}`;
+                    fetch(resolveUrl).catch(() => {});
                 }
                 if (preloadAudio) {
+                    applyAudioCorsPolicy(preloadAudio);
                     preloadAudio.src = playUrl;
                     preloadAudio.load();
                 }
@@ -381,16 +396,14 @@
                 : { currentTime: audio.currentTime || 0, duration: audio.duration || Number(state.currentTrack.duration) || 0 };
             const duration = Number.isFinite(clock.duration) && clock.duration > 0 ? clock.duration : Number(state.currentTrack.duration) || 0;
             const position = Number.isFinite(clock.currentTime) ? Math.max(0, Math.min(clock.currentTime, duration || clock.currentTime)) : 0;
+            const rate = (clock.engine === 'audio' && Number.isFinite(audio.playbackRate) && audio.playbackRate > 0) ? audio.playbackRate : 1;
             if (duration > 0) {
-                try { navigator.mediaSession.setPositionState({ duration, playbackRate: 1, position }); } catch (e) {}
+                try { navigator.mediaSession.setPositionState({ duration, playbackRate: rate, position }); } catch (e) {}
             }
         };
 
         const resetSeekbarAndTimes = (track = null) => {
             currentProgress = 0;
-            if (audio) {
-                try { audio.currentTime = 0; } catch (_) {}
-            }
             const seekBarEl = document.getElementById('seek-bar');
             if (seekBarEl) {
                 seekBarEl.value = 0;
@@ -431,6 +444,8 @@
                     ui.updatePlayBtn();
                     startYTProgressTimer();
                     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+                    updateMediaPosition();
+                    if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
                     if (typeof viz !== 'undefined' && viz.start) viz.start();
                     return;
                 } catch (_) {}
@@ -447,18 +462,25 @@
                 if (typeof viz !== 'undefined' && viz.start) viz.start();
                 await audio.play();
                 state.playing = true;
+                state.wasPlayingBeforeHidden = true;
                 ui.updatePlayBtn();
+                if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+                updateMediaPosition();
+                if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
             } catch (e) {
                 console.warn('[DTunes] Playback failed, resetting state:', e);
                 state.playing = false;
                 state.loading = false;
                 ui.setPlayerLoading(false);
                 ui.updatePlayBtn();
+                if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+                if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
             }
         };
 
         const requestPause = () => {
             state.userPaused = true;
+            state.wasPlayingBeforeHidden = false;
             const activeYT = ytPlayer || window._ytPlayerInstance;
             const isYT = window._dtunesActiveEngine === 'yt' && activeYT && typeof activeYT.pauseVideo === 'function';
             if (isYT) {
@@ -473,6 +495,8 @@
                     ui.updatePlayBtn();
                     stopYTProgressTimer();
                     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+                    updateMediaPosition();
+                    if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
                     if (typeof viz !== 'undefined' && viz.start) viz.start();
                     return;
                 } catch (_) {}
@@ -480,6 +504,9 @@
             audio.pause();
             state.playing = false;
             ui.updatePlayBtn();
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+            updateMediaPosition();
+            if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
         };
 
         const recoverFromAudioError = async () => {
@@ -525,9 +552,9 @@
                 if (typeof offlineStore !== 'undefined' && offlineStore.isDownloaded(state.currentTrack.id)) {
                     const offlineUrl = await offlineStore.getPlayUrl(state.currentTrack.id).catch(() => null);
                     if (offlineUrl) {
-                        audio.crossOrigin = 'anonymous';
+                        applyAudioCorsPolicy(audio);
                         audio.src = offlineUrl;
-                        audio.load();
+                        if (!isMobileDevice) audio.load();
                         if (resumeTime > 0) {
                             try { audio.currentTime = resumeTime; } catch (_) {}
                         }
@@ -536,11 +563,19 @@
                     }
                 }
 
-                // Attempt 1: Retry native audio stream once before falling back to YouTube embed
-                if (state._audioRetryCount === 1 && state.currentTrack?.source === 'youtube' && !state.currentTrack?.isOffline && state.currentTrack?.id) {
+                // Attempt 1 & 2: Retry native audio stream (with backend cache refresh on attempt 2) before considering fallback
+                if (state._audioRetryCount <= 2 && state.currentTrack?.source === 'youtube' && !state.currentTrack?.isOffline && state.currentTrack?.id) {
                     await new Promise(r => setTimeout(r, 350));
-                    const retryUrl = `/api-v2/stream/${encodeURIComponent(state.currentTrack.id)}?r=${Date.now()}`;
-                    if (!isMobileDevice) audio.crossOrigin = 'anonymous'; else audio.removeAttribute('crossorigin');
+                    if (typeof mediaAPI !== 'undefined' && mediaAPI.discoverStreamHost) {
+                        await mediaAPI.discoverStreamHost().catch(() => {});
+                    }
+                    const retryUrl = (typeof mediaAPI !== 'undefined' && mediaAPI.getStreamUrl)
+                        ? mediaAPI.getStreamUrl(state.currentTrack.id, {
+                            refresh: state._audioRetryCount === 2,
+                            cacheBust: Date.now(),
+                        })
+                        : `/api-v2/stream/${encodeURIComponent(state.currentTrack.id)}?${state._audioRetryCount === 2 ? 'refresh=1&' : ''}r=${Date.now()}`;
+                    applyAudioCorsPolicy(audio);
                     audio.src = retryUrl;
                     if (!isMobileDevice) audio.load();
                     if (resumeTime > 0) {
@@ -550,8 +585,9 @@
                     return;
                 }
 
-                // Attempt 2: Silent YouTube embed fallback only if native audio stream is unavailable
-                if (state.currentTrack?.source === 'youtube' && !state.currentTrack?.isOffline && ytPlayerReady && ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+                // Attempt 3: Silent YouTube embed fallback only if native audio stream failed after retries (desktop or foregrounded tab)
+                const canFallbackYT = !isMobileDevice || document.visibilityState === 'visible';
+                if (canFallbackYT && state.currentTrack?.source === 'youtube' && !state.currentTrack?.isOffline && ytPlayerReady && ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
                     window._dtunesActiveEngine = 'yt';
                     audio.pause();
                     _ytDesiredState = 'playing';
@@ -575,9 +611,9 @@
 
                 if (state._audioRetryCount <= 2 && state.currentTrack.url) {
                     await new Promise(r => setTimeout(r, 400));
-                    audio.crossOrigin = 'anonymous';
+                    applyAudioCorsPolicy(audio);
                     audio.src = state.currentTrack.url;
-                    audio.load();
+                    if (!isMobileDevice) audio.load();
                     if (resumeTime > 0) {
                         try { audio.currentTime = resumeTime; } catch (_) {}
                     }
@@ -585,13 +621,13 @@
                     return;
                 }
 
-                // Attempt 3: Refresh song details from API
+                // Attempt 4: Refresh song details from API
                 const refreshed = await jiosaavnAPI.getSong(state.currentTrack.id);
                 if (refreshed?.url) {
                     state.currentTrack.url = refreshed.url;
-                    audio.crossOrigin = 'anonymous';
+                    applyAudioCorsPolicy(audio);
                     audio.src = refreshed.url;
-                    audio.load();
+                    if (!isMobileDevice) audio.load();
                     if (resumeTime > 0) {
                         try { audio.currentTime = resumeTime; } catch (_) {}
                     }
@@ -603,9 +639,9 @@
                     const retried = await jiosaavnAPI.getSong(state.currentTrack.id);
                     if (retried?.url) {
                         state.currentTrack.url = retried.url;
-                        audio.crossOrigin = 'anonymous';
+                        applyAudioCorsPolicy(audio);
                         audio.src = retried.url;
-                        audio.load();
+                        if (!isMobileDevice) audio.load();
                         if (resumeTime > 0) {
                             try { audio.currentTime = resumeTime; } catch (_) {}
                         }
@@ -697,12 +733,16 @@
                 });
             },
             maybeRecordSkip: () => {
-                if (!state.currentTrack || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
-                const progress = audio.currentTime / audio.duration;
+                if (!state.currentTrack) return;
+                const clock = typeof window.getActivePlaybackClock === 'function'
+                    ? window.getActivePlaybackClock()
+                    : { currentTime: audio.currentTime || 0, duration: audio.duration || 0 };
+                if (!Number.isFinite(clock.duration) || clock.duration <= 0) return;
+                const progress = clock.currentTime / clock.duration;
                 if (progress > 0.02 && progress < 0.5 && recommendationEvents.completedSongId !== state.currentTrack.id) {
                     recommendationEvents.record('skip', state.currentTrack, {
-                        playDurationSeconds: Math.floor(audio.currentTime),
-                        songDurationSeconds: Math.floor(audio.duration),
+                        playDurationSeconds: Math.floor(clock.currentTime),
+                        songDurationSeconds: Math.floor(clock.duration),
                     });
                 }
             }
@@ -789,11 +829,7 @@
                     if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
                         try { ytPlayer.pauseVideo(); } catch (_) {}
                     }
-                    if (!isMobileDevice) {
-                        audio.crossOrigin = 'anonymous';
-                    } else {
-                        audio.removeAttribute('crossorigin');
-                    }
+                    applyAudioCorsPolicy(audio);
                     audio.preload = 'auto';
                     audio.src = urlToPlay;
                     if (!isMobileDevice) {
@@ -801,6 +837,7 @@
                     }
 
                     state.loaded = true;
+                    state.userPaused = false;
                     ui.enableControls();
                     audio.loop = (state.repeat === 2);
 
@@ -818,10 +855,15 @@
                     }
                     if (currentRequestId !== playRequestId) return false;
 
+                    isPlaybackPending = false;
                     state.playing = true;
+                    state.wasPlayingBeforeHidden = true;
                     state.loading = false;
                     ui.setPlayerLoading(false);
                     ui.updatePlayBtn();
+                    if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+                    updateMediaPosition();
+                    if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
 
                     const isRepeatStart = recommendationEvents.lastStartedSongId === track.id && Date.now() - recommendationEvents.currentPlayStartAt < 15 * 60 * 1000;
                     recommendationEvents.currentPlayStartAt = Date.now();
@@ -919,12 +961,19 @@
                         }
                     }
 
-                    // Native HTML5 <audio> streaming via /api-v2/stream/{id} (supports iOS background play, lock-screen controls, EQ & live visualizer)
-                    // YouTube embed is only used automatically as a silent fallback inside recoverFromAudioError if the stream proxy fails.
+                    // Native HTML5 <audio> streaming via dedicated stream host or /api-v2/stream/{id}
+                    // (supports iOS background play, lock-screen controls, EQ & live visualizer)
                     if (track.source === 'youtube' && !track.isOffline && track.id) {
-                        const nativeStreamUrl = (track.url && String(track.url).includes('/api-v2/stream/'))
-                            ? track.url
+                        if (typeof mediaAPI !== 'undefined' && mediaAPI.discoverStreamHost) {
+                            await mediaAPI.discoverStreamHost().catch(() => {});
+                            if (currentRequestId !== playRequestId) return;
+                        }
+                        const preferredStreamUrl = (typeof mediaAPI !== 'undefined' && mediaAPI.getStreamUrl)
+                            ? mediaAPI.getStreamUrl(track.id)
                             : `/api-v2/stream/${encodeURIComponent(track.id)}`;
+                        const nativeStreamUrl = (track.url && String(track.url).includes('/api-v2/stream/') && preferredStreamUrl.startsWith('/api-v2/'))
+                            ? track.url
+                            : preferredStreamUrl;
                         track.url = nativeStreamUrl;
                         track.play_url = nativeStreamUrl;
                         state.currentTrack = { ...state.currentTrack, url: nativeStreamUrl, play_url: nativeStreamUrl };
@@ -988,7 +1037,10 @@
             togglePlay: () => {
                 if(!state.loaded) return;
                 if (typeof viz !== 'undefined') viz.start();
-                if(state.playing || !audio.paused) { requestPause(); } else { requestPlay(); }
+                const isRunning = (typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt')
+                    ? Boolean(state.playing)
+                    : Boolean(state.playing || !audio.paused);
+                if (isRunning) { requestPause(); } else { requestPlay(); }
             },
             seek: (time) => {
                 if (!state.loaded || !Number.isFinite(time)) return;
@@ -1123,10 +1175,11 @@
             },
             prev: () => { 
                 if (state.queue.length === 0) return;
-                if (audio.currentTime > 3) {
-                    audio.currentTime = 0;
-                    if (typeof viz !== 'undefined' && viz.start) viz.start();
-                    updateMediaPosition();
+                const clock = typeof window.getActivePlaybackClock === 'function'
+                    ? window.getActivePlaybackClock()
+                    : { currentTime: audio.currentTime || 0, engine: 'audio' };
+                if (clock.currentTime > 3) {
+                    player.seek(0);
                     return;
                 }
                 const isOfflineNow = typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function'
@@ -1492,6 +1545,7 @@
         };
 
         audio.addEventListener('play', () => { 
+            if (typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt') return;
             state.playing = true;
             state.wasPlayingBeforeHidden = true;
             state.userPaused = false;
@@ -1499,6 +1553,8 @@
             ui.updatePlayBtn();
             persist.save();
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+            updateMediaPosition();
+            if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
 
             // Ensure AudioContext and Visualizer animate smoothly on external/system play
             if (!isAudioContextInitialized) setupAudioContext();
@@ -1509,10 +1565,9 @@
         });
         audio.addEventListener('pause', () => {
             if (typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt') return;
-            // Only update play state if the user explicitly requested a pause,
-            // or if the playback naturally ended, or if the page is visible.
-            if (state.userPaused || audio.ended || document.visibilityState !== 'hidden') {
-                state.playing = false;
+            if (isPlaybackPending && !state.userPaused) return;
+            state.playing = false;
+            if (state.userPaused || audio.ended) {
                 state.wasPlayingBeforeHidden = false;
             }
             if (window.listeningSession) listeningSession.setPlaying(false);
@@ -1523,13 +1578,21 @@
                 persist.save();
             }
             if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+            updateMediaPosition();
+            if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
             if (typeof viz !== 'undefined' && viz.start) viz.start();
         });
 
         audio.addEventListener('playing', () => {
+            if (typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt') return;
             state._audioRetryCount = 0;
+            state.playing = true;
             state.loading = false;
             ui.setPlayerLoading(false);
+            ui.updatePlayBtn();
+            if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+            updateMediaPosition();
+            if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
             if (typeof viz !== 'undefined' && viz.start) viz.start();
         });
 
@@ -1585,9 +1648,9 @@
                 }
                 try {
                     if (state.currentTrack.url) {
-                        audio.crossOrigin = 'anonymous';
+                        applyAudioCorsPolicy(audio);
                         audio.src = state.currentTrack.url;
-                        audio.load();
+                        if (!isMobileDevice) audio.load();
                         if (resumePos > 0) {
                             try { audio.currentTime = resumePos; } catch (_) {}
                         }
@@ -1607,6 +1670,17 @@
             audio.addEventListener(eventName, () => {
                 state.loading = false;
                 ui.setPlayerLoading(false);
+                if (eventName === 'loadedmetadata') {
+                    updateMediaPosition();
+                    if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
+                }
+            });
+        });
+        ['durationchange', 'seeked'].forEach((eventName) => {
+            audio.addEventListener(eventName, () => {
+                if (typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt') return;
+                updateMediaPosition();
+                if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
             });
         });
 
@@ -1708,8 +1782,9 @@
         window.requestPause = requestPause;
         player.updateMediaPosition = updateMediaPosition;
 
-        // Register initial MediaSession action handlers so Windows SMTC detects transport capability immediately
-        if ('mediaSession' in navigator) {
+        // Register initial MediaSession action handlers so iOS Lock Screen & Windows SMTC detect transport capability immediately
+        const registerMediaSessionHandlers = () => {
+            if (!('mediaSession' in navigator) || typeof navigator.mediaSession.setActionHandler !== 'function') return;
             const safeSet = (act, fn) => {
                 try { navigator.mediaSession.setActionHandler(act, fn); } catch (_) {}
             };
@@ -1734,12 +1809,21 @@
                 player.seek(Math.max(0, Math.min(details.seekTime, clock.duration || details.seekTime)));
                 updateMediaPosition();
             });
+        };
+        registerMediaSessionHandlers();
+        if (typeof window !== 'undefined') {
+            window.registerMediaSessionHandlers = registerMediaSessionHandlers;
         }
 
         window.__dtunesMediaHandlers = {
             play: () => requestPlay(),
             pause: () => requestPause(),
-            playpause: () => { if (state.playing || !audio.paused) requestPause(); else requestPlay(); },
+            playpause: () => {
+                const isRunning = (typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt')
+                    ? Boolean(state.playing)
+                    : Boolean(state.playing || !audio.paused);
+                if (isRunning) requestPause(); else requestPlay();
+            },
             nexttrack: () => player.next(true),
             previoustrack: () => player.prev()
         };

@@ -1185,7 +1185,9 @@
                     resultsBox.innerHTML = songs.map(song => {
                         const id = songStore.add(song);
                         return `<div class="flex items-center gap-2 p-1.5 hover:bg-white/10 rounded cursor-pointer transition" onclick="window.stageSongForPlaylist('${id}')">
-                            <img src="${song.img}" class="w-8 h-8 rounded object-cover">
+                            <div class="w-8 h-8 rounded overflow-hidden flex-shrink-0">
+                                <img src="${typeof sanitizeImageUrl === 'function' ? sanitizeImageUrl(song.img || song.artwork) : (song.img || '')}" class="w-full h-full object-cover" alt="">
+                            </div>
                             <div class="flex-1 min-w-0"><p class="text-xs text-white truncate">${utils.escapeHtml(song.name)}</p><p class="text-[10px] text-gray-400 truncate">${utils.escapeHtml(song.artist)}</p></div>
                             <svg class="w-4 h-4 text-[var(--accent-color)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
                         </div>`;

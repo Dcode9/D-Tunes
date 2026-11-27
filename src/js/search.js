@@ -481,7 +481,9 @@
                         <div class="flex items-center justify-between p-2 rounded-xl bg-white/5 gap-3 ${blocked ? 'opacity-45 grayscale cursor-not-allowed select-none' : 'hover:bg-white/10 transition cursor-pointer'}"
                             ${blocked ? 'aria-disabled="true" title="Not downloaded — unavailable offline"' : `onclick="playSongById('${storeId}')"`}>
                             <span class="w-5 text-center text-xs font-mono font-bold text-gray-400 flex-shrink-0">#${index + 1}</span>
-                            <img src="${song.img || FALLBACK_ART}" class="w-10 h-10 rounded-lg object-cover flex-shrink-0">
+                            <div class="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0">
+                                <img src="${typeof sanitizeImageUrl === 'function' ? sanitizeImageUrl(song.img || song.artwork || FALLBACK_ART) : (song.img || FALLBACK_ART)}" class="w-full h-full object-cover" alt="">
+                            </div>
                             <div class="min-w-0 flex-1">
                                 <p class="text-xs font-bold ${blocked ? 'text-gray-400' : 'text-white'} truncate">${utils.escapeHtml(song.name || song.title || 'Track')}</p>
                                 <p class="text-[10px] text-gray-400 truncate">${utils.escapeHtml(song.artist || 'Artist')}</p>

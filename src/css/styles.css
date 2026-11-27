@@ -4422,3 +4422,54 @@ body.queue-sidebar-active #ai-hub-container div.md\:p-8 > button {
     text-transform: uppercase;
     color: rgba(161, 161, 170, 0.85);
 }
+
+/* ==========================================================================
+   1:1 SQUARE ARTWORK CROP FOR YOUTUBE VIDEO THUMBNAILS
+   4:3 thumbnails (hqdefault/sddefault) carry 12.5% baked-in top/bottom black
+   bars; scaling inside overflow-hidden 1:1 containers removes them cleanly.
+   ========================================================================== */
+img[src*="ytimg.com"]:not(.sc-l0):not(.sc-ci),
+img[src*="img.youtube.com"]:not(.sc-l0):not(.sc-ci) {
+    object-fit: cover !important;
+    transform: scale(1.36);
+    transform-origin: center center;
+}
+
+img[src*="ytimg.com"][src*="hq720"]:not(.sc-l0):not(.sc-ci),
+img[src*="ytimg.com"][src*="maxresdefault"]:not(.sc-l0):not(.sc-ci),
+img[src*="ytimg.com"][src*="mqdefault"]:not(.sc-l0):not(.sc-ci),
+img[src*="img.youtube.com"][src*="hq720"]:not(.sc-l0):not(.sc-ci),
+img[src*="img.youtube.com"][src*="maxresdefault"]:not(.sc-l0):not(.sc-ci),
+img[src*="img.youtube.com"][src*="mqdefault"]:not(.sc-l0):not(.sc-ci) {
+    transform: scale(1.06);
+}
+
+.sc-ci[src*="ytimg.com"]:not(.sc-flip),
+.sc-ci[src*="img.youtube.com"]:not(.sc-flip) {
+    transform: scale(1.36);
+    transform-origin: center center;
+}
+
+.sc-ci[src*="ytimg.com"][src*="hq720"]:not(.sc-flip),
+.sc-ci[src*="ytimg.com"][src*="maxresdefault"]:not(.sc-flip),
+.sc-ci[src*="ytimg.com"][src*="mqdefault"]:not(.sc-flip),
+.sc-ci[src*="img.youtube.com"][src*="hq720"]:not(.sc-flip),
+.sc-ci[src*="img.youtube.com"][src*="maxresdefault"]:not(.sc-flip),
+.sc-ci[src*="img.youtube.com"][src*="mqdefault"]:not(.sc-flip) {
+    transform: scale(1.06);
+}
+
+.sc-ci.sc-flip[src*="ytimg.com"],
+.sc-ci.sc-flip[src*="img.youtube.com"] {
+    transform: scaleY(-1) scale(1.36);
+    transform-origin: center center;
+}
+
+.sc-ci.sc-flip[src*="ytimg.com"][src*="hq720"],
+.sc-ci.sc-flip[src*="ytimg.com"][src*="maxresdefault"],
+.sc-ci.sc-flip[src*="ytimg.com"][src*="mqdefault"],
+.sc-ci.sc-flip[src*="img.youtube.com"][src*="hq720"],
+.sc-ci.sc-flip[src*="img.youtube.com"][src*="maxresdefault"],
+.sc-ci.sc-flip[src*="img.youtube.com"][src*="mqdefault"] {
+    transform: scaleY(-1) scale(1.06);
+}
