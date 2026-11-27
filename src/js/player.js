@@ -31,6 +31,10 @@
         let ytProgressTimer = null;
         let _ytDesiredState = null; // 'playing' | 'paused' | null
         let _ytDesiredAt = 0;
+        let _pendingYTVideo = null;
+        let _ytLoadTimer = null;
+        let _streamStartupTimer = null;
+        let _consecutiveYTFailures = 0;
         const YT_INTENT_LOCK_MS = 1200;
         const _ytClock = {
             videoId: null,
@@ -220,9 +224,16 @@
                                     ytPlayer.setVolume(Math.round(Math.max(0, Math.min(1, vol)) * 100));
                                 } catch (_) {}
                             }
+                            if (_pendingYTVideo && _pendingYTVideo.requestId === playRequestId) {
+                                const pending = _pendingYTVideo;
+                                _pendingYTVideo = null;
+                                startYTPlayback(pending.track, pending.startSeconds, pending.requestId);
+                            }
                         },
                         onStateChange: (event) => {
                             if (event.data === 1) { // PLAYING
+                                if (_ytLoadTimer) { clearTimeout(_ytLoadTimer); _ytLoadTimer = null; }
+                                _consecutiveYTFailures = 0;
                                 if (_isWithinYTIntentLock('paused')) {
                                     // User just clicked Pause; suppress stale iframe PLAYING event
                                     try { ytPlayer.mute(); ytPlayer.pauseVideo(); } catch (_) {}
@@ -233,24 +244,40 @@
                                 _ytClock.basePerfMs = performance.now();
                                 _syncYTClockFromPlayer(ytPlayer);
                                 _restoreYTVolume();
+                                isPlaybackPending = false;
+                                state.loaded = true;
                                 state.playing = true;
                                 state.loading = false;
+                                ui.enableControls();
                                 ui.setPlayerLoading(false);
                                 ui.updatePlayBtn();
                                 startYTProgressTimer();
                                 if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+                                updateMediaPosition();
+                                if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
                                 if (typeof viz !== 'undefined' && viz.start) viz.start();
                             } else if (event.data === 2) { // PAUSED
+                                if (_ytLoadTimer) { clearTimeout(_ytLoadTimer); _ytLoadTimer = null; }
                                 if (_isWithinYTIntentLock('playing')) {
                                     // User just clicked Play; suppress stale iframe PAUSED event
                                     return;
                                 }
                                 _freezeYTClock();
+                                isPlaybackPending = false;
                                 state.playing = false;
+                                state.loading = false;
+                                ui.setPlayerLoading(false);
                                 ui.updatePlayBtn();
                                 stopYTProgressTimer();
                                 if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+                                updateMediaPosition();
+                                if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
                                 if (typeof viz !== 'undefined' && viz.start) viz.start();
+                            } else if (event.data === 5) { // CUED
+                                if (_ytLoadTimer) { clearTimeout(_ytLoadTimer); _ytLoadTimer = null; }
+                                if (!_isWithinYTIntentLock('paused') && _ytDesiredState === 'playing') {
+                                    try { _restoreYTVolume(); ytPlayer.playVideo(); } catch (_) {}
+                                }
                             } else if (event.data === 3) { // BUFFERING
                                 // Keep playhead steady without flashing ugly loading overlays on the button
                                 if (!_isWithinYTIntentLock('paused')) {
@@ -271,13 +298,35 @@
                         },
                         onError: (err) => {
                             console.warn('[DTunes] YouTube Player error:', err);
+                            if (_ytLoadTimer) { clearTimeout(_ytLoadTimer); _ytLoadTimer = null; }
                             stopYTProgressTimer();
-                            window._dtunesActiveEngine = 'audio';
-                            if (state.currentTrack?.url) {
+                            isPlaybackPending = false;
+                            const track = state.currentTrack;
+                            const canTryNative = Boolean(
+                                track?.url &&
+                                !track._nativeStreamFailed &&
+                                (!mediaAPI?.isStreamReady || mediaAPI.isStreamReady())
+                            );
+                            if (canTryNative) {
+                                window._dtunesActiveEngine = 'audio';
                                 applyAudioCorsPolicy(audio);
-                                audio.src = state.currentTrack.url;
+                                audio.src = track.url;
                                 if (!isMobileDevice) audio.load();
                                 audio.play().catch(() => {});
+                                return;
+                            }
+                            state.playing = false;
+                            state.loading = false;
+                            ui.setPlayerLoading(false);
+                            ui.updatePlayBtn();
+                            _consecutiveYTFailures += 1;
+                            if (window.ui && ui.showToast) {
+                                ui.showToast('Unable to play this track right now.', 'warning', 3000);
+                            }
+                            if (_consecutiveYTFailures < 3 && state.queue && state.queue.length > 1) {
+                                setTimeout(() => {
+                                    if (!state.userPaused && !state.playing) player.next();
+                                }, 400);
                             }
                         }
                     }
@@ -509,24 +558,173 @@
             if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
         };
 
+        let _finalizedPlayRequestId = -1;
+        const finalizeTrackPlayback = (track, requestId = playRequestId) => {
+            if (!track || requestId !== playRequestId || _finalizedPlayRequestId === requestId) return;
+            _finalizedPlayRequestId = requestId;
+
+            const isRepeatStart = recommendationEvents.lastStartedSongId === track.id && Date.now() - recommendationEvents.currentPlayStartAt < 15 * 60 * 1000;
+            recommendationEvents.currentPlayStartAt = Date.now();
+            recommendationEvents.lastStartedSongId = track.id;
+            recommendationEvents.completedSongId = null;
+            recommendationEvents.record(isRepeatStart ? 'repeat' : (recommendationEvents.contextForTrack(track).source === 'search' ? 'search_play' : 'play_start'), track, {
+                songDurationSeconds: track.duration,
+                context: recommendationEvents.contextForTrack(track),
+            });
+
+            if (window._dtunesActiveEngine !== 'yt') {
+                if (!isAudioContextInitialized) setupAudioContext();
+                if (audioContext && audioContext.state === 'suspended') {
+                    audioContext.resume().catch(err => console.warn('[DTunes] Could not resume audioContext in playDirect:', err));
+                }
+                applyEqualizer();
+            }
+
+            ui.updateMetadata(state.currentTrack);
+            ui.renderQueue();
+            primeNextTrack();
+            if (typeof lyricsManager !== 'undefined') lyricsManager.fetchLyricsForTrack(state.currentTrack);
+            if (typeof viz !== 'undefined') viz.start();
+
+            const trackWithTime = { ...state.currentTrack, playedAt: new Date().toISOString() };
+            state.playHistory = state.playHistory.filter(t => t.id !== track.id);
+            state.playHistory.unshift(trackWithTime);
+            if (state.playHistory.length > 100) state.playHistory.pop();
+            localStorage.setItem('playHistory', JSON.stringify(state.playHistory));
+
+            if (typeof searchManager !== 'undefined' && searchManager.addToRecentSearches) {
+                const isSearchView = (typeof ui !== 'undefined' && ui.getCurrentView && ui.getCurrentView() === 'search') || document.body.classList.contains('mobile-search-open');
+                if (isSearchView || track.source === 'search' || track.isSearchResult) {
+                    searchManager.addToRecentSearches(track);
+                }
+            }
+
+            if (window.listeningSession) listeningSession.start(state.currentTrack);
+            ui.renderHistory();
+            if (ui.updateAlbumCarouselPeeks) ui.updateAlbumCarouselPeeks();
+            if (!document.getElementById('view-home').classList.contains('hidden')) homeView.renderRecentlyPlayed();
+            persist.save();
+        };
+
+        const startYTPlayback = (track, startSeconds = 0, requestId = playRequestId) => {
+            if (!track || !track.id || requestId !== playRequestId) return false;
+            if (_streamStartupTimer) { clearTimeout(_streamStartupTimer); _streamStartupTimer = null; }
+            window._dtunesActiveEngine = 'yt';
+            try { audio.pause(); } catch (_) {}
+
+            state.loaded = true;
+            state.userPaused = false;
+            ui.enableControls();
+            _ytDesiredState = 'playing';
+            _ytDesiredAt = performance.now();
+            _ytClock.videoId = track.id;
+            _ytClock.baseTime = startSeconds;
+            _ytClock.basePerfMs = performance.now();
+            _ytClock.duration = Number(track.duration || track.duration_seconds || 0);
+            _ytClock.running = false;
+            _ytClock.active = false;
+            _ytClock.lastReportedTime = -1;
+
+            if (_ytLoadTimer) { clearTimeout(_ytLoadTimer); _ytLoadTimer = null; }
+            _ytLoadTimer = setTimeout(() => {
+                _ytLoadTimer = null;
+                if (requestId === playRequestId && window._dtunesActiveEngine === 'yt' && state.loading) {
+                    isPlaybackPending = false;
+                    state.loading = false;
+                    ui.setPlayerLoading(false);
+                    ui.updatePlayBtn();
+                }
+            }, 6000);
+
+            if (!ytPlayer && typeof YT !== 'undefined' && YT.Player) {
+                initYTPlayer();
+            }
+            if (ytPlayerReady && ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
+                _pendingYTVideo = null;
+                _restoreYTVolume();
+                ytPlayer.loadVideoById({ videoId: track.id, startSeconds });
+                isPlaybackPending = false;
+                state.playing = true;
+                state.loading = false;
+                ui.setPlayerLoading(false);
+                ui.updatePlayBtn();
+                startYTProgressTimer();
+                if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+                updateMediaPosition();
+                if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
+                finalizeTrackPlayback(track, requestId);
+                return true;
+            }
+
+            _pendingYTVideo = { track, startSeconds, requestId };
+            return true;
+        };
+
+        const attemptNativeAudio = (url, resumeTime = 0, timeoutMs = 6000, requestId = playRequestId) => {
+            return new Promise((resolve) => {
+                if (!url || requestId !== playRequestId) { resolve(false); return; }
+                let settled = false;
+                let timer = null;
+                const cleanup = () => {
+                    if (timer) { clearTimeout(timer); timer = null; }
+                    audio.removeEventListener('playing', onSuccess);
+                    audio.removeEventListener('canplay', onSuccess);
+                    audio.removeEventListener('error', onFail);
+                };
+                const finish = (ok) => {
+                    if (settled) return;
+                    settled = true;
+                    cleanup();
+                    resolve(ok);
+                };
+                const onSuccess = () => {
+                    if (requestId !== playRequestId) { finish(false); return; }
+                    finish(true);
+                };
+                const onFail = () => finish(false);
+
+                audio.addEventListener('playing', onSuccess, { once: true });
+                audio.addEventListener('canplay', onSuccess, { once: true });
+                audio.addEventListener('error', onFail, { once: true });
+                timer = setTimeout(() => finish(false), timeoutMs);
+
+                applyAudioCorsPolicy(audio);
+                audio.src = url;
+                if (!isMobileDevice) audio.load();
+                if (resumeTime > 0) {
+                    try { audio.currentTime = resumeTime; } catch (_) {}
+                }
+                if (state.playing || !state.userPaused) {
+                    const playPromise = audio.play();
+                    if (playPromise && typeof playPromise.then === 'function') {
+                        playPromise.then(() => {
+                            if (requestId === playRequestId && !audio.error) finish(true);
+                        }).catch(() => finish(false));
+                    }
+                }
+            });
+        };
+
         const recoverFromAudioError = async () => {
             if (!state.currentTrack || isAudioRecoveryPending) return;
             // Ignore aborts (e.g. from rapid track skipping or new track load) and non-errors
             if (audio.error && (audio.error.code === 1 || audio.error.code === 0)) {
                 return;
             }
+            if (_streamStartupTimer) { clearTimeout(_streamStartupTimer); _streamStartupTimer = null; }
+
             const isOfflineNow = typeof window !== 'undefined' && typeof window.__dtunesIsOffline === 'function'
                 ? window.__dtunesIsOffline()
                 : (typeof navigator !== 'undefined' && !navigator.onLine);
             const isDownloadedNow = typeof offlineStore !== 'undefined' && offlineStore && offlineStore.isDownloaded && offlineStore.isDownloaded(state.currentTrack.id);
 
             if (isOfflineNow && !isDownloadedNow) {
-                // If offline and current track is an online stream, stop retries and pause gracefully
                 const pausedTime = Math.max(0, audio.currentTime || 0);
                 audio.pause();
                 state.playing = false;
                 state.loading = false;
                 isAudioRecoveryPending = false;
+                isPlaybackPending = false;
                 state._playbackPausedDueToNetwork = {
                     trackId: state.currentTrack.id,
                     position: pausedTime
@@ -544,121 +742,102 @@
             state.loading = true;
             ui.setPlayerLoading(true);
 
+            const recoveryRequestId = playRequestId;
+            const track = state.currentTrack;
             const resumeTime = Math.max(0, audio.currentTime || 0);
             state._audioRetryCount = (state._audioRetryCount || 0) + 1;
 
             try {
                 // Attempt 0: an offline copy is always preferred over the network
-                if (typeof offlineStore !== 'undefined' && offlineStore.isDownloaded(state.currentTrack.id)) {
-                    const offlineUrl = await offlineStore.getPlayUrl(state.currentTrack.id).catch(() => null);
-                    if (offlineUrl) {
-                        applyAudioCorsPolicy(audio);
-                        audio.src = offlineUrl;
-                        if (!isMobileDevice) audio.load();
-                        if (resumeTime > 0) {
-                            try { audio.currentTime = resumeTime; } catch (_) {}
-                        }
-                        if (state.playing || !state.userPaused) await audio.play();
+                if (typeof offlineStore !== 'undefined' && offlineStore.isDownloaded(track.id)) {
+                    const offlineUrl = await offlineStore.getPlayUrl(track.id).catch(() => null);
+                    if (offlineUrl && await attemptNativeAudio(offlineUrl, resumeTime, 5000, recoveryRequestId)) {
+                        finalizeTrackPlayback(track, recoveryRequestId);
                         return;
                     }
                 }
 
-                // Attempt 1 & 2: Retry native audio stream (with backend cache refresh on attempt 2) before considering fallback
-                if (state._audioRetryCount <= 2 && state.currentTrack?.source === 'youtube' && !state.currentTrack?.isOffline && state.currentTrack?.id) {
-                    await new Promise(r => setTimeout(r, 350));
-                    if (typeof mediaAPI !== 'undefined' && mediaAPI.discoverStreamHost) {
-                        await mediaAPI.discoverStreamHost().catch(() => {});
+                // Attempt 1: For YouTube tracks, retry native stream at most once (when stream host is ready), then fall back cleanly
+                if (track.source === 'youtube' && !track.isOffline && track.id) {
+                    const streamAllowed = !mediaAPI?.isStreamReady || mediaAPI.isStreamReady();
+                    if (streamAllowed && !track._nativeStreamFailed && state._audioRetryCount === 1) {
+                        await new Promise(r => setTimeout(r, 250));
+                        if (recoveryRequestId !== playRequestId) return;
+                        const retryUrl = (typeof mediaAPI !== 'undefined' && mediaAPI.getStreamUrl)
+                            ? mediaAPI.getStreamUrl(track.id, { refresh: true, cacheBust: Date.now() })
+                            : `/api-v2/stream/${encodeURIComponent(track.id)}?refresh=1&r=${Date.now()}`;
+                        if (await attemptNativeAudio(retryUrl, resumeTime, 6000, recoveryRequestId)) {
+                            state._audioRetryCount = 0;
+                            state.playing = true;
+                            ui.updatePlayBtn();
+                            finalizeTrackPlayback(track, recoveryRequestId);
+                            return;
+                        }
                     }
-                    const retryUrl = (typeof mediaAPI !== 'undefined' && mediaAPI.getStreamUrl)
-                        ? mediaAPI.getStreamUrl(state.currentTrack.id, {
-                            refresh: state._audioRetryCount === 2,
-                            cacheBust: Date.now(),
-                        })
-                        : `/api-v2/stream/${encodeURIComponent(state.currentTrack.id)}?${state._audioRetryCount === 2 ? 'refresh=1&' : ''}r=${Date.now()}`;
-                    applyAudioCorsPolicy(audio);
-                    audio.src = retryUrl;
-                    if (!isMobileDevice) audio.load();
-                    if (resumeTime > 0) {
-                        try { audio.currentTime = resumeTime; } catch (_) {}
+
+                    track._nativeStreamFailed = true;
+                    const canFallbackYT = !isMobileDevice || document.visibilityState === 'visible';
+                    if (canFallbackYT && startYTPlayback(track, resumeTime, recoveryRequestId)) {
+                        return;
                     }
-                    if (state.playing || !state.userPaused) await audio.play();
-                    return;
                 }
 
-                // Attempt 3: Silent YouTube embed fallback only if native audio stream failed after retries (desktop or foregrounded tab)
-                const canFallbackYT = !isMobileDevice || document.visibilityState === 'visible';
-                if (canFallbackYT && state.currentTrack?.source === 'youtube' && !state.currentTrack?.isOffline && ytPlayerReady && ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
-                    window._dtunesActiveEngine = 'yt';
-                    audio.pause();
-                    _ytDesiredState = 'playing';
-                    _ytDesiredAt = performance.now();
-                    _ytClock.videoId = state.currentTrack.id;
-                    _ytClock.baseTime = resumeTime;
-                    _ytClock.basePerfMs = performance.now();
-                    _ytClock.duration = Number(state.currentTrack.duration || state.currentTrack.duration_seconds || 0);
-                    _ytClock.running = false;
-                    _ytClock.active = false;
-                    _ytClock.lastReportedTime = -1;
-                    _restoreYTVolume();
-                    ytPlayer.loadVideoById({ videoId: state.currentTrack.id, startSeconds: resumeTime });
-                    state.playing = true;
-                    state.loading = false;
-                    ui.setPlayerLoading(false);
+                if (state._audioRetryCount <= 2 && track.url && !track._nativeStreamFailed) {
+                    await new Promise(r => setTimeout(r, 300));
+                    if (recoveryRequestId !== playRequestId) return;
+                    if (await attemptNativeAudio(track.url, resumeTime, 6000, recoveryRequestId)) {
+                        finalizeTrackPlayback(track, recoveryRequestId);
+                        return;
+                    }
+                }
+
+                // Refresh song details from API for non-YouTube or stale URLs
+                if (!track._nativeStreamFailed) {
+                    const refreshed = await jiosaavnAPI.getSong(track.id);
+                    if (recoveryRequestId !== playRequestId) return;
+                    if (refreshed?.url) {
+                        track.url = refreshed.url;
+                        if (await attemptNativeAudio(refreshed.url, resumeTime, 6000, recoveryRequestId)) {
+                            finalizeTrackPlayback(track, recoveryRequestId);
+                            return;
+                        }
+                    }
+                    if (switchToNextApi()) {
+                        const retried = await jiosaavnAPI.getSong(track.id);
+                        if (recoveryRequestId !== playRequestId) return;
+                        if (retried?.url) {
+                            track.url = retried.url;
+                            if (await attemptNativeAudio(retried.url, resumeTime, 6000, recoveryRequestId)) {
+                                finalizeTrackPlayback(track, recoveryRequestId);
+                                return;
+                            }
+                        }
+                    }
+                }
+
+                if (recoveryRequestId === playRequestId) {
+                    state.playing = false;
                     ui.updatePlayBtn();
-                    startYTProgressTimer();
-                    return;
-                }
-
-                if (state._audioRetryCount <= 2 && state.currentTrack.url) {
-                    await new Promise(r => setTimeout(r, 400));
-                    applyAudioCorsPolicy(audio);
-                    audio.src = state.currentTrack.url;
-                    if (!isMobileDevice) audio.load();
-                    if (resumeTime > 0) {
-                        try { audio.currentTime = resumeTime; } catch (_) {}
+                    if (window.ui && ui.showToast) {
+                        ui.showToast('Unable to load audio stream for this track.', 'warning', 3000);
                     }
-                    if (state.playing || !state.userPaused) await audio.play();
-                    return;
-                }
-
-                // Attempt 4: Refresh song details from API
-                const refreshed = await jiosaavnAPI.getSong(state.currentTrack.id);
-                if (refreshed?.url) {
-                    state.currentTrack.url = refreshed.url;
-                    applyAudioCorsPolicy(audio);
-                    audio.src = refreshed.url;
-                    if (!isMobileDevice) audio.load();
-                    if (resumeTime > 0) {
-                        try { audio.currentTime = resumeTime; } catch (_) {}
-                    }
-                    if (state.playing || !state.userPaused) await audio.play();
-                    return;
-                }
-
-                if (switchToNextApi()) {
-                    const retried = await jiosaavnAPI.getSong(state.currentTrack.id);
-                    if (retried?.url) {
-                        state.currentTrack.url = retried.url;
-                        applyAudioCorsPolicy(audio);
-                        audio.src = retried.url;
-                        if (!isMobileDevice) audio.load();
-                        if (resumeTime > 0) {
-                            try { audio.currentTime = resumeTime; } catch (_) {}
-                        }
-                        if (state.playing || !state.userPaused) await audio.play();
-                        return;
+                    if (state.queue && state.queue.length > 1 && state._audioRetryCount <= 2) {
+                        player.next();
                     }
                 }
-
-                player.next();
             } catch (e) {
-                if (state._audioRetryCount > 2) {
-                    player.next();
+                console.warn('[DTunes] Recovery failed:', e);
+                if (recoveryRequestId === playRequestId) {
+                    state.playing = false;
+                    ui.updatePlayBtn();
                 }
             } finally {
                 isAudioRecoveryPending = false;
-                state.loading = false;
-                ui.setPlayerLoading(false);
+                if (recoveryRequestId === playRequestId) {
+                    isPlaybackPending = false;
+                    state.loading = false;
+                    ui.setPlayerLoading(false);
+                }
             }
         };
 
@@ -825,6 +1004,9 @@
 
                 const setupAndStartPlayback = async (urlToPlay) => {
                     stopYTProgressTimer();
+                    if (_ytLoadTimer) { clearTimeout(_ytLoadTimer); _ytLoadTimer = null; }
+                    if (_streamStartupTimer) { clearTimeout(_streamStartupTimer); _streamStartupTimer = null; }
+                    _pendingYTVideo = null;
                     if (typeof window !== 'undefined') window._dtunesActiveEngine = 'audio';
                     if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
                         try { ytPlayer.pauseVideo(); } catch (_) {}
@@ -841,6 +1023,14 @@
                     ui.enableControls();
                     audio.loop = (state.repeat === 2);
 
+                    _streamStartupTimer = setTimeout(() => {
+                        _streamStartupTimer = null;
+                        if (currentRequestId === playRequestId && window._dtunesActiveEngine === 'audio' && !isAudioRecoveryPending && !state.userPaused && audio.readyState < 2) {
+                            console.warn('[DTunes] Audio stream startup timeout; triggering recovery');
+                            recoverFromAudioError();
+                        }
+                    }, 7000);
+
                     try {
                         await audio.play();
                     } catch (playErr) {
@@ -849,13 +1039,19 @@
                             audio.removeAttribute('crossorigin');
                             audio.load();
                             await audio.play();
+                        } else if (currentRequestId === playRequestId && !state.userPaused && playErr?.name !== 'AbortError') {
+                            if (_streamStartupTimer) { clearTimeout(_streamStartupTimer); _streamStartupTimer = null; }
+                            await recoverFromAudioError();
+                            return false;
                         } else {
                             throw playErr;
                         }
                     }
+                    if (_streamStartupTimer) { clearTimeout(_streamStartupTimer); _streamStartupTimer = null; }
                     if (currentRequestId !== playRequestId) return false;
 
                     isPlaybackPending = false;
+                    state._audioRetryCount = 0;
                     state.playing = true;
                     state.wasPlayingBeforeHidden = true;
                     state.loading = false;
@@ -865,45 +1061,7 @@
                     updateMediaPosition();
                     if (typeof desktop !== 'undefined' && desktop.sendMediaState) desktop.sendMediaState();
 
-                    const isRepeatStart = recommendationEvents.lastStartedSongId === track.id && Date.now() - recommendationEvents.currentPlayStartAt < 15 * 60 * 1000;
-                    recommendationEvents.currentPlayStartAt = Date.now();
-                    recommendationEvents.lastStartedSongId = track.id;
-                    recommendationEvents.completedSongId = null;
-                    recommendationEvents.record(isRepeatStart ? 'repeat' : (recommendationEvents.contextForTrack(track).source === 'search' ? 'search_play' : 'play_start'), track, {
-                        songDurationSeconds: track.duration,
-                        context: recommendationEvents.contextForTrack(track),
-                    });
-                    
-                    if (!isAudioContextInitialized) setupAudioContext();
-                    if (audioContext && audioContext.state === 'suspended') {
-                        audioContext.resume().catch(err => console.warn('[DTunes] Could not resume audioContext in playDirect:', err));
-                    }
-                    applyEqualizer();
-                    
-                    ui.updateMetadata(state.currentTrack);
-                    ui.renderQueue();
-                    primeNextTrack(); 
-                    if (typeof lyricsManager !== 'undefined') lyricsManager.fetchLyricsForTrack(state.currentTrack);
-                    if (typeof viz !== 'undefined') viz.start();
-                    
-                    const trackWithTime = { ...state.currentTrack, playedAt: new Date().toISOString() };
-                    state.playHistory = state.playHistory.filter(t => t.id !== track.id);
-                    state.playHistory.unshift(trackWithTime);
-                    if(state.playHistory.length > 100) state.playHistory.pop();
-                    localStorage.setItem('playHistory', JSON.stringify(state.playHistory));
-
-                    if (typeof searchManager !== 'undefined' && searchManager.addToRecentSearches) {
-                        const isSearchView = (typeof ui !== 'undefined' && ui.getCurrentView && ui.getCurrentView() === 'search') || document.body.classList.contains('mobile-search-open');
-                        if (isSearchView || track.source === 'search' || track.isSearchResult) {
-                            searchManager.addToRecentSearches(track);
-                        }
-                    }
-                    
-                    if (window.listeningSession) listeningSession.start(state.currentTrack);
-                    ui.renderHistory();
-                    if (ui.updateAlbumCarouselPeeks) ui.updateAlbumCarouselPeeks();
-                    if(!document.getElementById('view-home').classList.contains('hidden')) homeView.renderRecentlyPlayed();
-                    persist.save();
+                    finalizeTrackPlayback(track, currentRequestId);
                     return true;
                 };
 
@@ -962,11 +1120,17 @@
                     }
 
                     // Native HTML5 <audio> streaming via dedicated stream host or /api-v2/stream/{id}
-                    // (supports iOS background play, lock-screen controls, EQ & live visualizer)
+                    // (supports iOS background play, lock-screen controls, EQ & live visualizer).
+                    // If the server explicitly indicates no stream host/cookies are configured yet,
+                    // start YouTube playback immediately on the tap gesture instead of waiting for a 502 timeout.
                     if (track.source === 'youtube' && !track.isOffline && track.id) {
-                        if (typeof mediaAPI !== 'undefined' && mediaAPI.discoverStreamHost) {
-                            await mediaAPI.discoverStreamHost().catch(() => {});
-                            if (currentRequestId !== playRequestId) return;
+                        state._audioRetryCount = 0;
+                        const streamReady = (typeof mediaAPI === 'undefined' || !mediaAPI.isStreamReady || mediaAPI.isStreamReady());
+                        const canUseYTImmediate = !isMobileDevice || document.visibilityState === 'visible';
+                        if (!streamReady && canUseYTImmediate) {
+                            track._nativeStreamFailed = true;
+                            startYTPlayback(track, 0, currentRequestId);
+                            return;
                         }
                         const preferredStreamUrl = (typeof mediaAPI !== 'undefined' && mediaAPI.getStreamUrl)
                             ? mediaAPI.getStreamUrl(track.id)
@@ -1020,7 +1184,7 @@
                         await setupAndStartPlayback(playUrl);
                     }
                 } catch (error) {
-                    if (currentRequestId === playRequestId) {
+                    if (currentRequestId === playRequestId && !isAudioRecoveryPending) {
                         console.error('[DTunes] Error playing track:', error);
                         state.playing = false;
                         state.loading = false;
@@ -1029,7 +1193,7 @@
                     }
                 } finally {
                     clearTimeout(safetyTimer);
-                    if (currentRequestId === playRequestId) {
+                    if (currentRequestId === playRequestId && !isAudioRecoveryPending) {
                         isPlaybackPending = false;
                     }
                 }
@@ -1585,6 +1749,7 @@
 
         audio.addEventListener('playing', () => {
             if (typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt') return;
+            if (_streamStartupTimer) { clearTimeout(_streamStartupTimer); _streamStartupTimer = null; }
             state._audioRetryCount = 0;
             state.playing = true;
             state.loading = false;
@@ -1600,7 +1765,7 @@
         ['loadstart', 'waiting', 'stalled'].forEach((eventName) => {
             audio.addEventListener(eventName, () => {
                 if (typeof window !== 'undefined' && window._dtunesActiveEngine === 'yt') return;
-                if (!state.currentTrack) return;
+                if (!state.currentTrack || !audio.src || isAudioRecoveryPending) return;
                 state.loading = true;
                 ui.setPlayerLoading(true);
 
@@ -1668,6 +1833,10 @@
         });
         ['canplay', 'canplaythrough', 'loadeddata', 'loadedmetadata'].forEach((eventName) => {
             audio.addEventListener(eventName, () => {
+                if (_streamStartupTimer && (eventName === 'canplay' || eventName === 'canplaythrough')) {
+                    clearTimeout(_streamStartupTimer);
+                    _streamStartupTimer = null;
+                }
                 state.loading = false;
                 ui.setPlayerLoading(false);
                 if (eventName === 'loadedmetadata') {

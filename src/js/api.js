@@ -26,21 +26,37 @@
             return '';
         })();
         let _streamConfigPromise = null;
+        let _streamReady = _streamBaseOrigin ? true : null;
 
         const _discoverStreamBase = async () => {
-            if (_streamBaseOrigin) return _streamBaseOrigin;
+            if (_streamBaseOrigin) {
+                _streamReady = true;
+                return _streamBaseOrigin;
+            }
             if (isNetworkOffline() || typeof fetch !== 'function') return '';
             if (!_streamConfigPromise) {
                 _streamConfigPromise = (async () => {
+                    let timer = null;
                     try {
-                        const res = await fetch(`${API_V2_BASE}/config`, { cache: 'no-store' });
+                        const ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+                        if (ctrl) timer = setTimeout(() => ctrl.abort(), 2500);
+                        const res = await fetch(`${API_V2_BASE}/config`, {
+                            cache: 'no-store',
+                            signal: ctrl ? ctrl.signal : undefined,
+                        });
                         if (res && res.ok) {
                             const data = await res.json();
                             if (data && data.stream_base_url) {
                                 _streamBaseOrigin = _normalizeStreamBase(data.stream_base_url);
                             }
+                            if (data && typeof data.stream_ready === 'boolean') {
+                                _streamReady = Boolean(_streamBaseOrigin) || data.stream_ready;
+                            }
                         }
-                    } catch (_) {}
+                    } catch (_) {
+                    } finally {
+                        if (timer) clearTimeout(timer);
+                    }
                     return _streamBaseOrigin;
                 })();
             }
@@ -370,6 +386,15 @@
             },
 
             discoverStreamHost: _discoverStreamBase,
+
+            isStreamReady: () => {
+                if (_streamBaseOrigin) return true;
+                return _streamReady !== false;
+            },
+
+            markStreamUnavailable: () => {
+                if (!_streamBaseOrigin) _streamReady = false;
+            },
 
             getSong: async (id) => {
                 if (!id) return null;

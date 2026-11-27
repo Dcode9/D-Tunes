@@ -74,6 +74,7 @@ class HealthResponse(BaseModel):
     ytdlp_version: Optional[str] = None
     ytdlp_available: bool
     stream_base_url: Optional[str] = None
+    stream_ready: bool = True
     cookies_configured: bool = False
     pot_configured: bool = False
 
@@ -642,7 +643,7 @@ INVIDIOUS_INSTANCES: list[str] = [
 
 def _resolve_invidious_sync(video_id: str) -> tuple[Optional[StreamInfo], Optional[str]]:
     errs = []
-    with httpx.Client(timeout=4.0, follow_redirects=True) as client:
+    with httpx.Client(timeout=2.5, follow_redirects=True) as client:
         for inst in INVIDIOUS_INSTANCES:
             try:
                 res = client.get(f"{inst}/api/v1/videos/{video_id}")
@@ -693,7 +694,7 @@ PIPED_INSTANCES: list[str] = [
 
 def _resolve_piped_sync(video_id: str) -> tuple[Optional[StreamInfo], Optional[str]]:
     errs = []
-    with httpx.Client(timeout=4.0, follow_redirects=True) as client:
+    with httpx.Client(timeout=2.5, follow_redirects=True) as client:
         for inst in PIPED_INSTANCES:
             try:
                 res = client.get(f"{inst}/streams/{video_id}")
@@ -755,7 +756,7 @@ _INNERTUBE_CLIENTS = [
 
 def _resolve_innertube_sync(video_id: str) -> tuple[Optional[StreamInfo], Optional[str]]:
     errs = []
-    with httpx.Client(timeout=5.0, follow_redirects=True) as client:
+    with httpx.Client(timeout=3.0, follow_redirects=True) as client:
         for cfg in _INNERTUBE_CLIENTS:
             try:
                 client_ctx = {k: v for k, v in cfg.items() if k != "ua"}
@@ -873,12 +874,17 @@ def _has_cookies_or_pot() -> bool:
     return bool(_resolve_cookies_path() or has_pot)
 
 
+def _is_stream_ready() -> bool:
+    return bool(STREAM_BACKEND_URL or _has_cookies_or_pot() or YTDLP_PROXY or not os.environ.get("VERCEL"))
+
+
 def resolve_sync(video_id: str) -> StreamInfo:
     if not is_valid_video_id(video_id):
         raise ValueError(f"Invalid video ID: {video_id!r}")
 
     last_err: Optional[Exception] = None
     has_auth = _has_cookies_or_pot()
+    is_vercel_unauthed = bool(os.environ.get("VERCEL")) and not has_auth and not YTDLP_PROXY
 
     # When cookies / PO-token provider are configured (dedicated host), prefer authenticated yt-dlp first
     if has_auth:
@@ -894,23 +900,34 @@ def resolve_sync(video_id: str) -> StreamInfo:
     if it_info:
         return it_info
 
-    # Cookie-less yt-dlp across mobile/VR client candidates (also serves as clean fallback if cookies expire)
-    for client_list in CLIENT_CANDIDATES:
+    # On unauthenticated Vercel datacenter IPs, avoid burning 15s on 5 blocked yt-dlp clients sequentially
+    ytdlp_candidates = CLIENT_CANDIDATES[:1] if is_vercel_unauthed else CLIENT_CANDIDATES
+    for client_list in ytdlp_candidates:
         try:
             return _extract_ytdlp_stream(video_id, client_list, include_cookies=False)
         except Exception as exc:
             last_err = exc
             continue
 
-    # Piped API fallback
-    piped_info, piped_err = _resolve_piped_sync(video_id)
-    if piped_info:
-        return piped_info
+    # Piped & Invidious API fallbacks (run concurrently when on serverless for fast response)
+    if is_vercel_unauthed:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            piped_fut = pool.submit(_resolve_piped_sync, video_id)
+            inv_fut = pool.submit(_resolve_invidious_sync, video_id)
+            piped_info, piped_err = piped_fut.result()
+            if piped_info:
+                return piped_info
+            fallback_info, inv_err = inv_fut.result()
+            if fallback_info:
+                return fallback_info
+    else:
+        piped_info, piped_err = _resolve_piped_sync(video_id)
+        if piped_info:
+            return piped_info
 
-    # Invidious API fallback
-    fallback_info, inv_err = _resolve_invidious_sync(video_id)
-    if fallback_info:
-        return fallback_info
+        fallback_info, inv_err = _resolve_invidious_sync(video_id)
+        if fallback_info:
+            return fallback_info
 
     raise RuntimeError(
         f"Could not resolve stream URL for {video_id}: innertube=[{it_err}]; ytdlp=[{last_err}]; piped=[{piped_err}]; invidious=[{inv_err}]"
@@ -935,6 +952,7 @@ async def health() -> HealthResponse:
         ytdlp_version=v,
         ytdlp_available=bool(v),
         stream_base_url=STREAM_BACKEND_URL or None,
+        stream_ready=_is_stream_ready(),
         cookies_configured=bool(_resolve_cookies_path()),
         pot_configured=has_pot,
     )
@@ -944,6 +962,7 @@ async def health() -> HealthResponse:
 async def stream_config() -> dict[str, Any]:
     return {
         "stream_base_url": STREAM_BACKEND_URL or None,
+        "stream_ready": _is_stream_ready(),
     }
 
 

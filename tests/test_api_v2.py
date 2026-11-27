@@ -358,6 +358,7 @@ def test_stream_backend_redirect_and_config(monkeypatch):
         cfg = client.get("/api-v2/config")
         assert cfg.status_code == 200
         assert cfg.json()["stream_base_url"] == "https://stream.example.com"
+        assert cfg.json()["stream_ready"] is True
 
         redir = client.get("/api-v2/stream/dQw4w9WgXcQ", follow_redirects=False)
         assert redir.status_code == 307

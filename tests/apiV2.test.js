@@ -143,10 +143,13 @@ test('D-Tunes API v2: dedicated stream host routing, mobile CORS hygiene, and 1:
   const apiJs = fs.readFileSync(path.join(__dirname, '../src/js/api.js'), 'utf8');
   assert.ok(apiJs.includes('getStreamUrl'), 'api.js must expose getStreamUrl');
   assert.ok(apiJs.includes('discoverStreamHost'), 'api.js must expose discoverStreamHost');
+  assert.ok(apiJs.includes('isStreamReady'), 'api.js must expose isStreamReady');
 
   const playerJs = fs.readFileSync(path.join(__dirname, '../src/js/player.js'), 'utf8');
   assert.ok(playerJs.includes('applyAudioCorsPolicy'), 'player.js must centralize mobile/desktop CORS policy');
   assert.ok(playerJs.includes('registerMediaSessionHandlers'), 'player.js must expose registerMediaSessionHandlers');
+  assert.ok(playerJs.includes('attemptNativeAudio'), 'player.js must use bounded attemptNativeAudio recovery');
+  assert.ok(playerJs.includes('startYTPlayback'), 'player.js must share clean startYTPlayback fallback');
   assert.doesNotMatch(playerJs, /recoverFromAudioError[\s\S]*?audio\.crossOrigin\s*=\s*['"]anonymous['"]/,
     'recoverFromAudioError must not bypass mobile CORS policy');
 
