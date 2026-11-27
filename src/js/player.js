@@ -421,14 +421,14 @@
                     state.loading = false;
                     ui.setPlayerLoading(false);
                     ui.updatePlayBtn();
+                    const isBlockedServer = track.source === 'youtube' && mediaAPI?.isStreamReady && !mediaAPI.isStreamReady();
                     if (window.ui && ui.showToast) {
-                        const isBlockedServer = track.source === 'youtube' && mediaAPI?.isStreamReady && !mediaAPI.isStreamReady();
                         const msg = isBlockedServer
-                            ? 'YouTube audio stream is blocked on this server. Set STREAM_BACKEND_URL or YouTube cookies/PO-token.'
+                            ? 'YouTube blocked audio streaming from this cloud server.'
                             : 'Unable to load audio stream for this track.';
-                        ui.showToast(msg, 'warning', isBlockedServer ? 5000 : 3000);
+                        ui.showToast(msg, 'warning', isBlockedServer ? 4500 : 3000);
                     }
-                    if (state.queue && state.queue.length > 1 && state._audioRetryCount <= 2 && _consecutiveStreamFailures < 2) {
+                    if (!isBlockedServer && state.queue && state.queue.length > 1 && state._audioRetryCount <= 2 && _consecutiveStreamFailures < 2) {
                         player.next();
                     }
                 }
