@@ -171,4 +171,8 @@ test('D-Tunes API v2: dedicated stream host routing, mobile CORS hygiene, and 1:
 
   const css = fs.readFileSync(path.join(__dirname, '../src/css/styles.css'), 'utf8');
   assert.ok(css.includes('img[src*="ytimg.com"]'), 'styles.css must crop 16:9/4:3 ytimg thumbnails into 1:1 squares');
+
+  const v2Py = fs.readFileSync(path.join(__dirname, '../api/v2.py'), 'utf8');
+  assert.ok(!v2Py.includes('_resolve_saavn_bridge_sync'), 'yt-backend api/v2.py must not use JioSaavn for playback');
+  assert.ok(!v2Py.includes('_resolve_audius_bridge_sync'), 'yt-backend api/v2.py must not use Audius for playback');
 });

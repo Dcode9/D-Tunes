@@ -366,73 +366,67 @@ def test_stream_backend_redirect_and_config(monkeypatch):
         assert "no-store" in redir.headers["cache-control"]
 
 
-def test_saavn_audio_bridge_matches_standard_track_and_guards_mashups():
-    assert v2._is_derivative_title("Levitating Mashup (Slowed)") is True
-    assert v2._is_derivative_title("Laal Pari") is False
+def test_pure_youtube_resolver_has_no_third_party_audio_bridges():
+    src = (Path(__file__).resolve().parent.parent / "api" / "v2.py").read_text(encoding="utf-8")
+    assert "_resolve_saavn_bridge_sync" not in src
+    assert "_resolve_audius_bridge_sync" not in src
 
-    meta = v2.Track(
-        id="FXxuVh9KIPs",
-        title="Laal Pari",
-        artist="Yo Yo Honey Singh, Simar Kaur",
-        artwork="https://yt3.googleusercontent.com/abc=w544-h544-c-l90-rj",
-        duration=256,
-        source="youtube",
-    )
-    fake_payload = {
-        "data": {
-            "results": [
-                {
-                    "name": "Laal Pari (From \"Housefull 5\")",
-                    "duration": 256,
-                    "artists": {"primary": [{"name": "Yo Yo Honey Singh"}, {"name": "Simar Kaur"}]},
-                    "downloadUrl": [{"quality": "320kbps", "url": "https://aac.saavncdn.com/test/laal_pari_320.mp4"}],
-                    "image": [{"quality": "500x500", "url": "https://c.saavncdn.com/test/laal_pari_500x500.jpg"}],
-                }
-            ]
-        }
-    }
 
+def test_innertube_probes_stream_and_skips_403_urls():
     class FakeResp:
-        status_code = 200
+        def __init__(self, status_code, payload=None):
+            self.status_code = status_code
+            self._payload = payload or {}
+
         def json(self):
-            return fake_payload
+            return self._payload
 
     class FakeClient:
         def __init__(self, *a, **kw):
             pass
+
         def __enter__(self):
             return self
+
         def __exit__(self, *a):
             return False
-        def get(self, *a, **kw):
-            return FakeResp()
 
-    with patch.object(v2.httpx, "Client", FakeClient):
-        info, err = v2._resolve_saavn_bridge_sync("FXxuVh9KIPs", meta)
+        def post(self, url, json=None, headers=None):
+            client_name = (json or {}).get("context", {}).get("client", {}).get("clientName")
+            stream_url = "https://cdn.example/ios_403.m4a" if client_name == "IOS" else "https://cdn.example/vr_ok.m4a"
+            return FakeResp(200, {
+                "playabilityStatus": {"status": "OK"},
+                "videoDetails": {"title": "Test Song", "author": "Test Artist", "lengthSeconds": "200", "thumbnail": {"thumbnails": []}},
+                "streamingData": {"adaptiveFormats": [{"url": stream_url, "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"", "bitrate": 128000}]},
+            })
+
+        def get(self, url, headers=None):
+            if "ios_403" in url:
+                return FakeResp(403)
+            return FakeResp(206)
+
+    with patch.object(v2, "_get_youtube_visitor_data", return_value="Cgtest"), \
+         patch.object(v2.httpx, "Client", FakeClient):
+        info, err = v2._resolve_innertube_sync("dQw4w9WgXcQ")
         assert err is None
         assert info is not None
-        assert info.url.endswith("laal_pari_320.mp4")
-        assert info.content_type == "audio/mp4"
-        assert info.artwork == meta.artwork
+        assert info.url == "https://cdn.example/vr_ok.m4a"
 
-        remix_meta = v2.Track(
-            id="x1y2z3a4b5c",
-            title="Laal Pari x Espresso Mashup",
-            artist="DJ Mix",
-            artwork="https://i.ytimg.com/vi/x1y2z3a4b5c/hq720.jpg",
-            duration=210,
-            source="youtube",
-        )
-        rejected_info, rejected_err = v2._resolve_saavn_bridge_sync("x1y2z3a4b5c", remix_meta)
-        assert rejected_info is None
-        assert rejected_err is not None
 
-        vevo_meta = v2.Track(
-            id="4NRXx6U8ABQ",
-            title="The Weeknd - Blinding Lights (Official Video)",
-            artist="TheWeekndVEVO",
-            artwork="https://i.ytimg.com/vi/4NRXx6U8ABQ/hq720.jpg",
-            duration=204,
-            source="youtube",
-        )
-        assert v2._normalize_artist_hint(vevo_meta.artist) == "The Weeknd"
+def test_stream_ready_reflects_vercel_config(monkeypatch):
+    monkeypatch.setenv("VERCEL", "1")
+    monkeypatch.setattr(v2, "STREAM_BACKEND_URL", "")
+    monkeypatch.setattr(v2, "YTDLP_PROXY", None)
+    monkeypatch.setattr(v2, "YTDLP_COOKIES_B64", None)
+    monkeypatch.setattr(v2, "YTDLP_COOKIES_FILE", None)
+    monkeypatch.setattr(v2, "YTDLP_PO_TOKEN", None)
+    monkeypatch.setattr(v2, "YTDLP_POT_PROVIDER_URL", "")
+    monkeypatch.delenv("YTDLP_COOKIES", raising=False)
+    monkeypatch.delenv("YTDLP_COOKIES_B64", raising=False)
+    monkeypatch.delenv("YTDLP_PO_TOKEN", raising=False)
+    monkeypatch.delenv("YTDLP_POT_PROVIDER_URL", raising=False)
+    monkeypatch.delenv("BGUTIL_POT_URL", raising=False)
+    assert v2._is_stream_ready() is False
+
+    monkeypatch.setattr(v2, "YTDLP_PROXY", "http://user:pass@proxy.example:8080")
+    assert v2._is_stream_ready() is True

@@ -140,11 +140,9 @@ class TTLCache:
 
 search_cache = TTLCache(max_size=500)
 stream_cache = TTLCache(max_size=300)
-track_meta_cache = TTLCache(max_size=1000)
 
 SEARCH_TTL = 5 * 60       # 5 minutes
 STREAM_TTL = 55 * 60      # 55 minutes
-META_TTL = 24 * 60 * 60   # 24 hours
 STREAM_CHUNK = 65_536     # 64 KiB chunks
 _VIDEO_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
 _BROWSE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{4,64}$")
@@ -404,7 +402,7 @@ def _normalize_entry(entry: dict) -> Optional[Track]:
     duration: Optional[int] = entry.get("duration")
     artwork: str = _pick_best_thumbnail(entry.get("thumbnails"), str(entry.get("thumbnail") or ""))
 
-    track = Track(
+    return Track(
         id=video_id,
         title=title,
         artist=uploader,
@@ -412,8 +410,6 @@ def _normalize_entry(entry: dict) -> Optional[Track]:
         duration=int(duration) if duration else None,
         source="youtube",
     )
-    track_meta_cache._set_sync(video_id, track, META_TTL)
-    return track
 
 
 def _normalize_ytm_track(item: dict, exclude_id: Optional[str] = None) -> Optional[Track]:
@@ -443,7 +439,7 @@ def _normalize_ytm_track(item: dict, exclude_id: Optional[str] = None) -> Option
 
     artwork = _pick_best_thumbnail(item.get("thumbnails"))
 
-    track = Track(
+    return Track(
         id=video_id,
         title=title,
         artist=artist,
@@ -452,8 +448,6 @@ def _normalize_ytm_track(item: dict, exclude_id: Optional[str] = None) -> Option
         album=album_name,
         source="youtube",
     )
-    track_meta_cache._set_sync(video_id, track, META_TTL)
-    return track
 
 
 def search_ytmusic(query: str, limit: int = 10) -> list[Track]:
@@ -669,7 +663,7 @@ def _resolve_invidious_sync(video_id: str) -> tuple[Optional[StreamInfo], Option
                 content_type = _EXT_TO_CONTENT_TYPE.get(ext, "audio/mp4")
                 title = data.get("title") or "Unknown"
                 artist = data.get("author") or "Unknown Artist"
-                artwork = _pick_best_thumbnail(thumbnails)
+                artwork = _pick_best_thumbnail(data.get("videoThumbnails"))
                 duration = data.get("lengthSeconds")
                 return (StreamInfo(
                     url=stream_url,
@@ -789,7 +783,10 @@ def _get_youtube_visitor_data() -> str:
 def _resolve_innertube_sync(video_id: str) -> tuple[Optional[StreamInfo], Optional[str]]:
     errs = []
     visitor_data = _get_youtube_visitor_data()
-    with httpx.Client(timeout=2.2, follow_redirects=True) as client:
+    client_kwargs: dict[str, Any] = {"timeout": 2.5, "follow_redirects": True}
+    if YTDLP_PROXY:
+        client_kwargs["proxy"] = YTDLP_PROXY
+    with httpx.Client(**client_kwargs) as client:
         for cfg in _INNERTUBE_CLIENTS:
             try:
                 client_ctx = {k: v for k, v in cfg.items() if k != "ua"}
@@ -829,6 +826,18 @@ def _resolve_innertube_sync(video_id: str) -> tuple[Optional[StreamInfo], Option
                     continue
                 m4a_fmts = [f for f in audio_fmts if "audio/mp4" in str(f.get("mimeType", "")).lower()]
                 best = max(m4a_fmts or audio_fmts, key=lambda f: int(f.get("bitrate") or 0))
+                # Probe 1 byte so 403 PO-token-gated GVS links fail fast instead of getting cached
+                try:
+                    probe = client.get(
+                        best["url"],
+                        headers={"User-Agent": cfg["ua"], "Range": "bytes=0-0"},
+                    )
+                    if probe.status_code not in (200, 206):
+                        errs.append(f"{cfg['clientName']}: stream HTTP {probe.status_code}")
+                        continue
+                except Exception as probe_exc:
+                    errs.append(f"{cfg['clientName']}: stream probe {probe_exc}")
+                    continue
                 mime = str(best.get("mimeType") or "").lower()
                 ext = "m4a" if "mp4" in mime else "webm"
                 content_type = _EXT_TO_CONTENT_TYPE.get(ext, "audio/mp4")
@@ -849,271 +858,6 @@ def _resolve_innertube_sync(video_id: str) -> tuple[Optional[StreamInfo], Option
             except Exception as e:
                 errs.append(f"{cfg['clientName']}: {e}")
     return (None, "; ".join(errs))
-
-
-_CLEAN_TITLE_PARENS_RE = re.compile(
-    r"\s*[\(\[](?:official\s*(?:music\s*)?(?:video|audio|lyric\s*video|visualizer)|lyrics?|audio|hd|4k(?:\s*remaster)?|remaster(?:ed)?|explicit|full\s*song|video\s*song)[\)\]]",
-    re.IGNORECASE,
-)
-
-
-def _clean_match_title(title: str) -> str:
-    cleaned = _CLEAN_TITLE_PARENS_RE.sub("", str(title or "")).strip()
-    if "|" in cleaned:
-        cleaned = cleaned.split("|", 1)[0].strip()
-    return cleaned or str(title or "").strip()
-
-
-def _normalize_artist_hint(artist: str) -> str:
-    primary = re.split(r"[,&]|feat\.?|ft\.?", str(artist or ""), flags=re.IGNORECASE)[0].strip()
-    primary = re.sub(r"\s*-\s*Topic$", "", primary, flags=re.IGNORECASE).strip()
-    primary = re.sub(r"(?i)official$", "", primary).strip()
-    primary = re.sub(r"(?i)vevo$", "", primary).strip()
-    # Turn squashed camelCase/VEVO handles like "TheWeeknd" -> "The Weeknd" when matching artist tokens
-    if primary and " " not in primary and re.search(r"[a-z][A-Z]", primary):
-        primary = re.sub(r"([a-z])([A-Z])", r"\1 \2", primary)
-    if primary.lower() in ("unknown artist", "various artists", ""):
-        return ""
-    return primary
-
-
-def _is_derivative_title(title: str) -> bool:
-    t = str(title or "")
-    tl = t.lower()
-    return bool(_DERIVATIVE_RE.search(t)) or " x " in tl or " vs " in tl or " + " in tl
-
-
-def _fetch_video_metadata_sync(video_id: str) -> Optional[Track]:
-    cached = track_meta_cache._get_sync(video_id)
-    if isinstance(cached, Track):
-        return cached
-
-    def _via_oembed() -> Optional[Track]:
-        try:
-            with httpx.Client(timeout=1.8, follow_redirects=True) as client:
-                res = client.get(
-                    "https://www.youtube.com/oembed",
-                    params={"url": f"https://www.youtube.com/watch?v={video_id}", "format": "json"},
-                )
-                if res.status_code == 200:
-                    data = res.json()
-                    title = str(data.get("title") or "").strip()
-                    author = re.sub(r"\s*-\s*Topic$", "", str(data.get("author_name") or ""), flags=re.IGNORECASE).strip()
-                    if title:
-                        return Track(
-                            id=video_id,
-                            title=title,
-                            artist=author or "Unknown Artist",
-                            artwork=_normalize_artwork_url(str(data.get("thumbnail_url") or "")),
-                            duration=None,
-                            source="youtube",
-                        )
-        except Exception:
-            pass
-        return None
-
-    def _via_ytm() -> Optional[Track]:
-        if not get_ytmusic:
-            return None
-        try:
-            ytm = get_ytmusic()
-            song = ytm.get_song(video_id)
-            vd = song.get("videoDetails") if isinstance(song, dict) else None
-            if isinstance(vd, dict) and vd.get("title"):
-                dur_raw = vd.get("lengthSeconds")
-                artist = re.sub(r"\s*-\s*Topic$", "", str(vd.get("author") or ""), flags=re.IGNORECASE).strip() or "Unknown Artist"
-                thumbs = (vd.get("thumbnail") or {}).get("thumbnails") or []
-                return Track(
-                    id=video_id,
-                    title=str(vd.get("title")),
-                    artist=artist,
-                    artwork=_pick_best_thumbnail(thumbs),
-                    duration=int(dur_raw) if dur_raw and str(dur_raw).isdigit() else None,
-                    source="youtube",
-                )
-        except Exception:
-            pass
-        return None
-
-    # Fetch YTM + fast oEmbed concurrently with a strict 1.8s budget so cold tracks never stall
-    pool = ThreadPoolExecutor(max_workers=2)
-    try:
-        ytm_fut = pool.submit(_via_ytm)
-        oembed_fut = pool.submit(_via_oembed)
-        ytm_tr: Optional[Track] = None
-        oembed_tr: Optional[Track] = None
-        try:
-            ytm_tr = ytm_fut.result(timeout=1.8)
-        except Exception:
-            ytm_tr = None
-        if isinstance(ytm_tr, Track):
-            track_meta_cache._set_sync(video_id, ytm_tr, META_TTL)
-            return ytm_tr
-        try:
-            oembed_tr = oembed_fut.result(timeout=1.5)
-        except Exception:
-            oembed_tr = None
-        if isinstance(oembed_tr, Track):
-            track_meta_cache._set_sync(video_id, oembed_tr, META_TTL)
-            return oembed_tr
-    finally:
-        pool.shutdown(wait=False, cancel_futures=True)
-    return None
-
-
-def _resolve_saavn_bridge_sync(video_id: str, meta: Optional[Track]) -> tuple[Optional[StreamInfo], Optional[str]]:
-    if not meta or not meta.title:
-        return (None, "no metadata")
-
-    raw_title = meta.title
-    clean_title = _clean_match_title(raw_title)
-    is_deriv = _is_derivative_title(raw_title)
-    primary_artist = _normalize_artist_hint(meta.artist or "")
-    # Strip leading "Artist - " prefix common on VEVO/music videos (e.g. "The Weeknd - Blinding Lights")
-    if " - " in clean_title:
-        left, right = clean_title.split(" - ", 1)
-        left_s = re.sub(r"[^a-z0-9]", "", left.lower())
-        art_s = re.sub(r"[^a-z0-9]", "", primary_artist.lower())
-        if right.strip() and ((art_s and (left_s in art_s or art_s in left_s)) or len(left.split()) <= 3):
-            if not primary_artist:
-                primary_artist = left.strip()
-            clean_title = right.strip()
-    query = f"{clean_title} {primary_artist}".strip()
-    if not query:
-        return (None, "empty query")
-
-    try:
-        with httpx.Client(timeout=3.5, follow_redirects=True) as client:
-            res = client.get(f"{_LEGACY_SAAVN_API}/search/songs", params={"query": query, "limit": 8})
-            if res.status_code != 200:
-                return (None, f"HTTP {res.status_code}")
-            payload = res.json()
-            items = ((payload.get("data") or {}).get("results") or []) if isinstance(payload, dict) else []
-            if not isinstance(items, list) or not items:
-                return (None, "no saavn candidates")
-
-            target_title_tokens = _query_keyword_tokens(clean_title)
-            target_artist_tokens = _query_keyword_tokens(primary_artist)
-            target_dur = int(meta.duration or 0)
-            best_score = -1.0
-            best_info: Optional[StreamInfo] = None
-
-            for item in items:
-                if not isinstance(item, dict):
-                    continue
-                downloads = item.get("downloadUrl") or []
-                if not isinstance(downloads, list) or not downloads:
-                    continue
-                stream_url = ""
-                for dl in reversed(downloads):
-                    if isinstance(dl, dict) and dl.get("url"):
-                        stream_url = str(dl["url"])
-                        break
-                if not stream_url:
-                    continue
-
-                cand_title = str(item.get("name") or item.get("title") or "").strip()
-                artists_obj = item.get("artists") or {}
-                primary_list = artists_obj.get("primary") if isinstance(artists_obj, dict) else None
-                if isinstance(primary_list, list) and primary_list:
-                    cand_artist = ", ".join(str(a.get("name")) for a in primary_list if isinstance(a, dict) and a.get("name"))
-                else:
-                    cand_artist = str(item.get("primaryArtists") or "").strip()
-
-                cand_title_tokens = _query_keyword_tokens(cand_title)
-                if not target_title_tokens:
-                    continue
-                title_cov = len(target_title_tokens.intersection(cand_title_tokens)) / len(target_title_tokens)
-                if is_deriv and title_cov < 0.75:
-                    continue
-                if not is_deriv and title_cov < 0.55:
-                    continue
-
-                cand_dur = int(item.get("duration") or 0)
-                if target_dur > 0 and cand_dur > 0:
-                    dur_diff = abs(cand_dur - target_dur)
-                    if dur_diff > max(30, int(target_dur * 0.25)):
-                        continue
-                    dur_bonus = max(0.0, 0.25 - (dur_diff / 100.0))
-                else:
-                    dur_bonus = 0.0
-
-                artist_cov = 0.0
-                if target_artist_tokens:
-                    cand_artist_tokens = _query_keyword_tokens(f"{cand_artist} {cand_title}")
-                    artist_cov = len(target_artist_tokens.intersection(cand_artist_tokens)) / len(target_artist_tokens)
-                    if is_deriv and artist_cov < 0.30 and title_cov < 0.85:
-                        continue
-
-                score = (title_cov * 1.0) + (artist_cov * 0.45) + dur_bonus
-                if score > best_score:
-                    best_score = score
-                    imgs = item.get("image") or []
-                    saavn_art = ""
-                    if isinstance(imgs, list) and imgs:
-                        last_img = imgs[-1]
-                        saavn_art = str(last_img.get("url") or "") if isinstance(last_img, dict) else ""
-                    best_info = StreamInfo(
-                        url=stream_url,
-                        ext="m4a",
-                        content_type="audio/mp4",
-                        title=meta.title,
-                        artist=meta.artist,
-                        artwork=saavn_art if (saavn_art and ("ytimg.com" in (meta.artwork or "") or not meta.artwork)) else (meta.artwork or saavn_art),
-                        duration=cand_dur or meta.duration,
-                    )
-
-            if best_info:
-                return (best_info, None)
-            return (None, "no high-confidence saavn match")
-    except Exception as exc:
-        return (None, str(exc))
-
-
-def _resolve_audius_bridge_sync(video_id: str, meta: Optional[Track]) -> tuple[Optional[StreamInfo], Optional[str]]:
-    if not meta or not meta.title:
-        return (None, "no metadata")
-    clean_title = _clean_match_title(meta.title)
-    if not clean_title:
-        return (None, "empty title")
-    try:
-        with httpx.Client(timeout=3.5, follow_redirects=True) as client:
-            res = client.get(
-                "https://discoveryprovider.audius.co/v1/tracks/search",
-                params={"query": clean_title, "app_name": "dtunes"},
-                headers={"User-Agent": _UPSTREAM_UA},
-            )
-            if res.status_code != 200:
-                return (None, f"HTTP {res.status_code}")
-            items = (res.json() or {}).get("data") or []
-            target_tokens = _query_keyword_tokens(clean_title)
-            target_dur = int(meta.duration or 0)
-            for item in items[:6]:
-                if not isinstance(item, dict) or not item.get("id"):
-                    continue
-                cand_title = str(item.get("title") or "")
-                cand_tokens = _query_keyword_tokens(cand_title)
-                if not target_tokens:
-                    continue
-                cov = len(target_tokens.intersection(cand_tokens)) / len(target_tokens)
-                if cov < 0.70:
-                    continue
-                cand_dur = int(item.get("duration") or 0)
-                if target_dur > 0 and cand_dur > 0 and abs(cand_dur - target_dur) > 25:
-                    continue
-                track_id = str(item["id"])
-                return (StreamInfo(
-                    url=f"https://discoveryprovider.audius.co/v1/tracks/{track_id}/stream?app_name=dtunes",
-                    ext="mp3",
-                    content_type="audio/mpeg",
-                    title=meta.title,
-                    artist=meta.artist,
-                    artwork=meta.artwork,
-                    duration=cand_dur or meta.duration,
-                ), None)
-            return (None, "no matching audius track")
-    except Exception as exc:
-        return (None, str(exc))
 
 
 def _extract_ytdlp_stream(video_id: str, client_list: list[str], *, include_cookies: bool) -> StreamInfo:
@@ -1175,7 +919,7 @@ def _has_cookies_or_pot() -> bool:
 
 
 def _is_stream_ready() -> bool:
-    return True
+    return bool(STREAM_BACKEND_URL or _has_cookies_or_pot() or YTDLP_PROXY or not os.environ.get("VERCEL"))
 
 
 def resolve_sync(video_id: str) -> StreamInfo:
@@ -1195,48 +939,13 @@ def resolve_sync(video_id: str) -> StreamInfo:
                 last_err = exc
                 continue
 
-    meta = _fetch_video_metadata_sync(video_id)
-    it_info: Optional[StreamInfo] = None
-    it_err: Optional[str] = None
-    saavn_err: Optional[str] = None
-    audius_err: Optional[str] = None
-    piped_err: Optional[str] = None
-    inv_err: Optional[str] = None
+    # Direct InnerTube IOS / ANDROID_VR resolver (strictly YouTube, fast M4A for iOS Safari)
+    it_info, it_err = _resolve_innertube_sync(video_id)
+    if it_info:
+        return it_info
 
-    # On unauthenticated serverless hosts (Vercel), race InnerTube + Audio Bridge and return first valid stream immediately
-    if is_vercel_unauthed and meta and not _is_derivative_title(meta.title):
-        pool = ThreadPoolExecutor(max_workers=2)
-        try:
-            it_fut = pool.submit(_resolve_innertube_sync, video_id)
-            saavn_fut = pool.submit(_resolve_saavn_bridge_sync, video_id, meta)
-            for fut in as_completed([it_fut, saavn_fut]):
-                info, err = fut.result()
-                if fut is it_fut:
-                    it_err = err
-                else:
-                    saavn_err = err
-                if info:
-                    return info
-        finally:
-            pool.shutdown(wait=False, cancel_futures=True)
-    else:
-        # Direct InnerTube IOS / ANDROID_VR resolver (fast M4A for iOS Safari)
-        it_info, it_err = _resolve_innertube_sync(video_id)
-        if it_info:
-            return it_info
-
-    # Fast API-level Audio Bridges (JioSaavn 320kbps AAC/MP4 + Audius MP3 for remixes/mashups/indie)
-    if meta:
-        if saavn_err is None and not (is_vercel_unauthed and not _is_derivative_title(meta.title)):
-            saavn_info, saavn_err = _resolve_saavn_bridge_sync(video_id, meta)
-            if saavn_info:
-                return saavn_info
-        audius_info, audius_err = _resolve_audius_bridge_sync(video_id, meta)
-        if audius_info:
-            return audius_info
-
-    # yt-dlp across mobile/VR client candidates (bounded to 1 client on serverless since InnerTube already ran)
-    ytdlp_candidates = CLIENT_CANDIDATES[:1] if is_vercel_unauthed else CLIENT_CANDIDATES
+    # yt-dlp across mobile/VR client candidates
+    ytdlp_candidates = CLIENT_CANDIDATES[:2] if is_vercel_unauthed else CLIENT_CANDIDATES
     for client_list in ytdlp_candidates:
         try:
             return _extract_ytdlp_stream(video_id, client_list, include_cookies=False)
@@ -1244,7 +953,9 @@ def resolve_sync(video_id: str) -> StreamInfo:
             last_err = exc
             continue
 
-    # Piped & Invidious API fallbacks (race concurrently when on serverless)
+    # Piped & Invidious pure-YouTube API fallbacks (race concurrently when on serverless)
+    piped_err: Optional[str] = None
+    inv_err: Optional[str] = None
     if is_vercel_unauthed:
         pool = ThreadPoolExecutor(max_workers=2)
         try:
@@ -1270,7 +981,7 @@ def resolve_sync(video_id: str) -> StreamInfo:
             return fallback_info
 
     raise RuntimeError(
-        f"Could not resolve stream URL for {video_id}: innertube=[{it_err}]; ytdlp=[{last_err}]; saavn=[{saavn_err}]; audius=[{audius_err}]; piped=[{piped_err}]; invidious=[{inv_err}]"
+        f"Could not resolve YouTube stream URL for {video_id}: innertube=[{it_err}]; ytdlp=[{last_err}]; piped=[{piped_err}]; invidious=[{inv_err}]"
     )
 
 
@@ -1343,11 +1054,14 @@ _UPSTREAM_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KH
 def _get_http_client() -> httpx.AsyncClient:
     global _http_client
     if _http_client is None or _http_client.is_closed:
-        _http_client = httpx.AsyncClient(
-            timeout=httpx.Timeout(30.0, connect=10.0),
-            limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
-            follow_redirects=True,
-        )
+        kwargs: dict[str, Any] = {
+            "timeout": httpx.Timeout(30.0, connect=10.0),
+            "limits": httpx.Limits(max_connections=100, max_keepalive_connections=20),
+            "follow_redirects": True,
+        }
+        if YTDLP_PROXY:
+            kwargs["proxy"] = YTDLP_PROXY
+        _http_client = httpx.AsyncClient(**kwargs)
     return _http_client
 
 

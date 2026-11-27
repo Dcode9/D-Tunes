@@ -27,6 +27,7 @@
 
         // Pure native <audio> playback engine (supports iOS background playback, MediaSession & desktop SMTC)
         let _streamStartupTimer = null;
+        let _consecutiveStreamFailures = 0;
 
         if (typeof window !== 'undefined') {
             window._dtunesActiveEngine = 'audio';
@@ -361,7 +362,8 @@
 
                 // Attempt 1: For YouTube tracks, retry native stream once with fresh backend resolution
                 if (track.source === 'youtube' && !track.isOffline && track.id) {
-                    if (!track._nativeStreamFailed && state._audioRetryCount === 1) {
+                    const streamAllowed = !mediaAPI?.isStreamReady || mediaAPI.isStreamReady();
+                    if (streamAllowed && !track._nativeStreamFailed && state._audioRetryCount === 1) {
                         await new Promise(r => setTimeout(r, 250));
                         if (recoveryRequestId !== playRequestId) return;
                         const retryUrl = (typeof mediaAPI !== 'undefined' && mediaAPI.getStreamUrl)
@@ -369,6 +371,7 @@
                             : `/api-v2/stream/${encodeURIComponent(track.id)}?refresh=1&r=${Date.now()}`;
                         if (await attemptNativeAudio(retryUrl, resumeTime, 8000, recoveryRequestId)) {
                             state._audioRetryCount = 0;
+                            _consecutiveStreamFailures = 0;
                             state.playing = true;
                             ui.updatePlayBtn();
                             finalizeTrackPlayback(track, recoveryRequestId);
@@ -413,12 +416,19 @@
                 }
 
                 if (recoveryRequestId === playRequestId) {
+                    _consecutiveStreamFailures += 1;
                     state.playing = false;
+                    state.loading = false;
+                    ui.setPlayerLoading(false);
                     ui.updatePlayBtn();
                     if (window.ui && ui.showToast) {
-                        ui.showToast('Unable to load audio stream for this track.', 'warning', 3000);
+                        const isBlockedServer = track.source === 'youtube' && mediaAPI?.isStreamReady && !mediaAPI.isStreamReady();
+                        const msg = isBlockedServer
+                            ? 'YouTube audio stream is blocked on this server. Set STREAM_BACKEND_URL or YouTube cookies/PO-token.'
+                            : 'Unable to load audio stream for this track.';
+                        ui.showToast(msg, 'warning', isBlockedServer ? 5000 : 3000);
                     }
-                    if (state.queue && state.queue.length > 1 && state._audioRetryCount <= 2) {
+                    if (state.queue && state.queue.length > 1 && state._audioRetryCount <= 2 && _consecutiveStreamFailures < 2) {
                         player.next();
                     }
                 }
@@ -1303,6 +1313,7 @@
         audio.addEventListener('playing', () => {
             if (_streamStartupTimer) { clearTimeout(_streamStartupTimer); _streamStartupTimer = null; }
             state._audioRetryCount = 0;
+            _consecutiveStreamFailures = 0;
             state.playing = true;
             state.loading = false;
             ui.setPlayerLoading(false);
